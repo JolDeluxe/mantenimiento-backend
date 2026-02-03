@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// --- ENUMS ---
+
+enum Rol {
+  CLIENTE_INTERNO
+  TECNICO
+  COORDINADOR_MTTO
+  JEFE_MTTO
+  SUPER_ADMIN
+}
+
+enum Estatus {
+  ACTIVO
+  INACTIVO
+}
+
+enum Prioridad {
+  BAJA
+  MEDIA
+  ALTA
+  CRITICA 
+}
+
+enum EstadoTarea {
+  PENDIENTE   // Sin tecnico por asignar  
+  ASIGNADA    // Tecnico asignado, no iniciada
+  EN_PROGRESO // Tecnico ha iniciado la tarea (Timer ON)
+  EN_PAUSA    // Tarea en pausa (Timer PAUSE - Opcional)
+  RESUELTO    // Tarea completada (Timer STOP -> Cálculo automático)
+  CERRADO     // Tarea cerrada por el creador
+  RECHAZADO   // Tarea rechazada por el creador
+  CANCELADA   // Tarea cancelada por el creador o admin
+}
+
+enum TipoEvento {
+  CREACION       // Nace el ticket
+  CAMBIO_ESTADO  // Avances, pausas, resoluciones, rechazos
+  ASIGNACION     // Cuando un Jefe o Coord delega la tarea
+}
+
+enum TipoTarea {
+  TICKET  
+  PLANEADA 
+  EXTRAORDINARIA 
+}
+
+enum ClasificacionTarea {
+  PREVENTIVO        // Calendario / Mantenimiento Mayor
+  CORRECTIVO        // Fallas / Reparaciones (Default de Tickets)
+  INSPECCION        // Checklists / Validaciones visuales
+  MEJORA            // Proyectos / Instalaciones nuevas
+  INFRAESTRUCTURA   // Edificio, Baños, Pintura, Servicios
+  RUTINA           // Limpieza, Reabastecimiento, Orden
+}
+
+// --- MODELOS ---
+
+model Departamento {
+  id        Int      @id @default(autoincrement())
+  nombre    String   @unique
+  
+  planta    String   
+  tipo      String   
+  
+  estado    Estatus  @default(ACTIVO)
+  usuarios  Usuario[]
+  tareas    Tarea[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Usuario {
+  id             Int       @id @default(autoincrement())
+  username       String    @unique
+  email          String?   @unique
+  password       String    
+  nombre         String
+  telefono       String?
+  cargo          String?   
+  imagen         String?
+  
+  rol            Rol       @default(CLIENTE_INTERNO)
+  estado         Estatus   @default(ACTIVO)
+
+  mustChangePassword Boolean @default(false)
+
+  departamentoId Int?
+  departamento   Departamento? @relation(fields: [departamentoId], references: [id])
+
+  tareasCreadas   Tarea[]   @relation("Creador")
+  tareasAsignadas Tarea[]   @relation("Responsables")
+
+  historialEventos HistorialTarea[]
+  bitacoras        Bitacora[]
+  
+  intervalosTiempo IntervaloTiempo[]
+  refreshTokens    RefreshToken[]
+  resetTokens PasswordResetToken[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Tarea {
+  id               Int                @id @default(autoincrement())
+  
+  // --- CLASIFICACIÓN DEL TRABAJO ---
+  tipo             TipoTarea          @default(TICKET)  
+  clasificacion    ClasificacionTarea @default(CORRECTIVO)
+  
+  titulo           String       
+  categoria        String?            
+  descripcion      String             @db.Text 
+  prioridad        Prioridad          @default(MEDIA)
+  
+  // --- UBICACIÓN ---
+  planta           String             @default("KAPPA")
+  area             String?       
+
+  // --- ESTADO Y FLUJO ---
+  estado           EstadoTarea        @default(PENDIENTE)
+  
+  fechaVencimiento DateTime?          
+  
+  tiempoEstimado   Int? 
+  
+  fechaInicio      DateTime?   
+  finalizadoAt     DateTime? 
+  
+  duracionReal     Int?               @default(0)
+
+  creadorId        Int
+  creador          Usuario            @relation("Creador", fields: [creadorId], references: [id])
+
+  departamentoId   Int?     
+  departamento     Departamento?      @relation(fields: [departamentoId], references: [id])
+
+  responsables     Usuario[]          @relation("Responsables") 
+  
+  historial        HistorialTarea[] 
+  imagenes         Imagen[]
+  
+  intervalos       IntervaloTiempo[]
+
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  // --- ÍNDICES DE RENDIMIENTO (PERFORMANCE) ---
+  // Estos son los "índices del libro" para que las búsquedas sean instantáneas
+  @@index([creadorId])         // Acelera: "Ver Mis Tickets"
+  @@index([departamentoId])    // Acelera: Filtrar por depto
+  @@index([estado])            // Acelera: Métricas y Dashboard (Agrupación)
+  @@index([createdAt])         // Acelera: Reportes por fecha (Mes/Semana)
+  @@index([titulo])            // Acelera: Buscador 'q'
+  @@index([tipo])              // Acelera: Filtro por Tipo (Ticket vs Planeada)
+}
+
+model HistorialTarea {
+  id             Int          @id @default(autoincrement())
+  
+  tareaId        Int
+  tarea          Tarea        @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+  
+  usuarioId      Int
+  usuario        Usuario      @relation(fields: [usuarioId], references: [id])
+  
+  tipo           TipoEvento
+  estadoAnterior EstadoTarea? 
+  estadoNuevo    EstadoTarea? 
+
+  nota           String?      @db.Text 
+  
+  imagenes       Imagen[]  
+  
+  createdAt      DateTime     @default(now())
+}
+
+model Imagen {
+  id          Int             @id @default(autoincrement())
+  url         String   
+  tipo        String?         
+  
+  tareaId     Int
+  tarea       Tarea           @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+
+  historialId Int?
+  historial   HistorialTarea? @relation(fields: [historialId], references: [id])
+
+  createdAt   DateTime        @default(now())
+}
+
+model Bitacora {
+  id        Int      @id @default(autoincrement())
+  accion    String   
+  detalles  String?  @db.Text
+  
+  usuarioId Int?     
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model IntervaloTiempo {
+  id        Int         @id @default(autoincrement())
+  
+  tareaId   Int
+  tarea     Tarea       @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+  
+  usuarioId Int       
+  usuario   Usuario     @relation(fields: [usuarioId], references: [id])
+  
+  estado    EstadoTarea 
+  
+  inicio    DateTime    @default(now())
+  fin       DateTime?
+  
+  duracion  Int? 
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  hashedToken String
+  
+  usuarioId   Int
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  
+  revoked     Boolean  @default(false)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  usuarioId Int
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
