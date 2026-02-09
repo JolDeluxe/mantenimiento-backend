@@ -5,6 +5,7 @@ import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
 
 import { 
+  listDepartamentosSchema, // <--- NUEVO: Para validar la paginación
   createDepartamentoSchema, 
   updateDepartamentoSchema, 
   patchDepartamentoSchema 
@@ -22,12 +23,13 @@ import { patchDepartamentoEstado } from "../modules/departamentos/04_patch";
 
 const router = Router();
 
-// --- RUTAS PÚBLICAS  ---
+// --- RUTAS PÚBLICAS (O HÍBRIDAS) ---
 
 // GET /api/departamentos
-router.get("/", listDepartamentos);
+// Ahora valida q, page y limit antes de entrar
+router.get("/", validate(listDepartamentosSchema), listDepartamentos);
 
-// --- RUTAS PROTEGIDAS  ---
+// --- RUTAS PROTEGIDAS ---
 
 router.use(authenticate);
 
@@ -35,6 +37,7 @@ router.use(authenticate);
 router.get(
   "/inactivos",
   authorize([Rol.SUPER_ADMIN]),
+  validate(listDepartamentosSchema), 
   listDepartamentosInactivos
 );
 

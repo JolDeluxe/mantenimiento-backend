@@ -5,6 +5,15 @@ const estatusArray = Object.values(Estatus) as [string, ...string[]];
 
 // --- SCHEMAS ---
 
+// Esquema para validación de filtros y paginación
+export const listDepartamentosSchema = z.object({
+  query: z.object({
+    q: z.string().optional(),
+    page: z.coerce.number().min(1).default(1),
+    limit: z.coerce.number().min(1).max(100).default(20),
+  }),
+});
+
 export const createDepartamentoSchema = z.object({
   body: z.object({
     nombre: z.string().min(3, "El nombre debe tener al menos 3 caracteres"),
