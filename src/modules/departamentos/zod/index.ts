@@ -42,3 +42,11 @@ export const patchDepartamentoSchema = z.object({
     estado: z.enum(estatusArray),
   }),
 });
+
+export const departamentoQuerySchema = z.object({
+  query: z.object({
+    q: z.string().optional(),
+    page: z.coerce.number().min(1).default(1),
+    limit: z.coerce.number().min(1).max(100).default(20),
+  }),
+});

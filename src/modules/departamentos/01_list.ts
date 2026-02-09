@@ -3,10 +3,10 @@ import { prisma } from "../../db";
 import { Rol, Estatus } from "@prisma/client";
 import { registrarError } from "../../utils/logger";
 
-// --- TRAE LA LISTA DE DEPARTAMENTOS ACTIVOS ---
+// --- LISTAR DEPARTAMENTOS ACTIVOS ---
 export const listDepartamentos = async (req: Request, res: Response) => {
   try {
-    const usuarioSolicitante = req.user; // Inyectado por middleware authenticate
+    const usuarioSolicitante = req.user; 
     const esSuperAdmin = usuarioSolicitante?.rol === Rol.SUPER_ADMIN;
 
     const { q, page, limit } = req.query;
@@ -16,13 +16,12 @@ export const listDepartamentos = async (req: Request, res: Response) => {
 
     const whereClause: any = {};
 
-    // Regla de Negocio: Si no es SuperAdmin, ocultar Mantenimiento y solo ver Activos
+    // Regla de Negocio: Ocultar Mantenimiento a no-admins
     if (!esSuperAdmin) {
       whereClause.nombre = { not: "Mantenimiento" };
       whereClause.estado = Estatus.ACTIVO;
     }
 
-    // Filtro de búsqueda por texto
     if (q && typeof q === 'string') {
       whereClause.OR = [
         { nombre: { contains: q } },
@@ -30,6 +29,7 @@ export const listDepartamentos = async (req: Request, res: Response) => {
       ];
     }
 
+    // Usamos el patrón de transacción que ya usas en Usuarios
     const [total, departamentos] = await prisma.$transaction([
       prisma.departamento.count({ where: whereClause }),
       prisma.departamento.findMany({
@@ -38,9 +38,7 @@ export const listDepartamentos = async (req: Request, res: Response) => {
         skip: offset,
         orderBy: { nombre: "asc" },
         include: {
-          _count: {
-            select: { usuarios: true }
-          }
+          _count: { select: { usuarios: true } }
         }
       })
     ]);
@@ -110,31 +108,24 @@ export const listDepartamentosInactivos = async (req: Request, res: Response) =>
   }
 };
 
-// --- OBTENER POR ID ---
+// getDepartamentoById se mantiene igual devolviendo el objeto único
 export const getDepartamentoById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const departamentoId = Number(id);
 
-    if (isNaN(departamentoId)) {
-      return res.status(400).json({ error: "ID de departamento inválido" });
-    }
+    if (isNaN(departamentoId)) return res.status(400).json({ error: "ID inválido" });
 
     const departamento = await prisma.departamento.findUnique({
       where: { id: departamentoId },
-      include: {
-        _count: { select: { usuarios: true } }
-      }
+      include: { _count: { select: { usuarios: true } } }
     });
 
-    if (!departamento) {
-      return res.status(404).json({ error: "Departamento no encontrado" });
-    }
+    if (!departamento) return res.status(404).json({ error: "No encontrado" });
 
     res.json(departamento);
-
   } catch (error) {
     await registrarError('GET_DEPARTAMENTO_ID', req.user?.id || null, error);
-    res.status(500).json({ error: "Error interno del servidor" });
+    res.status(500).json({ error: "Error interno" });
   }
 };
