@@ -1,55 +1,45 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { Rol } from "@prisma/client"; 
-import { z } from "zod";
-import type { CreateDepartamentoInput } from "./types";
 import { registrarAccion, registrarError } from "../../utils/logger";
+import { validarNombreUnico } from "./helper";
+import type { CreateDepartamentoInput } from "./types";
 
 export const createDepartamento = async (req: Request, res: Response) => {
-  const usuarioId = req.user?.id || null;
+  const usuarioId = req.user?.id; 
 
   try {
-    if (req.user?.rol !== Rol.SUPER_ADMIN) {
-      return res.status(403).json({ error: "No autorizado." });
-    }
-
     const { nombre, planta, tipo } = req.body as CreateDepartamentoInput;
-    const nombreLimpio = nombre.trim();
+    
+    const nombreFinal = nombre.trim().toUpperCase();
 
-    // Validar duplicados
-    const existe = await prisma.departamento.findUnique({
-      where: { nombre: nombreLimpio },
-    });
-
-    if (existe) {
-      return res.status(400).json({ error: `El departamento '${nombreLimpio}' ya existe.` });
+    const esNombreUnico = await validarNombreUnico(nombreFinal);
+    if (!esNombreUnico) {
+      return res.status(400).json({ 
+        error: `Ya existe el departamento '${nombreFinal}' en el sistema.` 
+      });
     }
 
-    // Creación
     const nuevoDepartamento = await prisma.departamento.create({
       data: { 
-        nombre: nombreLimpio,
-        planta: planta, 
-        tipo: tipo 
+        nombre: nombreFinal,
+        planta, 
+        tipo 
       },
     });
 
     await registrarAccion(
       'CREAR_DEPARTAMENTO', 
-      usuarioId, 
-      `Creó el departamento: ${nombreLimpio} (${planta} - ${tipo})`
+      usuarioId!, 
+      `Creó el departamento: ${nombreFinal}`
     );
 
     return res.status(201).json({
-      message: "Departamento creado",
+      message: "Departamento creado exitosamente",
       data: nuevoDepartamento
     });
 
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Datos inválidos", details: error.issues });
-    }
-    await registrarError('CREAR_DEPARTAMENTO', usuarioId, error);
+  } catch (error) {
+    await registrarError('CREAR_DEPARTAMENTO', usuarioId || 0, error);
     return res.status(500).json({ error: "Error interno al crear el departamento" });
   }
 };

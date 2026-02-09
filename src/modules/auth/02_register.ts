@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../../db";
 import { Rol } from "@prisma/client";
 import { type RegisterInput } from "./zod";
-import { generarUsername } from "../../utils/userGenerator";
+import { generarUsername } from "../usuarios/utils/userGenerator";
 import { registrarAccion, registrarError } from "../../utils/logger";
 
 export const register = async (req: Request, res: Response) => {

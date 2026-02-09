@@ -6,7 +6,7 @@ import { env } from "./env";
 
 // Utilidades del sistema
 import { iniciarTareasProgramadas } from './utils/scheduler';
-import { inicializarSistema } from "./utils/initSystem"; 
+import { inicializarSistema } from "./utils/setup"; 
 
 // Rutas
 import auth from "./routes/auth_rutas";

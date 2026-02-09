@@ -21,10 +21,7 @@ export const updateDepartamentoSchema = z.object({
     nombre: z.string().min(3).optional(),
     planta: z.string().min(1).optional(),
     tipo: z.string().min(1).optional(),
-    
-    estado: z.enum(estatusArray, {
-      message: "Estatus inválido"
-    }).optional(),
+    estado: z.enum(estatusArray).optional(),
   }),
 });
 
@@ -33,8 +30,6 @@ export const patchDepartamentoSchema = z.object({
     id: z.coerce.number().int().positive(),
   }),
   body: z.object({
-    estado: z.enum(estatusArray, {
-      message: "El estado solo puede ser ACTIVO o INACTIVO"
-    }),
+    estado: z.enum(estatusArray),
   }),
 });

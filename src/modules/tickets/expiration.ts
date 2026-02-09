@@ -2,7 +2,8 @@ import { prisma } from "../../db";
 import { EstadoTarea } from "@prisma/client";
 import { deleteImageByUrl } from "../../utils/cloudinary";
 
-const MESES_PARA_EXPIRAR = 1;
+// const MESES_PARA_EXPIRAR = 1;
+const DIAS_PARA_EXPIRAR = 1;
 const PATH_IMAGEN_PLACEHOLDER = "/img/no-image.avif"; 
 
 export const checkTicketExpiration = async (ticket: any, reqHost: string) => {
@@ -22,7 +23,7 @@ export const checkTicketExpiration = async (ticket: any, reqHost: string) => {
     // 2. Calcular fechas
     const fechaFinalizado = new Date(ticket.finalizadoAt);
     const fechaLimite = new Date();
-    fechaLimite.setDate(fechaLimite.getDate() - MESES_PARA_EXPIRAR);
+    fechaLimite.setDate(fechaLimite.getDate() - DIAS_PARA_EXPIRAR);
     // fechaLimite.setMonth(fechaLimite.getMonth() - MESES_PARA_EXPIRAR);
 
     // Si la fecha de finalización es MÁS RECIENTE que el límite, no hacemos nada

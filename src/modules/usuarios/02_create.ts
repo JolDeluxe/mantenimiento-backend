@@ -2,17 +2,16 @@ import type { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../db";
 import { Rol } from "@prisma/client";
-import { createUsuarioSchema } from "./zod"; // Importamos el Schema, no solo el tipo
-import { generarUsername } from "../../utils/userGenerator";
+import { createUsuarioSchema } from "./zod";
+import { generarUsername } from "./utils/userGenerator";
 import { validarReglasCreacion } from "./helper"; 
 import { registrarAccion, registrarError } from "../../utils/logger";
-import { uploadUserProfileImage } from "../../utils/cloudinary"; // <--- IMPORTANTE
+import { uploadUserProfileImage } from "../../utils/cloudinary";
 
 export const crearUsuario = async (req: Request, res: Response) => {
   try {
     const usuarioSolicitante = req.user!; 
 
-    // 1. LIMPIEZA DE DATOS (FormData convierte todo a string)
     // Hacemos una copia del body para arreglar los tipos
     const rawBody = { ...req.body };
 
@@ -40,7 +39,7 @@ export const crearUsuario = async (req: Request, res: Response) => {
     const { 
       nombre, email, password, rol, cargo, departamentoId, 
       username, telefono 
-    } = result.data; // Usamos los datos limpios y validados
+    } = result.data;
     
     // 3. REGLAS DE NEGOCIO
     let nombreDepartamentoObjetivo: string | null = null;

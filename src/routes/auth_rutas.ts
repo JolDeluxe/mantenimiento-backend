@@ -1,17 +1,24 @@
 import { Router } from "express";
 import { validate } from "../middlewares/validate";
 import { authenticate } from "../middlewares/authenticate";
-import { loginSchema,registerSchema } from "../modules/auth/zod";
+
+import { 
+  loginSchema, 
+  registerSchema, 
+  forgotPasswordSchema, 
+  resetPasswordSchema 
+} from "../modules/auth/zod";
+
 import { login } from "../modules/auth/01_login";
 import { register } from "../modules/auth/02_register";
 import { getProfile } from "../modules/auth/03_profile";
 import { changePassword } from "../modules/auth/04_change_password";
+import { forgotPassword } from "../modules/auth/05_forgot_password";
+import { resetPassword } from "../modules/auth/06_reset_password";
 
 const router = Router();
 
 // --- RUTAS PÚBLICAS ---
-
-// Login
 
 // POST /api/auth/login
 router.post(
@@ -20,8 +27,6 @@ router.post(
   login
 );
 
-//registro
-
 // POST /api/auth/register
 router.post(
   "/register",
@@ -29,22 +34,34 @@ router.post(
   register
 );
 
-// --- RUTAS PROTEGIDAS (Requieren Token) ---
+// POST /api/auth/forgot-password
+router.post(
+  "/forgot-password",
+  validate(forgotPasswordSchema),
+  forgotPassword
+);
 
-// ver perfil 
+// POST /api/auth/reset-password
+router.post(
+  "/reset-password",
+  validate(resetPasswordSchema),
+  resetPassword
+);
+
+// --- RUTAS PROTEGIDAS (Requieren Token) ---
 
 // GET /api/auth/me 
 router.get(
   "/me", 
   authenticate, 
-  getProfile);
-
-// cambiar contraseña
+  getProfile
+);
 
 // POST /api/auth/change-password
 router.post(
   "/change-password", 
   authenticate, 
-  changePassword);
+  changePassword
+);
 
 export default router;

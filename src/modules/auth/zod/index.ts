@@ -24,5 +24,23 @@ export const registerSchema = z.object({
   }),
 });
 
+export const forgotPasswordSchema = z.object({
+  body: z.object({
+    email: z.string()
+      .email({ message: "Formato de correo inválido" })
+      .min(1, { message: "El correo es obligatorio" }),
+  }),
+});
+
+export const resetPasswordSchema = z.object({
+  body: z.object({
+    token: z.string().min(1, { message: "El token es obligatorio" }),
+    password: z.string()
+      .min(6, { message: "La nueva contraseña debe tener al menos 6 caracteres" }),
+  }),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>['body'];
 export type LoginInput = z.infer<typeof loginSchema>['body'];
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>['body'];
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>['body'];
