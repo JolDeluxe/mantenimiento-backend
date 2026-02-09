@@ -15,6 +15,8 @@ import { getProfile } from "../modules/auth/03_profile";
 import { changePassword } from "../modules/auth/04_change_password";
 import { forgotPassword } from "../modules/auth/05_forgot_password";
 import { resetPassword } from "../modules/auth/06_reset_password";
+import { refreshSession } from "../modules/auth/07_refresh";
+import { logout } from "../modules/auth/08_logout";
 
 const router = Router();
 
@@ -48,6 +50,12 @@ router.post(
   resetPassword
 );
 
+// POST /api/auth/refresh
+router.post(
+  "/refresh", 
+  refreshSession
+);
+
 // --- RUTAS PROTEGIDAS (Requieren Token) ---
 
 // GET /api/auth/me 
@@ -63,5 +71,11 @@ router.post(
   authenticate, 
   changePassword
 );
+
+// POST /api/auth/logout
+router.post(
+  "/logout",
+  authenticate, 
+  logout);
 
 export default router;
