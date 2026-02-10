@@ -1,8 +1,8 @@
 import express from "express";
-import cors from "cors";
 import path from "path";
 import morgan from 'morgan';
 import { env } from "./env";
+import { corsMiddleware } from "./middlewares/cors";
 
 // Utilidades del sistema
 import { iniciarTareasProgramadas } from './utils/scheduler';
@@ -19,7 +19,7 @@ const app = express();
 
 // --- MIDDLEWARES ---
 app.use(express.json());
-app.use(cors()); 
+app.use(corsMiddleware);
 app.use(morgan('dev'));
 
 // --- CONFIGURACIÓN DE ARCHIVOS ESTÁTICOS ---
