@@ -23,6 +23,11 @@ export const env = createEnv({
     SMTP_PORT: z.coerce.number().default(587),
     SMTP_USER: z.string().email({ message: "Correo SMTP inválido" }),
     SMTP_PASS: z.string().min(1),
+
+    // --- WEB PUSH ---
+    VAPID_PUBLIC_KEY: z.string().min(1),
+    VAPID_PRIVATE_KEY: z.string().min(1),
+    VAPID_MAILTO: z.string().email().or(z.string().startsWith("mailto:")),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

@@ -105,6 +105,8 @@ model Usuario {
   intervalosTiempo IntervaloTiempo[]
   refreshTokens    RefreshToken[]
   resetTokens PasswordResetToken[]
+  pushSubscriptions PushSubscription[]
+  notificacionesLog NotificacionLog[]
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -245,4 +247,41 @@ model PasswordResetToken {
   usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   createdAt DateTime @default(now())
+}
+
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  endpoint  String   @unique @db.VarChar(500) // URL única del navegador
+  p256dh    String   @db.Text // Llave de encriptación pública
+  auth      String   @db.Text // Llave de autenticación
+  
+  usuarioId Int
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+
+  lastSuccess DateTime?
+  failureCount Int      @default(0)
+
+  @@index([usuarioId])
+}
+
+model NotificacionLog {
+  id          String   @id @default(uuid())
+  
+  usuarioId   Int
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+  
+  titulo      String
+  cuerpo      String   @db.Text
+  
+  // Metricas
+  dispositivosObjetivo Int
+  enviadosExito        Int 
+  fallidos             Int 
+  
+  createdAt   DateTime @default(now())
+
+  @@index([usuarioId])
+  @@index([createdAt])
 }
