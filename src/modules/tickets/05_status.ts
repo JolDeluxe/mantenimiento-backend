@@ -2,8 +2,10 @@ import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { changeStatusSchema } from "./zod";
 import { EstadoTarea, TipoEvento, Rol } from "@prisma/client";
-import { registrarError } from "../../utils/logger";
+import { registrarError, registrarAccion } from "../../utils/logger";
 import { processTicketImages } from "./create/helper_upload";
+// --- NUEVO IMPORT ---
+import { notificarCambioEstatus } from "../notificaciones/services"; 
 
 export const changeTicketStatus = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -37,9 +39,10 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
 
   try {
     // 3. OBTENER TICKET
+    // MODIFICACIÓN: Traemos 'responsables: true' completo para pasar el objeto al servicio de notificaciones sin errores de tipo
     const ticket = await prisma.tarea.findUnique({
       where: { id: ticketId },
-      include: { responsables: { select: { id: true } } }
+      include: { responsables: true } 
     });
 
     if (!ticket) return res.status(404).json({ error: "Ticket no encontrado" });
@@ -49,7 +52,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
     const esCliente = user.rol === Rol.CLIENTE_INTERNO;
     const esTecnico = user.rol === Rol.TECNICO;
     
-    // CORRECCIÓN 1: Casteamos el array a Rol[] para que .includes no llore
+    // Casteamos el array a Rol[] para compatibilidad TS
     const esAdminJefe = ([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO] as Rol[]).includes(user.rol);
     
     const esCreador = ticket.creadorId === user.id;
@@ -155,7 +158,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
                 usuarioId: user.id,
                 tipo: TipoEvento.CAMBIO_ESTADO,
                 estadoAnterior: ticket.estado,
-                // CORRECCIÓN 2: Forzamos el tipo 'as EstadoTarea' para calmar a Prisma/TS
+                // Forzamos el tipo 'as EstadoTarea' para calmar a Prisma/TS si viene como string
                 estadoNuevo: nuevoEstado as EstadoTarea,
                 nota: nota || `Cambio de estado: ${ticket.estado} -> ${nuevoEstado}`
             }
@@ -180,6 +183,20 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
 
         return tareaActualizada;
     });
+
+    // --- INTEGRACIÓN DE NOTIFICACIONES ---
+    // Usamos el objeto 'ticket' original que ya tiene los responsables cargados.
+    // 'user.id' es el actorId para evitar auto-notificaciones.
+    void notificarCambioEstatus(ticket, nuevoEstado as EstadoTarea, user.id);
+    // -------------------------------------
+
+    // --- LOGGING EN BITÁCORA ---
+    await registrarAccion(
+        "CAMBIO_ESTATUS", 
+        user.id, 
+        `Ticket ${ticketId}: ${ticket.estado} -> ${nuevoEstado} (Usuario: ${user.email})`
+    );
+    // ---------------------------
 
     return res.json({ message: "Estatus actualizado correctamente", data: result });
 

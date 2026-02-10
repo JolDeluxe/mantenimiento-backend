@@ -2,10 +2,11 @@ import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { updateTicketSchema } from "./zod";
 import { EstadoTarea, TipoEvento, Prioridad, TipoTarea, ClasificacionTarea, Rol } from "@prisma/client";
-import { registrarError } from "../../utils/logger";
+import { registrarError, registrarAccion } from "../../utils/logger";
 import { isAdminOrJefe } from "./helper";
 import { processTicketImages } from "./create/helper_upload";
 import { deleteImageByUrl } from "../../utils/cloudinary";
+import { notificarAsignacionTarea } from "../notificaciones/services"; 
 
 export const updateTicket = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -124,7 +125,8 @@ export const updateTicket = async (req: Request, res: Response) => {
                 responsables: idsResponsables ? { set: idsResponsables } : undefined,
                 tipo: esAdmin ? (data.tipo as TipoTarea) : undefined,
                 clasificacion: esAdmin ? (data.clasificacion as ClasificacionTarea) : undefined,
-            }
+            },
+            include: { responsables: true } // Incluimos para la notificación
         });
 
         // 6. Generar notas de historial
@@ -187,6 +189,22 @@ export const updateTicket = async (req: Request, res: Response) => {
 
         return tareaActualizada;
     });
+
+    // --- INTEGRACIÓN DE NOTIFICACIONES ---
+    if (cambioDeResponsables && data.responsables && data.responsables.length > 0) {
+        // Notificamos a los nuevos técnicos asignados
+        void notificarAsignacionTarea(result, data.responsables);
+    }
+    // -------------------------------------
+
+    // --- LOGGING EN BITÁCORA ---
+    // Corrección: Usamos user.email ya que username no existe en el token
+    await registrarAccion(
+        "UPDATE_TAREA", 
+        user.id, 
+        `Actualización Tarea ID: ${ticketId}. Usuario: ${user.email}`
+    );
+    // ---------------------------
 
     return res.json({ message: "Actualización correcta", data: result });
 

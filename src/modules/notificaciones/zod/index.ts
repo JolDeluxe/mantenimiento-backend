@@ -1,9 +1,11 @@
 import { z } from "zod";
 
 export const subscriptionSchema = z.object({
-  endpoint: z.string().url(),
-  keys: z.object({
-    p256dh: z.string(),
-    auth: z.string(),
+  body: z.object({
+    endpoint: z.string().url({ message: "El endpoint debe ser una URL válida" }),
+    keys: z.object({
+      p256dh: z.string({ message: "Falta la llave p256dh" }),
+      auth: z.string({ message: "Falta la llave auth" }),
+    }),
   }),
 });

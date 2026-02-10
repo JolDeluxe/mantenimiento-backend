@@ -2,8 +2,10 @@ import type { Request, Response } from "express";
 import { prisma } from "../../../db";
 import { createTicketClientSchema } from "../zod";
 import { EstadoTarea, TipoEvento, TipoTarea, Prioridad, ClasificacionTarea } from "@prisma/client";
-import { registrarError } from "../../../utils/logger";
+// --- SE AGREGÓ registrarAccion AL IMPORT ---
+import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "./helper_upload";
+import { notificarNuevoReporte } from "../../notificaciones/services";
 
 export const createTicketCliente = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -56,6 +58,11 @@ export const createTicketCliente = async (req: Request, res: Response) => {
           fechaInicio: null,
           finalizadoAt: null,
           duracionReal: 0,
+        },
+        // --- CORRECCIÓN AQUÍ ---
+        // Incluimos al creador para tener su nombre y cumplir con el tipo 'Usuario'
+        include: {
+          creador: true 
         }
       });
 
@@ -82,6 +89,19 @@ export const createTicketCliente = async (req: Request, res: Response) => {
 
       return nuevaTarea;
     });
+
+    // --- INTEGRACIÓN DE NOTIFICACIONES ---
+    // Usamos 'result.creador' que viene de la DB y sí es compatible con el tipo Usuario
+    void notificarNuevoReporte(result, result.creador);
+    // -------------------------------------
+
+    // --- LOGGING EN BITÁCORA ---
+    await registrarAccion(
+        "CREAR_TICKET_CLIENTE", 
+        user.id, 
+        `Ticket creado ID: ${result.id} | Título: ${result.titulo}`
+    );
+    // ---------------------------
 
     return res.status(201).json({
         message: "Ticket creado exitosamente. Mantenimiento ha sido notificado.",

@@ -1,4 +1,5 @@
 import { Rol } from "@prisma/client";
+import { prisma } from "../../db";
 
 /**
  * Define los filtros de seguridad basados en el rol del usuario para LISTAR.
@@ -167,4 +168,31 @@ export const validarReglasDesactivacion = (
   }
 
   throw new Error("Acceso denegado. No tienes permisos para cambiar el estatus de usuarios.");
+};
+
+
+/**
+ * Retorna los IDs de usuarios activos que tengan cualquiera de los roles especificados.
+ * Útil para notificaciones masivas a Jefes o Coordinadores.
+ */
+export const obtenerIdsPorRol = async (roles: Rol[]): Promise<number[]> => {
+  const usuarios = await prisma.usuario.findMany({
+    where: {
+      rol: { in: roles },
+      estado: "ACTIVO",
+    },
+    select: { id: true },
+  });
+  return usuarios.map((u) => u.id);
+};
+
+/**
+ * Verifica si un usuario existe y está activo.
+ */
+export const obtenerIdUsuarioActivo = async (id: number): Promise<number | null> => {
+  const usuario = await prisma.usuario.findUnique({
+    where: { id, estado: "ACTIVO" },
+    select: { id: true }
+  });
+  return usuario ? usuario.id : null;
 };

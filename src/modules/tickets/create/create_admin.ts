@@ -2,8 +2,10 @@ import type { Request, Response } from "express";
 import { prisma } from "../../../db"; 
 import { createTicketAdminSchema } from "../zod";
 import { EstadoTarea, TipoEvento, Rol, TipoTarea, ClasificacionTarea, Prioridad } from "@prisma/client";
-import { registrarError } from "../../../utils/logger";
+// --- SE AGREGÓ registrarAccion AL IMPORT ---
+import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "./helper_upload";
+import { notificarAsignacionTarea } from "../../notificaciones/services";
 
 export const createTicketAdmin = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -141,6 +143,21 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
 
       return nuevaTarea;
     });
+
+    // --- INTEGRACIÓN DE NOTIFICACIONES ---
+    if (data.responsables && data.responsables.length > 0) {
+        // "Fire and forget": No usamos await para no retrasar la respuesta
+        void notificarAsignacionTarea(result, data.responsables);
+    }
+    // -------------------------------------
+
+    // --- LOGGING EN BITÁCORA ---
+    await registrarAccion(
+        "CREAR_TAREA_ADMIN", 
+        user.id, 
+        `Tarea creada ID: ${result.id} | Título: ${result.titulo}`
+    );
+    // ---------------------------
 
     return res.status(201).json({
         message: "Tarea administrativa creada correctamente.",
