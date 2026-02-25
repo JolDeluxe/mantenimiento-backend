@@ -30,20 +30,20 @@ enum Prioridad {
 }
 
 enum EstadoTarea {
-  PENDIENTE   // Sin tecnico por asignar  
-  ASIGNADA    // Tecnico asignado, no iniciada
-  EN_PROGRESO // Tecnico ha iniciado la tarea (Timer ON)
-  EN_PAUSA    // Tarea en pausa (Timer PAUSE - Opcional)
-  RESUELTO    // Tarea completada (Timer STOP -> Cálculo automático)
-  CERRADO     // Tarea cerrada por el creador
-  RECHAZADO   // Tarea rechazada por el creador
-  CANCELADA   // Tarea cancelada por el creador o admin
+  PENDIENTE   
+  ASIGNADA    
+  EN_PROGRESO 
+  EN_PAUSA    
+  RESUELTO    
+  CERRADO     
+  RECHAZADO   
+  CANCELADA   
 }
 
 enum TipoEvento {
-  CREACION       // Nace el ticket
-  CAMBIO_ESTADO  // Avances, pausas, resoluciones, rechazos
-  ASIGNACION     // Cuando un Jefe o Coord delega la tarea
+  CREACION       
+  CAMBIO_ESTADO  
+  ASIGNACION     
 }
 
 enum TipoTarea {
@@ -53,19 +53,19 @@ enum TipoTarea {
 }
 
 enum ClasificacionTarea {
-  PREVENTIVO        // Calendario / Mantenimiento Mayor
-  CORRECTIVO        // Fallas / Reparaciones (Default de Tickets)
-  INSPECCION        // Checklists / Validaciones visuales
-  MEJORA            // Proyectos / Instalaciones nuevas
-  INFRAESTRUCTURA   // Edificio, Baños, Pintura, Servicios
-  RUTINA           // Limpieza, Reabastecimiento, Orden
+  PREVENTIVO        
+  CORRECTIVO        
+  INSPECCION        
+  MEJORA            
+  INFRAESTRUCTURA   
+  RUTINA           
 }
 
 // --- MODELOS ---
 
 model Departamento {
-  id        Int      @id @default(autoincrement())
-  nombre    String   @unique
+  id        Int       @id @default(autoincrement())
+  nombre    String    @unique
   
   planta    String   
   tipo      String   
@@ -94,7 +94,8 @@ model Usuario {
   mustChangePassword Boolean @default(false)
 
   departamentoId Int?
-  departamento   Departamento? @relation(fields: [departamentoId], references: [id])
+  // Restricción explícita: si se borra el depto, el usuario queda sin depto (null)
+  departamento   Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
   tareasCreadas   Tarea[]   @relation("Creador")
   tareasAsignadas Tarea[]   @relation("Responsables")
@@ -119,7 +120,8 @@ model Tarea {
   tipo             TipoTarea          @default(TICKET)  
   clasificacion    ClasificacionTarea @default(CORRECTIVO)
   
-  titulo           String       
+  // Límite explícito para evitar errores en índices de MySQL
+  titulo           String             @db.VarChar(255) 
   categoria        String?            
   descripcion      String             @db.Text 
   prioridad        Prioridad          @default(MEDIA)
@@ -141,10 +143,12 @@ model Tarea {
   duracionReal     Int?               @default(0)
 
   creadorId        Int
-  creador          Usuario            @relation("Creador", fields: [creadorId], references: [id])
+  // Evita borrar a un usuario si tiene tareas creadas
+  creador          Usuario            @relation("Creador", fields: [creadorId], references: [id], onDelete: Restrict)
 
   departamentoId   Int?     
-  departamento     Departamento?      @relation(fields: [departamentoId], references: [id])
+  // Si se borra el departamento, la tarea queda sin departamento
+  departamento     Departamento?      @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
   responsables     Usuario[]          @relation("Responsables") 
   
@@ -157,13 +161,15 @@ model Tarea {
   updatedAt        DateTime           @updatedAt
 
   // --- ÍNDICES DE RENDIMIENTO (PERFORMANCE) ---
-  // Estos son los "índices del libro" para que las búsquedas sean instantáneas
-  @@index([creadorId])         // Acelera: "Ver Mis Tickets"
-  @@index([departamentoId])    // Acelera: Filtrar por depto
-  @@index([estado])            // Acelera: Métricas y Dashboard (Agrupación)
-  @@index([createdAt])         // Acelera: Reportes por fecha (Mes/Semana)
-  @@index([titulo])            // Acelera: Buscador 'q'
-  @@index([tipo])              // Acelera: Filtro por Tipo (Ticket vs Planeada)
+  @@index([creadorId])         
+  @@index([departamentoId])    
+  @@index([estado])            
+  @@index([createdAt])         
+  @@index([titulo])            
+  @@index([tipo])              
+  // Índices compuestos para búsquedas comunes más rápidas
+  @@index([departamentoId, estado]) 
+  @@index([creadorId, createdAt])   
 }
 
 model HistorialTarea {
@@ -173,7 +179,7 @@ model HistorialTarea {
   tarea          Tarea        @relation(fields: [tareaId], references: [id], onDelete: Cascade)
   
   usuarioId      Int
-  usuario        Usuario      @relation(fields: [usuarioId], references: [id])
+  usuario        Usuario      @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
   
   tipo           TipoEvento
   estadoAnterior EstadoTarea? 
@@ -195,7 +201,7 @@ model Imagen {
   tarea       Tarea           @relation(fields: [tareaId], references: [id], onDelete: Cascade)
 
   historialId Int?
-  historial   HistorialTarea? @relation(fields: [historialId], references: [id])
+  historial   HistorialTarea? @relation(fields: [historialId], references: [id], onDelete: SetNull)
 
   createdAt   DateTime        @default(now())
 }
@@ -206,7 +212,7 @@ model Bitacora {
   detalles  String?  @db.Text
   
   usuarioId Int?     
-  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 }
@@ -218,7 +224,7 @@ model IntervaloTiempo {
   tarea     Tarea       @relation(fields: [tareaId], references: [id], onDelete: Cascade)
   
   usuarioId Int       
-  usuario   Usuario     @relation(fields: [usuarioId], references: [id])
+  usuario   Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
   
   estado    EstadoTarea 
   
@@ -250,37 +256,36 @@ model PasswordResetToken {
 }
 
 model PushSubscription {
-  id        Int      @id @default(autoincrement())
-  endpoint  String   @unique @db.VarChar(500) // URL única del navegador
-  p256dh    String   @db.Text // Llave de encriptación pública
-  auth      String   @db.Text // Llave de autenticación
+  id           Int      @id @default(autoincrement())
+  endpoint     String   @unique @db.VarChar(500) 
+  p256dh       String   @db.Text 
+  auth         String   @db.Text 
   
-  usuarioId Int
-  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId    Int
+  usuario      Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   
-  createdAt DateTime @default(now())
+  createdAt    DateTime @default(now())
 
-  lastSuccess DateTime?
+  lastSuccess  DateTime?
   failureCount Int      @default(0)
 
   @@index([usuarioId])
 }
 
 model NotificacionLog {
-  id          String   @id @default(uuid())
+  id                   String   @id @default(uuid())
   
-  usuarioId   Int
-  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+  usuarioId            Int
+  usuario              Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
   
-  titulo      String
-  cuerpo      String   @db.Text
+  titulo               String
+  cuerpo               String   @db.Text
   
-  // Metricas
   dispositivosObjetivo Int
   enviadosExito        Int 
   fallidos             Int 
   
-  createdAt   DateTime @default(now())
+  createdAt            DateTime @default(now())
 
   @@index([usuarioId])
   @@index([createdAt])
