@@ -5,14 +5,11 @@ import { prisma } from "../../db";
 import { env } from "../../env";
 import { generateAccessToken } from "./utils/tokenGenerator";
 import type { TokenPayload } from "./types";
+import type { RefreshTokenInput } from "./zod";
 
 export const refreshSession = async (req: Request, res: Response) => {
   try {
-    const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      return res.status(401).json({ status: "error", message: "Token de refresco requerido" });
-    }
+    const { refreshToken } = req.body as RefreshTokenInput;
 
     // a) Verificar validez del JWT (firma y expiración física)
     const decoded = jwt.verify(refreshToken, env.JWT_SECRET) as { id: number };

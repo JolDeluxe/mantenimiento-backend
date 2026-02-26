@@ -2,15 +2,12 @@ import { type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../db";
 import { registrarAccion } from "../../utils/logger";
+import type { RefreshTokenInput } from "./zod";
 
 export const logout = async (req: Request, res: Response) => {
   try {
-    const { refreshToken } = req.body;
+    const { refreshToken } = req.body as RefreshTokenInput;
     const usuarioId = req.user?.id;
-
-    if (!refreshToken) {
-      return res.status(400).json({ status: "error", message: "Token requerido" });
-    }
 
     // Buscar los tokens activos del usuario
     const storedTokens = await prisma.refreshToken.findMany({

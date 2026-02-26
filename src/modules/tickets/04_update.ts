@@ -1,56 +1,25 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { updateTicketSchema } from "./zod";
 import { EstadoTarea, TipoEvento, Prioridad, TipoTarea, ClasificacionTarea, Rol } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../utils/logger";
 import { isAdminOrJefe } from "./helper";
 import { processTicketImages } from "./create/helper_upload";
 import { deleteImageByUrl } from "../../utils/cloudinary";
 import { notificarAsignacionTarea } from "../notificaciones/services"; 
+import type { UpdateTicketParams, UpdateTicketInput } from "./zod";
 
 export const updateTicket = async (req: Request, res: Response) => {
   const user = req.user!;
-  const ticketId = Number(req.params.id);
-
-  if (isNaN(ticketId)) return res.status(400).json({ error: "ID inválido" });
-
-  const rawBody = { ...req.body };
-
-  // --- Limpieza de datos (Arrays y Fechas) ---
-  if (rawBody.responsables) {
-      if (!Array.isArray(rawBody.responsables)) rawBody.responsables = [rawBody.responsables];
-      rawBody.responsables = rawBody.responsables.map((id: string) => Number(id));
-  }
-
-  if (rawBody.imagenesEliminadas) {
-      if (!Array.isArray(rawBody.imagenesEliminadas)) rawBody.imagenesEliminadas = [rawBody.imagenesEliminadas];
-      rawBody.imagenesEliminadas = rawBody.imagenesEliminadas.map((id: string) => Number(id));
-  }
-
-  if (rawBody.fechaVencimiento === "" || rawBody.fechaVencimiento === "null") delete rawBody.fechaVencimiento;
-
-  // --- Procesamiento de Imágenes Nuevas ---
-  let urlsImagenesNuevas: string[] = [];
-  try {
-      const files = req.files as Express.Multer.File[] | undefined;
-      urlsImagenesNuevas = await processTicketImages(files);
-  } catch (error) {
-      return res.status(500).json({ error: "Error al subir evidencias nuevas." });
-  }
-
-  if (urlsImagenesNuevas.length > 0) {
-      rawBody.imagenes = urlsImagenesNuevas;
-  }
-
-  // --- Validación Zod ---
-  const validation = updateTicketSchema.safeParse(rawBody);
-  if (!validation.success) {
-    return res.status(400).json({ error: "Datos inválidos", details: validation.error.issues });
-  }
-  const data = validation.data;
+  const { id: ticketId } = req.params as unknown as UpdateTicketParams;
+  const data = req.body as UpdateTicketInput;
 
   try {
-    // 1. Obtener tarea actual
+    const files = req.files as Express.Multer.File[] | undefined;
+    const urlsImagenesNuevas = await processTicketImages(files);
+    if (urlsImagenesNuevas.length > 0) {
+      data.imagenes = urlsImagenesNuevas;
+    }
+
     const tareaActual = await prisma.tarea.findUnique({
       where: { id: ticketId },
       include: { responsables: { select: { id: true } } }
@@ -58,7 +27,6 @@ export const updateTicket = async (req: Request, res: Response) => {
 
     if (!tareaActual) return res.status(404).json({ error: "Tarea no encontrada" });
 
-    // 2. Validación de Permisos y Roles
     const esAdmin = isAdminOrJefe(user.rol);
     const esCliente = user.rol === Rol.CLIENTE_INTERNO;
     const esCreador = tareaActual.creadorId === user.id;
@@ -74,7 +42,6 @@ export const updateTicket = async (req: Request, res: Response) => {
         return res.status(403).json({ error: "No tienes permisos para editar esta tarea." });
     }
 
-    // 3. Lógica Administrativa (Responsables y Estado)
     let nuevoEstado = tareaActual.estado;
     let cambioDeResponsables = false;
     let idsResponsables: { id: number }[] | undefined = undefined;
@@ -97,7 +64,6 @@ export const updateTicket = async (req: Request, res: Response) => {
         }
     }
 
-    // 4. Lógica Administrativa (Fechas)
     let nuevaFechaVencimiento = undefined;
     if (data.fechaVencimiento && esAdmin) { 
         const fecha = new Date(data.fechaVencimiento);
@@ -106,32 +72,25 @@ export const updateTicket = async (req: Request, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-        
-        // 5. Actualización en BD (Separación de campos por Rol)
         const tareaActualizada = await tx.tarea.update({
             where: { id: ticketId },
             data: {
-                // Campos del Cliente (Contenido)
                 titulo: esCliente ? data.titulo : undefined,
                 descripcion: esCliente ? data.descripcion : undefined,
                 categoria: esCliente ? data.categoria : undefined,
                 planta: esCliente ? data.planta : undefined,
                 area: esCliente ? data.area : undefined,
-
-                // Campos del Admin (Gestión)
-                prioridad: esAdmin ? (data.prioridad as Prioridad) : undefined,
+                prioridad: esAdmin ? data.prioridad : undefined,
                 fechaVencimiento: nuevaFechaVencimiento,
                 estado: nuevoEstado,
                 responsables: idsResponsables ? { set: idsResponsables } : undefined,
-                tipo: esAdmin ? (data.tipo as TipoTarea) : undefined,
-                clasificacion: esAdmin ? (data.clasificacion as ClasificacionTarea) : undefined,
+                tipo: esAdmin ? data.tipo : undefined,
+                clasificacion: esAdmin ? data.clasificacion : undefined,
             },
-            include: { responsables: true } // Incluimos para la notificación
+            include: { responsables: true }
         });
 
-        // 6. Generar notas de historial
         let notasCambio: string[] = [];
-
         if (esAdmin) {
             if (cambioDeResponsables) {
                 const num = data.responsables!.length;
@@ -148,7 +107,6 @@ export const updateTicket = async (req: Request, res: Response) => {
             if (data.imagenesEliminadas?.length) notasCambio.push("Cliente eliminó fotos erróneas");
         }
 
-        // 7. Borrado físico de imágenes (Solo permitido al Cliente en corrección)
         if (data.imagenesEliminadas && data.imagenesEliminadas.length > 0 && esCliente) {
             const imagenesABorrar = await tx.imagen.findMany({
                 where: { id: { in: data.imagenesEliminadas }, tareaId: ticketId }
@@ -162,7 +120,6 @@ export const updateTicket = async (req: Request, res: Response) => {
             }
         }
 
-        // 8. Crear Historial
         if (notasCambio.length > 0 || (data.imagenes && data.imagenes.length > 0)) {
             const historial = await tx.historialTarea.create({
                 data: {
@@ -190,22 +147,11 @@ export const updateTicket = async (req: Request, res: Response) => {
         return tareaActualizada;
     });
 
-    // --- INTEGRACIÓN DE NOTIFICACIONES ---
     if (cambioDeResponsables && data.responsables && data.responsables.length > 0) {
-        // Notificamos a los nuevos técnicos asignados
         void notificarAsignacionTarea(result, data.responsables);
     }
-    // -------------------------------------
 
-    // --- LOGGING EN BITÁCORA ---
-    // Corrección: Usamos user.email ya que username no existe en el token
-    await registrarAccion(
-        "UPDATE_TAREA", 
-        user.id, 
-        `Actualización Tarea ID: ${ticketId}. Usuario: ${user.email}`
-    );
-    // ---------------------------
-
+    await registrarAccion("UPDATE_TAREA", user.id, `Actualización Tarea ID: ${ticketId}. Usuario: ${user.email}`);
     return res.json({ message: "Actualización correcta", data: result });
 
   } catch (error) {

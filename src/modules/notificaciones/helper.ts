@@ -3,30 +3,24 @@ import { prisma } from "../../db";
 import { env } from "../../env";
 import { registrarError } from "../../utils/logger";
 import type { PushSubscription } from "@prisma/client";
+import type { NotificationPayload } from "./types";
 
-// Configuración inicial (se mantiene igual)
+// Configuración inicial
 webpush.setVapidDetails(
   env.VAPID_MAILTO,
   env.VAPID_PUBLIC_KEY,
   env.VAPID_PRIVATE_KEY
 );
 
-interface NotificationPayload {
-  title: string;
-  body: string;
-  url?: string;
-  icon?: string;
-}
-
 export const enviarNotificacionPush = async (
   usuarioId: number,
   payload: NotificationPayload
 ) => {
   // 1. Crear el registro en BITÁCORA (Estado inicial)
-  // Lo creamos antes de enviar para tener constancia del intento
+  // Regresamos a la forma pura y directa de Prisma. Cero condiciones, 100% type-safe.
   const log = await prisma.notificacionLog.create({
     data: {
-      usuarioId,
+      usuarioId, // <-- La solución. Directo y sin intermediarios.
       titulo: payload.title,
       cuerpo: payload.body,
       dispositivosObjetivo: 0,
@@ -84,7 +78,6 @@ export const enviarNotificacionPush = async (
           await prisma.pushSubscription.delete({ where: { id: sub.id } });
         } else {
           // Caso: Error de red o servidor -> Aumentar contador de fallos
-          // Si falla más de 5 veces seguidas, podríamos considerarlo muerto en el futuro
           await prisma.pushSubscription.update({
             where: { id: sub.id },
             data: { failureCount: { increment: 1 } },
@@ -107,7 +100,6 @@ export const enviarNotificacionPush = async (
     });
 
   } catch (error) {
-    // Si falla algo catastrófico (ej: DB caída), lo registramos en tu logger global
     await registrarError("PUSH_SYSTEM_CRITICAL", usuarioId, error);
   }
 };

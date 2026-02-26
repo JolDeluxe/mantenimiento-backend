@@ -3,19 +3,8 @@ import { obtenerIdsPorRol } from "../usuarios/helper";
 import { Rol, EstadoTarea } from "@prisma/client"; 
 import type { Tarea, Usuario } from "@prisma/client"; 
 import { registrarError } from "../../utils/logger";
+import type { PayloadBase, TareaConRelaciones } from "./types";
 
-// --- TIPOS ---
-interface PayloadBase {
-  titulo: string;
-  cuerpo: string;
-  url: string;
-}
-
-// Tipo extendido para asegurar que la tarea traiga sus relaciones necesarias
-type TareaConRelaciones = Tarea & {
-  creador?: Usuario | null;
-  responsables?: Usuario[];
-};
 
 /**
  * Orquestador interno para envío masivo seguro

@@ -5,10 +5,11 @@ import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
 
 import { 
-  listDepartamentosSchema, // <--- NUEVO: Para validar la paginación
+  listDepartamentosSchema,
   createDepartamentoSchema, 
   updateDepartamentoSchema, 
-  patchDepartamentoSchema 
+  patchDepartamentoSchema,
+  getDepartamentoByIdSchema
 } from "../modules/departamentos/zod";
 
 import { 
@@ -41,7 +42,12 @@ router.get(
   listDepartamentosInactivos
 );
 
-router.get("/:id", getDepartamentoById);
+// GET /api/departamentos/:id
+router.get(
+  "/:id", 
+  validate(getDepartamentoByIdSchema), 
+  getDepartamentoById
+);
 
 // POST /api/departamentos
 router.post(

@@ -9,3 +9,5 @@ export const subscriptionSchema = z.object({
     }),
   }),
 });
+
+export type SubscriptionInput = z.infer<typeof subscriptionSchema>["body"];

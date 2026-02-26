@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { Rol } from "@prisma/client";
+import { Rol, Prisma } from "@prisma/client";
 import { registrarError } from "../../utils/logger";
+import type { ListBitacoraQuery } from "./zod";
 
 export const getBitacora = async (req: Request, res: Response) => {
   try {
@@ -10,48 +11,37 @@ export const getBitacora = async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Acceso denegado. Solo administradores." });
     }
 
-    const { page, limit, tipo, usuarioId } = req.query;
+    // Extraemos los datos ya limpios y validados por Zod
+    const { page, limit, tipo, usuarioId, sort } = req.query as unknown as ListBitacoraQuery;
+    const offset = (page - 1) * limit;
 
-    // Paginación
-    const pageNum = Math.max(1, Number(page) || 1);
-    const limitNum = Math.max(1, Number(limit) || 100);
-    const offset = (pageNum - 1) * limitNum;
+    // Construcción del filtro con tipos estrictos de Prisma
+    const whereClause: Prisma.BitacoraWhereInput = {};
 
-    // Construcción del filtro (Where)
-    const whereClause: any = {};
-
-    // Filtro: Tipo de Log
     if (tipo === 'errores') {
-      // Busca acciones que empiecen con "ERROR" o contengan "FALLIDO"
       whereClause.OR = [
         { accion: { startsWith: 'ERROR' } },
         { accion: { contains: 'FALLIDO' } },
         { accion: { contains: 'FAIL' } }
       ];
     } else if (tipo === 'acciones') {
-      // Excluye los errores
       whereClause.AND = [
         { accion: { not: { startsWith: 'ERROR' } } },
         { accion: { not: { contains: 'FALLIDO' } } }
       ];
     }
 
-    // Filtro: Por Usuario específico
     if (usuarioId) {
-      const uId = Number(usuarioId);
-      if (!isNaN(uId)) {
-        whereClause.usuarioId = uId;
-      }
+      whereClause.usuarioId = usuarioId;
     }
 
-    // 3. Consulta a BD (Transacción para contar y traer datos al mismo tiempo)
     const [total, logs] = await prisma.$transaction([
       prisma.bitacora.count({ where: whereClause }),
       prisma.bitacora.findMany({
         where: whereClause,
-        take: limitNum,
+        take: limit,
         skip: offset,
-        orderBy: { createdAt: 'desc' }, // Lo más reciente primero
+        orderBy: sort, // Ordenamiento dinámico inyectado
         include: {
           usuario: {
             select: {
@@ -66,20 +56,18 @@ export const getBitacora = async (req: Request, res: Response) => {
       })
     ]);
 
-    // 4. Respuesta
     return res.json({
       status: "success",
       pagination: {
         total,
-        page: pageNum,
-        limit: limitNum,
-        totalPages: Math.ceil(total / limitNum)
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
       },
       data: logs
     });
 
   } catch (error) {
-    // Si falla el lector de logs, registramos el error
     await registrarError('LEER_BITACORA', req.user?.id || null, error);
     return res.status(500).json({ error: "Error interno al obtener la bitácora" });
   }

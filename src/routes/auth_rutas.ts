@@ -6,7 +6,9 @@ import {
   loginSchema, 
   registerSchema, 
   forgotPasswordSchema, 
-  resetPasswordSchema 
+  resetPasswordSchema,
+  changePasswordSchema, 
+  refreshTokenSchema
 } from "../modules/auth/zod";
 
 import { login } from "../modules/auth/01_login";
@@ -53,6 +55,7 @@ router.post(
 // POST /api/auth/refresh
 router.post(
   "/refresh", 
+  validate(refreshTokenSchema),
   refreshSession
 );
 
@@ -69,6 +72,7 @@ router.get(
 router.post(
   "/change-password", 
   authenticate, 
+  validate(changePasswordSchema),
   changePassword
 );
 
@@ -76,6 +80,8 @@ router.post(
 router.post(
   "/logout",
   authenticate, 
-  logout);
+  validate(refreshTokenSchema),
+  logout
+);
 
 export default router;

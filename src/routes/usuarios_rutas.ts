@@ -5,7 +5,14 @@ import { authorize } from "../middlewares/authorize";
 import { upload } from "../middlewares/upload";   
 import { validate } from "../middlewares/validate";
 
-import { patchUsuarioSchema } from "../modules/usuarios/zod";
+import { 
+  listUsuariosSchema,
+  getUsuarioByIdSchema,
+  createUsuarioSchema,
+  updateUsuarioSchema,
+  patchUsuarioSchema 
+} from "../modules/usuarios/zod";
+
 import { listarUsuarios, listarInactivos, getUsuarioById } from "../modules/usuarios/01_list";
 import { crearUsuario } from "../modules/usuarios/02_create";
 import { updateUsuario } from "../modules/usuarios/03_update";
@@ -18,15 +25,23 @@ router.use(authenticate);
 // --- RUTAS GET ---
 
 // GET /api/usuarios
-router.get("/", listarUsuarios);
+router.get("/", 
+  validate(listUsuariosSchema), 
+  listarUsuarios
+);
 
 // GET /api/usuarios/inactivos
 router.get("/inactivos", 
   authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO]), 
-  listarInactivos);
+  validate(listUsuariosSchema),
+  listarInactivos
+);
 
 // GET /api/usuarios/:id
-router.get("/:id", getUsuarioById);
+router.get("/:id", 
+  validate(getUsuarioByIdSchema), 
+  getUsuarioById
+);
 
 // --- RUTAS POST ---
 
@@ -35,8 +50,9 @@ router.post(
   "/", 
   authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO]),
   upload.single('imagen'),
+  validate(createUsuarioSchema), 
   crearUsuario
-); 
+);
 
 // --- RUTAS PUT ---
 
@@ -44,6 +60,7 @@ router.post(
 router.put(
   "/:id", 
   upload.single('imagen'),
+  validate(updateUsuarioSchema),
   updateUsuario
 );
 

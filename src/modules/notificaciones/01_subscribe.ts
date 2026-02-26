@@ -1,12 +1,14 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db"; 
 import { registrarAccion, registrarError } from "../../utils/logger"; 
+import type { SubscriptionInput } from "./zod";
 
 export const subscribe = async (req: Request, res: Response) => {
-  const usuarioId = req.user?.id; 
-  const { endpoint, keys } = req.body;
-
-  if (!usuarioId) return res.status(401).json({ message: "No autorizado" });
+  // Garantizamos que usuarioId existe porque pasó por el middleware 'authenticate'
+  const usuarioId = req.user!.id; 
+  
+  // Tipamos el body con la validación de Zod
+  const { endpoint, keys } = req.body as SubscriptionInput;
 
   try {
     await prisma.pushSubscription.upsert({
@@ -30,15 +32,10 @@ export const subscribe = async (req: Request, res: Response) => {
       "Dispositivo activado para recibir notificaciones"
     );
 
-    res.status(201).json({ message: "Suscripción activada correctamente" });
+    return res.status(201).json({ message: "Suscripción activada correctamente" });
 
   } catch (error) {
-    await registrarError(
-      "SUSCRIPCION_PUSH_FAIL", 
-      usuarioId, 
-      error
-    );
-
-    res.status(500).json({ message: "Error interno al suscribir dispositivo" });
+    await registrarError("SUSCRIPCION_PUSH_FAIL", usuarioId, error);
+    return res.status(500).json({ message: "Error interno al suscribir dispositivo" });
   }
 };

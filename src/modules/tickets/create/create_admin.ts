@@ -2,69 +2,42 @@ import type { Request, Response } from "express";
 import { prisma } from "../../../db"; 
 import { createTicketAdminSchema } from "../zod";
 import { EstadoTarea, TipoEvento, Rol, TipoTarea, ClasificacionTarea, Prioridad } from "@prisma/client";
-// --- SE AGREGÓ registrarAccion AL IMPORT ---
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "./helper_upload";
 import { notificarAsignacionTarea } from "../../notificaciones/services";
 
 export const createTicketAdmin = async (req: Request, res: Response) => {
   const user = req.user!;
-  const rawBody = { ...req.body };
 
-  // Limpieza de Form-Data
-  if (rawBody.responsables) {
-      if (!Array.isArray(rawBody.responsables)) {
-          rawBody.responsables = [rawBody.responsables];
-      }
-      rawBody.responsables = rawBody.responsables.map((id: string) => Number(id));
-  } else {
-      delete rawBody.responsables; 
-  }
-
-  if (rawBody.fechaVencimiento === "" || rawBody.fechaVencimiento === "null") delete rawBody.fechaVencimiento;
-  
-  // Procesar Imágenes
-  let urlsImagenes: string[] = [];
-  try {
-      const files = req.files as Express.Multer.File[] | undefined;
-      urlsImagenes = await processTicketImages(files);
-  } catch (error) {
-      return res.status(500).json({ error: "Error al subir evidencias." });
-  }
-
-  if (urlsImagenes.length > 0) {
-      rawBody.imagenes = urlsImagenes;
-  }
-
-  // Validar Zod
-  const validation = createTicketAdminSchema.safeParse(rawBody);
+  const validation = createTicketAdminSchema.safeParse(req.body);
   if (!validation.success) {
       return res.status(400).json({ error: "Datos inválidos", details: validation.error.issues });
   }
   const data = validation.data;
 
+  let urlsImagenes: string[] = [];
+  if (req.files && (req.files as Express.Multer.File[]).length > 0) {
+      try {
+          urlsImagenes = await processTicketImages(req.files as Express.Multer.File[]);
+      } catch (error) {
+          return res.status(500).json({ error: "Error al subir evidencias." });
+      }
+  }
+
   try {
-    // Reglas de Negocio
     if (data.tipo === TipoTarea.TICKET) {
-        return res.status(400).json({ 
-            error: "Los administradores solo pueden crear tareas PLANEADAS o EXTRAORDINARIAS." 
-        });
+        return res.status(400).json({ error: "Los administradores solo pueden crear tareas PLANEADAS o EXTRAORDINARIAS." });
     }
 
     const tieneResponsables = data.responsables && data.responsables.length > 0;
     
     if (data.clasificacion === ClasificacionTarea.INSPECCION && !tieneResponsables) {
-        return res.status(400).json({ 
-            error: "Las tareas de INSPECCIÓN deben tener un técnico asignado obligatoriamente." 
-        });
+        return res.status(400).json({ error: "Las tareas de INSPECCIÓN deben tener un técnico asignado obligatoriamente." });
     }
 
     if (tieneResponsables) {
         const usuariosAAsignar = await prisma.usuario.findMany({
-            where: { 
-                id: { in: data.responsables },
-                estado: "ACTIVO"
-            },
+            where: { id: { in: data.responsables }, estado: "ACTIVO" },
             select: { id: true, rol: true, username: true }
         });
 
@@ -75,9 +48,7 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
         if (user.rol === Rol.COORDINADOR_MTTO) {
             const asignacionIlegal = usuariosAAsignar.find(u => u.rol !== Rol.TECNICO);
             if (asignacionIlegal) {
-                return res.status(403).json({ 
-                    error: `No puedes asignar a ${asignacionIlegal.username} (${asignacionIlegal.rol}).` 
-                });
+                return res.status(403).json({ error: `No puedes asignar a ${asignacionIlegal.username} (${asignacionIlegal.rol}).` });
             }
         }
     }
@@ -96,19 +67,17 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
         fechaVencimiento.setHours(23, 59, 59, 999);
     }
 
-    // Transacción
     const result = await prisma.$transaction(async (tx) => {
-      
       const nuevaTarea = await tx.tarea.create({
         data: {
           titulo: data.titulo,
           descripcion: data.descripcion,
-          prioridad: (data.prioridad as Prioridad) || Prioridad.MEDIA,
+          prioridad: data.prioridad,
           categoria: data.categoria || "General", 
           planta: data.planta || "KAPPA",
           area: data.area || "General",
-          clasificacion: data.clasificacion as ClasificacionTarea,
-          tipo: data.tipo as TipoTarea,
+          clasificacion: data.clasificacion,
+          tipo: data.tipo,
           estado: estadoInicial,
           fechaVencimiento,
           tiempoEstimado: null, 
@@ -124,15 +93,13 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
           usuarioId: user.id,
           tipo: TipoEvento.CREACION, 
           estadoNuevo: estadoInicial,
-          nota: tieneResponsables 
-            ? `Tarea creada y asignada a ${responsablesConnect.length} persona(s)`
-            : "Tarea planeada creada (Pendiente)"
+          nota: tieneResponsables ? `Tarea creada y asignada a ${responsablesConnect.length} persona(s)` : "Tarea planeada creada (Pendiente)"
         }
       });
 
-      if (data.imagenes && data.imagenes.length > 0) {
+      if (urlsImagenes.length > 0) {
         await tx.imagen.createMany({
-          data: data.imagenes.map(url => ({
+          data: urlsImagenes.map(url => ({
             url,
             tipo: "EVIDENCIA_INICIAL",
             tareaId: nuevaTarea.id,
@@ -140,29 +107,15 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
           }))
         });
       }
-
       return nuevaTarea;
     });
 
-    // --- INTEGRACIÓN DE NOTIFICACIONES ---
     if (data.responsables && data.responsables.length > 0) {
-        // "Fire and forget": No usamos await para no retrasar la respuesta
         void notificarAsignacionTarea(result, data.responsables);
     }
-    // -------------------------------------
 
-    // --- LOGGING EN BITÁCORA ---
-    await registrarAccion(
-        "CREAR_TAREA_ADMIN", 
-        user.id, 
-        `Tarea creada ID: ${result.id} | Título: ${result.titulo}`
-    );
-    // ---------------------------
-
-    return res.status(201).json({
-        message: "Tarea administrativa creada correctamente.",
-        data: result
-    });
+    await registrarAccion("CREAR_TAREA_ADMIN", user.id, `Tarea creada ID: ${result.id} | Título: ${result.titulo}`);
+    return res.status(201).json({ message: "Tarea administrativa creada correctamente.", data: result });
 
   } catch (error) {
     await registrarError('CREATE_TICKET_ADMIN', user.id, error);

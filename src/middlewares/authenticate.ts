@@ -2,16 +2,8 @@ import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { prisma } from "../db";
 import { env } from "../env";
-import { Rol, Estatus } from "@prisma/client";
-
-interface TokenPayload {
-  id: number;
-  email: string | null;
-  username: string;
-  rol: string;
-  nombre: string;
-  departamentoId: number | null;
-}
+import { Estatus } from "@prisma/client";
+import type { TokenPayload } from "../modules/auth/types";
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
@@ -36,6 +28,8 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       where: { id: decoded.id },
       select: { 
         id: true, 
+        username: true,
+        nombre: true,
         email: true, 
         rol: true, 
         estado: true, 
@@ -53,6 +47,8 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
 
     req.user = {
       id: usuario.id,
+      username: usuario.username,
+      nombre: usuario.nombre,
       email: usuario.email || "",
       rol: usuario.rol, 
       departamentoId: usuario.departamentoId
