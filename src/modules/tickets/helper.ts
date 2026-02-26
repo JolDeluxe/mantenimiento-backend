@@ -24,8 +24,16 @@ export const isTecnico = (rol: Rol): boolean => {
 
 export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFilterQuery): Prisma.TareaWhereInput => {
   const { 
-    q, estado, prioridad, tipo, clasificacion, responsableId,
-    fechaInicio, fechaFin 
+    q, 
+    estado, 
+    prioridad, 
+    tipo, 
+    clasificacion, 
+    responsableId,
+    fechaInicio, 
+    fechaFin, 
+    huerfanos, 
+    vencidos 
   } = query;
 
   let where: Prisma.TareaWhereInput = {};
@@ -70,6 +78,25 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
         ]
       }
     ];
+  }
+
+  // --- NUEVOS FILTROS DE DASHBOARD ---
+  
+  if (huerfanos) {
+    where.responsables = { none: {} };
+    where.estado = EstadoTarea.PENDIENTE; // Forzamos que solo busque los no iniciados
+  }
+
+  if (vencidos) {
+    where.fechaVencimiento = { lt: new Date() };
+    where.estado = { 
+      in: [
+        EstadoTarea.PENDIENTE, 
+        EstadoTarea.ASIGNADA, 
+        EstadoTarea.EN_PROGRESO, 
+        EstadoTarea.EN_PAUSA
+      ] 
+    }; // Ignoramos los que ya se resolvieron
   }
 
   return where;

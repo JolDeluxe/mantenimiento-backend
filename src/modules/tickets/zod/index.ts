@@ -39,6 +39,10 @@ export const ticketFilterSchema = z.object({
     fechaInicio: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),
     fechaFin: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),
     
+    // --- NUEVOS FILTROS DE DASHBOARD ---
+    huerfanos: z.preprocess((val) => val === "true", z.boolean().optional()),
+    vencidos: z.preprocess((val) => val === "true", z.boolean().optional()),
+    
     sort: z.preprocess(
       (val) => {
         if (typeof val === "string") {
@@ -81,6 +85,7 @@ export const createTicketAdminSchema = z.object({
   titulo: commonString.min(3, "Título requerido"),
   descripcion: commonString.min(3, "Descripción requerida"),
   fechaVencimiento: z.preprocess(preprocessDate, z.coerce.date().optional()), 
+  tiempoEstimado: z.coerce.number().int().nonnegative().optional(),
   responsables: z.preprocess(preprocessNumberArray, z.array(z.number()).optional()),
   imagenes: z.array(z.string().url()).optional(),
   prioridad: z.nativeEnum(Prioridad).default(Prioridad.MEDIA),
@@ -104,6 +109,7 @@ export const updateTicketSchema = z.object({
     area: z.string().optional(),
     responsables: z.preprocess(preprocessNumberArray, z.array(z.number()).optional()),
     fechaVencimiento: z.preprocess(preprocessDate, z.coerce.date().optional()),
+    tiempoEstimado: z.coerce.number().int().nonnegative().optional(),
     tipo: z.nativeEnum(TipoTarea).optional(),
     clasificacion: z.nativeEnum(ClasificacionTarea).optional(),  
     imagenes: z.array(z.string().url()).optional(),

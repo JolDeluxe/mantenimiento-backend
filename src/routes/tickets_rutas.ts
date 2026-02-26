@@ -16,6 +16,7 @@ import { getTicket } from "../modules/tickets/02_get";
 import { createTicket } from "../modules/tickets/03_create";
 import { updateTicket } from "../modules/tickets/04_update";
 import { changeTicketStatus } from "../modules/tickets/05_status"; 
+import { obtenerMetricasTickets } from "../modules/tickets/06_metrics";
 
 const router = Router();
 router.use(authenticate);
@@ -26,6 +27,12 @@ router.use(authenticate);
 router.get("/", 
     validate(ticketFilterSchema), 
     listarTickets
+);
+
+// GET /api/tickets/metrics
+router.get("/metrics", 
+    validate(ticketFilterSchema), 
+    obtenerMetricasTickets
 );
 
 // GET /api/tickets/:id

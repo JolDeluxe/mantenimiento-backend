@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { EstadoTarea, TipoEvento, Rol } from "@prisma/client";
+import { EstadoTarea, TipoEvento, Rol, ClasificacionTarea } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../utils/logger";
 import { processTicketImages } from "./create/helper_upload";
 import { notificarCambioEstatus } from "../notificaciones/services"; 
@@ -33,6 +33,9 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
     const esAdminJefe = ([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO] as Rol[]).includes(user.rol);
     const esCreador = ticket.creadorId === user.id;
     const esResponsable = ticket.responsables.some(r => r.id === user.id);
+    
+    // --- LÓGICA DE FAST-TRACK PARA RUTINAS ---
+    const esRutina = ticket.clasificacion === ClasificacionTarea.RUTINA;
 
     if (esCliente) {
         if (!esCreador) return res.status(403).json({ error: "No puedes modificar un ticket que no es tuyo." });
@@ -44,9 +47,12 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
         }
     } else if (esTecnico) {
         if (!esResponsable) return res.status(403).json({ error: "No estás asignado a este ticket." });
-        if (nuevoEstado === EstadoTarea.CERRADO) {
+        
+        // El técnico puede cerrar directamente SOLO si es una rutina.
+        if (nuevoEstado === EstadoTarea.CERRADO && !esRutina) {
             return res.status(403).json({ error: "Solo el cliente o el jefe pueden cerrar el ticket definitivamente." });
         }
+        
         if (ticket.estado === EstadoTarea.PENDIENTE) {
              return res.status(400).json({ error: "El ticket debe ser asignado antes de iniciarlo." });
         }
@@ -57,6 +63,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
     const ahora = new Date();
     let datosActualizacion: any = { estado: nuevoEstado, updatedAt: ahora };
 
+    // Solo iniciamos cronómetro si deciden ponerla EN_PROGRESO (opcional para rutinas)
     if (nuevoEstado === EstadoTarea.EN_PROGRESO && ticket.estado !== EstadoTarea.EN_PROGRESO) {
         if (!ticket.fechaInicio) datosActualizacion.fechaInicio = ahora;
         
@@ -67,6 +74,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
         });
     }
 
+    // Detenemos cronómetro si estaba corriendo
     if ((ticket.estado === EstadoTarea.EN_PROGRESO) && (nuevoEstado !== EstadoTarea.EN_PROGRESO)) {
         const intervaloAbierto = await prisma.intervaloTiempo.findFirst({
             where: { tareaId: ticketId, fin: null },
@@ -90,9 +98,11 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
         }
     }
 
-    if (nuevoEstado === EstadoTarea.RESUELTO && ticket.estado !== EstadoTarea.RESUELTO) {
-        datosActualizacion.finalizadoAt = ahora;
+    // Marca de finalización simple, sin inyectar tiempos falsos
+    if (nuevoEstado === EstadoTarea.RESUELTO || nuevoEstado === EstadoTarea.CERRADO) {
+        if (!ticket.finalizadoAt) datosActualizacion.finalizadoAt = ahora;
     }
+
     if (nuevoEstado === EstadoTarea.RECHAZADO) {
         datosActualizacion.finalizadoAt = null; 
     }
@@ -110,7 +120,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
                 tipo: TipoEvento.CAMBIO_ESTADO,
                 estadoAnterior: ticket.estado,
                 estadoNuevo: nuevoEstado,
-                nota: nota || `Cambio de estado: ${ticket.estado} -> ${nuevoEstado}`
+                nota: nota || `Cambio de estado: ${ticket.estado} -> ${nuevoEstado}${esRutina && nuevoEstado === EstadoTarea.CERRADO ? ' (Rutina Completada)' : ''}`
             }
         });
 
