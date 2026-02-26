@@ -9,6 +9,7 @@ const clasificacionesCliente = [
 
 const commonString = z.string().trim();
 
+// --- PREPROCESADORES DE LIMPIEZA ---
 const preprocessNumberArray = (val: unknown) => {
   if (val === undefined || val === null || val === "") return undefined;
   if (Array.isArray(val)) return val.map(Number);
@@ -18,18 +19,26 @@ const preprocessNumberArray = (val: unknown) => {
 
 const preprocessDate = (val: unknown) => (val === "" || val === "null" ? undefined : val);
 
+// Transforma strings vacíos o "null" de la URL a undefined para peticiones GET
+const preprocessEmpty = (val: unknown) => (val === "" || val === "null" ? undefined : val);
+
+// --- ESQUEMAS DE VALIDACIÓN ---
 export const ticketFilterSchema = z.object({
   query: z.object({
     q: z.string().optional(),
     page: z.coerce.number().min(1).default(1),
     limit: z.coerce.number().min(1).max(500).default(100),
-    estado: z.nativeEnum(EstadoTarea).optional(),
-    prioridad: z.nativeEnum(Prioridad).optional(),
-    tipo: z.nativeEnum(TipoTarea).optional(),
-    clasificacion: z.nativeEnum(ClasificacionTarea).optional(),
-    responsableId: z.coerce.number().optional(),
-    fechaInicio: z.string().datetime({ offset: true }).optional().or(z.string().date().optional()),
-    fechaFin: z.string().datetime({ offset: true }).optional().or(z.string().date().optional()),
+    
+    // Preprocesamos campos susceptibles a strings vacíos en la URL
+    estado: z.preprocess(preprocessEmpty, z.nativeEnum(EstadoTarea).optional()),
+    prioridad: z.preprocess(preprocessEmpty, z.nativeEnum(Prioridad).optional()),
+    tipo: z.preprocess(preprocessEmpty, z.nativeEnum(TipoTarea).optional()),
+    clasificacion: z.preprocess(preprocessEmpty, z.nativeEnum(ClasificacionTarea).optional()),
+    responsableId: z.preprocess(preprocessEmpty, z.coerce.number().optional()),
+    
+    fechaInicio: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),
+    fechaFin: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),
+    
     sort: z.preprocess(
       (val) => {
         if (typeof val === "string") {
