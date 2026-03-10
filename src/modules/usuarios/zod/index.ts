@@ -18,7 +18,6 @@ export const listUsuariosSchema = z.object({
         return val;
       },
       z.array(
-        // Usamos un object estricto con campos opcionales en lugar de record
         z.object({
           nombre: z.enum(["asc", "desc"]).optional(),
           username: z.enum(["asc", "desc"]).optional(),
@@ -63,7 +62,12 @@ export const createUsuarioSchema = z.object({
     rol: z.enum(rolesArray, { message: "Rol inválido" }).default(Rol.CLIENTE_INTERNO), 
 
     cargo: z.string().optional(),
-    telefono: z.string().optional(),
+    
+    // Si envían texto vacío "", lo transformamos en NULL para la Base de Datos
+    telefono: z.preprocess(
+      (val) => (val === "null" || val === "" ? null : val),
+      z.string().nullable().optional()
+    ),
     
     departamentoId: z.preprocess(
       (val) => {
@@ -80,7 +84,47 @@ export const updateUsuarioSchema = z.object({
   params: z.object({
     id: z.coerce.number().int().positive(),
   }),
-  body: createUsuarioSchema.shape.body.partial()
+  body: z.object({
+    nombre: z.string().min(3, "El nombre es muy corto").optional(),
+    
+    username: z.string().optional(),
+    
+    email: z.preprocess(
+      (val) => (val === "null" || val === "" ? null : val),
+      z.string()
+        .email("Formato de correo inválido")
+        .endsWith("@cuadra.com.mx", { message: "Solo se permiten correos corporativos (@cuadra.com.mx)" })
+        .nullable()
+        .optional()
+    ),
+
+    imagen: z.preprocess(
+      (val) => (val === "null" || val === "" ? null : val),
+      z.string().nullable().optional()
+    ),
+    
+    password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres").optional(),
+    
+    rol: z.enum(rolesArray, { message: "Rol inválido" }).optional(), 
+    
+    cargo: z.string().optional(),
+    estado: z.enum(estatusArray, { message: "Estado inválido" }).optional(),
+    
+    // 🔥 CORRECCIÓN: Aplicado también en la Actualización
+    telefono: z.preprocess(
+      (val) => (val === "" || val === "null" ? null : val),
+      z.string().nullable().optional()
+    ),
+    
+    departamentoId: z.preprocess(
+      (val) => {
+        if (val === "" || val === "null" || val === null) return null;
+        if (val !== undefined) return Number(val);
+        return undefined;
+      }, 
+      z.number().int().positive().nullable().optional()
+    ),
+  }).strict()
 });
 
 export const patchUsuarioSchema = z.object({

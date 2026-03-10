@@ -25,17 +25,29 @@ export const updateUsuario = async (req: Request, res: Response) => {
 
     const dataToUpdate: any = {};
 
+    // 1. Manejo de subida de nueva imagen
     if (req.file) {
         try {
             dataToUpdate.imagen = await uploadUserProfileImage(req.file.buffer);
+            // Destruir imagen anterior en Cloudinary
             if (usuarioActual.imagen) {
-                deleteImageByUrl(usuarioActual.imagen).catch(e => console.error("Error borrando img vieja", e));
+                deleteImageByUrl(usuarioActual.imagen).catch(e => console.error("Error borrando img vieja al subir nueva", e));
             }
         } catch (e) {
             return res.status(500).json({ error: "Error al procesar la imagen." });
         }
     }
 
+    // 2. Manejo de eliminación explícita de imagen
+    if (datos.imagen === null) {
+      dataToUpdate.imagen = null;
+      // Destruir imagen huérfana en Cloudinary
+      if (usuarioActual.imagen) {
+          deleteImageByUrl(usuarioActual.imagen).catch(e => console.error("Error borrando img huérfana en Cloudinary", e));
+      }
+    }
+
+    // 3. Reglas de negocio: Correo
     if (datos.email !== undefined) {
       const rolFinal = datos.rol || usuarioActual.rol;
 
@@ -52,22 +64,26 @@ export const updateUsuario = async (req: Request, res: Response) => {
       dataToUpdate.email = datos.email;
     }
 
+    // 4. Reglas de negocio: Username
     if (datos.username && datos.username !== usuarioActual.username) {
         const userOcupado = await prisma.usuario.findUnique({ where: { username: datos.username } });
         if (userOcupado) return res.status(400).json({ error: "El nombre de usuario ya existe." });
         dataToUpdate.username = datos.username;
     }
 
+    // 5. Cambio de Contraseña
     if (datos.password && datos.password.trim() !== "") {
       dataToUpdate.password = await bcrypt.hash(datos.password, 10);
     }
 
-    if (datos.nombre) dataToUpdate.nombre = datos.nombre;
-    if (datos.rol) dataToUpdate.rol = datos.rol as Rol;
-    if (datos.cargo) dataToUpdate.cargo = datos.cargo;
-    if (datos.imagen === null) dataToUpdate.imagen = null; 
+    // 6. Campos planos opcionales
+    if (datos.nombre !== undefined) dataToUpdate.nombre = datos.nombre;
+    if (datos.rol !== undefined) dataToUpdate.rol = datos.rol as Rol;
+    if (datos.cargo !== undefined) dataToUpdate.cargo = datos.cargo;
     if (datos.telefono !== undefined) dataToUpdate.telefono = datos.telefono; 
+    if (datos.estado !== undefined) dataToUpdate.estado = datos.estado;
     
+    // 7. Reglas de negocio: Departamento
     if (datos.departamentoId !== undefined) {
         if (datos.departamentoId === null) {
              dataToUpdate.departamentoId = null;
@@ -78,6 +94,7 @@ export const updateUsuario = async (req: Request, res: Response) => {
         }
     }
 
+    // 8. Transacción final
     const usuarioActualizado = await prisma.usuario.update({
       where: { id },
       data: dataToUpdate,

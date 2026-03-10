@@ -53,17 +53,20 @@ export const validarReglasCreacion = (
 
 export const validarReglasEdicion = (
   usuarioSolicitante: { id: number, rol: Rol, departamentoId: number | null },
-  usuarioObjetivo: { id: number, rol: Rol, departamentoId: number | null }, 
+  usuarioObjetivo: { id: number, rol: Rol, departamentoId: number | null, estado?: string }, 
   datosNuevos: { rol?: string, departamentoId?: number | null, estado?: string } 
 ) => {
-  if (usuarioSolicitante.id === usuarioObjetivo.id) {
+  // Blindaje absoluto: Casteo a Number para evitar fallos cuando el ID llega como string vía parámetros.
+  const esMismoUsuario = Number(usuarioSolicitante.id) === Number(usuarioObjetivo.id);
+
+  if (esMismoUsuario) {
     if (datosNuevos.rol && datosNuevos.rol !== usuarioObjetivo.rol && usuarioSolicitante.rol !== Rol.SUPER_ADMIN) {
       throw new Error("No tienes permisos para cambiar tu propio rol.");
     }
-    if (datosNuevos.departamentoId && datosNuevos.departamentoId !== usuarioObjetivo.departamentoId && usuarioSolicitante.rol !== Rol.SUPER_ADMIN) {
+    if (datosNuevos.departamentoId !== undefined && datosNuevos.departamentoId !== usuarioObjetivo.departamentoId && usuarioSolicitante.rol !== Rol.SUPER_ADMIN) {
       throw new Error("No tienes permisos para cambiarte de departamento.");
     }
-    if (datosNuevos.estado && usuarioSolicitante.rol !== Rol.SUPER_ADMIN) {
+    if (datosNuevos.estado && datosNuevos.estado !== usuarioObjetivo.estado && usuarioSolicitante.rol !== Rol.SUPER_ADMIN) {
       throw new Error("No puedes cambiar tu propio estatus.");
     }
     return true; 
@@ -75,7 +78,7 @@ export const validarReglasEdicion = (
       if (usuarioObjetivo.departamentoId !== usuarioSolicitante.departamentoId) {
         throw new Error("No tienes permisos para editar usuarios de otros departamentos.");
       }
-      if (datosNuevos.departamentoId && datosNuevos.departamentoId !== usuarioObjetivo.departamentoId) {
+      if (datosNuevos.departamentoId !== undefined && datosNuevos.departamentoId !== usuarioObjetivo.departamentoId) {
         throw new Error("No puedes transferir usuarios a otros departamentos.");
       }
       if (usuarioObjetivo.rol === Rol.SUPER_ADMIN || usuarioObjetivo.rol === Rol.JEFE_MTTO) {
@@ -101,7 +104,7 @@ export const validarReglasDesactivacion = (
   usuarioSolicitante: { id: number, rol: Rol, departamentoId: number | null },
   usuarioObjetivo: { id: number, rol: Rol, departamentoId: number | null }
 ) => {
-  if (usuarioSolicitante.id === usuarioObjetivo.id) {
+  if (Number(usuarioSolicitante.id) === Number(usuarioObjetivo.id)) {
     throw new Error("Seguridad: No puedes desactivar tu propia cuenta.");
   }
   if (usuarioSolicitante.rol === Rol.SUPER_ADMIN) return true; 

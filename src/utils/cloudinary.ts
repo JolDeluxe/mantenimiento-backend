@@ -7,8 +7,6 @@ cloudinary.config({
   api_secret: env.CLOUDINARY_API_SECRET,
 });
 
-// console.log("Cloudinary OK:", cloudinary.config().cloud_name);
-
 export const uploadUserProfileImage = async (buffer: Buffer): Promise<string> => {
   const base64 = buffer.toString("base64");
   const dataUri = `data:image/jpeg;base64,${base64}`;
@@ -45,12 +43,23 @@ export const uploadTaskImage = async (buffer: Buffer): Promise<string> => {
 
 export const deleteImageByUrl = async (imageUrl: string) => {
   if (!imageUrl || !imageUrl.includes("cloudinary")) return;
-  if (imageUrl.includes("no-image.avif")) return;
+  if (imageUrl.includes("no-image.avif") || imageUrl.includes("perfil-no-foto")) return;
 
-  const regexId = /\/v\d+\/(.+)\.[a-z]+$/;
-  const matchId = imageUrl.match(regexId);
+  try {
+    const parts = imageUrl.split("/upload/");
+    
+    // Validación explícita para calmar al compilador estricto de TypeScript
+    const extract = parts[1];
+    if (!extract) return;
 
-  if (matchId?.[1]) {
-    await cloudinary.uploader.destroy(matchId[1]);
+    let publicIdConExtension = extract.replace(/^v\d+\//, "");
+    const publicId = publicIdConExtension.replace(/\.[^/.]+$/, "");
+
+    if (publicId) {
+      await cloudinary.uploader.destroy(publicId);
+      console.log(`☁️ [Cloudinary] Imagen destruida físicamente: ${publicId}`);
+    }
+  } catch (error) {
+    console.error("🔥 [Cloudinary] Error crítico al intentar eliminar imagen:", error);
   }
 };
