@@ -45,7 +45,7 @@ const startServer = async () => {
   try {
     await inicializarSistema();
 
-    app.listen(env.PORT, () => {
+    app.listen(env.PORT, '0.0.0.0', () => {
       console.log(`Servidor corriendo en http://localhost:${env.PORT}`);
       console.log(`Ambiente: ${env.NODE_ENV}`);
       
