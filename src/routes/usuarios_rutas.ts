@@ -13,7 +13,7 @@ import {
   patchUsuarioSchema 
 } from "../modules/usuarios/zod";
 
-import { listarUsuarios, listarInactivos, getUsuarioById } from "../modules/usuarios/01_list";
+import { listarUsuarios, getUsuarioById } from "../modules/usuarios/01_list";
 import { crearUsuario } from "../modules/usuarios/02_create";
 import { updateUsuario } from "../modules/usuarios/03_update";
 import { changeStatusUsuario } from "../modules/usuarios/04_patch";
@@ -31,11 +31,11 @@ router.get("/",
 );
 
 // GET /api/usuarios/inactivos
-router.get("/inactivos", 
-  authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO]), 
-  validate(listUsuariosSchema),
-  listarInactivos
-);
+// router.get("/inactivos", 
+//   authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO]), 
+//   validate(listUsuariosSchema),
+//   listarInactivos
+// );
 
 // GET /api/usuarios/:id
 router.get("/:id", 

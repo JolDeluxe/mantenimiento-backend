@@ -7,7 +7,7 @@ export const listDepartamentosSchema = z.object({
   query: z.object({
     q: z.string().optional(),
     page: z.coerce.number().min(1).default(1),
-    limit: z.coerce.number().min(1).max(100).default(20),
+    limit: z.coerce.number().min(1).max(1000).default(20),
     sortBy: z.enum(["nombre", "planta", "tipo", "estado", "createdAt"]).default("nombre"),
     sortOrder: z.enum(["asc", "desc"]).default("asc"),
   }),

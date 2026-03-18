@@ -12,6 +12,11 @@ export const crearUsuario = async (req: Request, res: Response) => {
   try {
     const usuarioSolicitante = req.user!; 
     const { nombre, email, password, rol, cargo, departamentoId, username, telefono } = req.body as CreateUsuarioInput;
+
+    console.log("=== DEBUG NUEVO USUARIO ===");
+    console.log("1. Textos recibidos (req.body):", req.body);
+    console.log("2. Archivo recibido (req.file):", req.file);
+    console.log("===========================");
     
     let nombreDepartamentoObjetivo: string | null = null;
 

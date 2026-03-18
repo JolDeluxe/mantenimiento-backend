@@ -10,24 +10,31 @@ export const listUsuariosSchema = z.object({
     page: z.coerce.number().min(1).default(1),
     limit: z.coerce.number().min(1).max(100).default(20),
     rol: z.enum(rolesArray).optional(),
+    estado: z.enum(estatusArray).optional(),
+    departamentoId: z.coerce.number().int().positive().optional(),
+    mtto: z.preprocess(
+      (val) => val === 'true' || val === true || val === '1',
+      z.boolean().optional()
+    ),
     sort: z.preprocess(
       (val) => {
         if (typeof val === "string") {
-          try { return JSON.parse(val); } catch (e) { return []; }
+          try { return JSON.parse(val); } catch { return []; }
         }
         return val;
       },
       z.array(
         z.object({
-          nombre: z.enum(["asc", "desc"]).optional(),
-          username: z.enum(["asc", "desc"]).optional(),
-          email: z.enum(["asc", "desc"]).optional(),
-          rol: z.enum(["asc", "desc"]).optional(),
-          createdAt: z.enum(["asc", "desc"]).optional(),
-          updatedAt: z.enum(["asc", "desc"]).optional(),
+          nombre:      z.enum(["asc", "desc"]).optional(),
+          username:    z.enum(["asc", "desc"]).optional(),
+          email:       z.enum(["asc", "desc"]).optional(),
+          rol:         z.enum(["asc", "desc"]).optional(),
+          createdAt:   z.enum(["asc", "desc"]).optional(),
+          updatedAt:   z.enum(["asc", "desc"]).optional(),
+          departamento:z.enum(["asc", "desc"]).optional(),
         }).strict()
       )
-    ).default([{ nombre: "asc" }]) 
+    ).default([{ nombre: "asc" }]),
   }),
 });
 
@@ -53,7 +60,13 @@ export const createUsuarioSchema = z.object({
     username: z.string().optional(),
 
     imagen: z.preprocess(
-      (val) => (val === "null" || val === "" ? null : val),
+      (val) => {
+        if (val === "null" || val === "") return null;
+        // Si el payload es un archivo físico (FormData), lo volvemos undefined 
+        // para que Zod lo deje pasar gracias al .optional(), ya que multer usará req.file
+        if (typeof val === "object" || val === "[object File]" || val === "[object Object]") return undefined;
+        return val;
+      },
       z.string().nullable().optional()
     ),
     
