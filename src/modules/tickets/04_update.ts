@@ -75,11 +75,11 @@ export const updateTicket = async (req: Request, res: Response) => {
         const tareaActualizada = await tx.tarea.update({
             where: { id: ticketId },
             data: {
-                titulo: esCliente ? data.titulo : undefined,
-                descripcion: esCliente ? data.descripcion : undefined,
-                categoria: esCliente ? data.categoria : undefined,
-                planta: esCliente ? data.planta : undefined,
-                area: esCliente ? data.area : undefined,
+                titulo:      (esCliente || esAdmin) ? data.titulo      : undefined,
+                descripcion: (esCliente || esAdmin) ? data.descripcion : undefined,
+                categoria:   (esCliente || esAdmin) ? data.categoria   : undefined,
+                planta:      esAdmin ? data.planta      : undefined,
+                area:        esAdmin ? data.area        : undefined,
                 prioridad: esAdmin ? data.prioridad : undefined,
                 fechaVencimiento: nuevaFechaVencimiento,
                 estado: nuevoEstado,

@@ -6,7 +6,6 @@ import {
 import { z } from "zod";
 import { ticketFilterSchema } from "./zod";
 
-// Inferencia pura desde Zod, actúa como contrato único
 type TicketFilterQuery = z.infer<typeof ticketFilterSchema>["query"];
 
 // --- REGLAS DE SEGURIDAD Y PRIVILEGIOS ---
@@ -44,7 +43,6 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     where.creadorId = user.id;
   }
 
-  // Al estar tipado por Zod, TS ya sabe que coinciden con los de Prisma
   if (prioridad) where.prioridad = prioridad;
   if (estado) where.estado = estado;
   if (tipo) where.tipo = tipo;
@@ -80,11 +78,9 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     ];
   }
 
-  // --- NUEVOS FILTROS DE DASHBOARD ---
-  
   if (huerfanos) {
     where.responsables = { none: {} };
-    where.estado = EstadoTarea.PENDIENTE; // Forzamos que solo busque los no iniciados
+    where.estado = EstadoTarea.PENDIENTE;
   }
 
   if (vencidos) {
@@ -96,7 +92,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
         EstadoTarea.EN_PROGRESO, 
         EstadoTarea.EN_PAUSA
       ] 
-    }; // Ignoramos los que ya se resolvieron
+    };
   }
 
   return where;
@@ -107,9 +103,13 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
 export const isValidTransition = (current: EstadoTarea, next: EstadoTarea): boolean => {
   const map: Record<EstadoTarea, EstadoTarea[]> = {
     [EstadoTarea.PENDIENTE]:   [EstadoTarea.ASIGNADA, EstadoTarea.CANCELADA],
-    [EstadoTarea.ASIGNADA]:    [EstadoTarea.EN_PROGRESO, EstadoTarea.PENDIENTE, EstadoTarea.CANCELADA], 
+    // RESUELTO y CERRADO se agregan para soportar flujo offline y el "olvido":
+    // el técnico puede completar una tarea sin haberla iniciado formalmente en la app.
+    // CERRADO aplica solo para rutinas (la lógica de permisos lo valida en el controlador).
+    [EstadoTarea.ASIGNADA]:    [EstadoTarea.EN_PROGRESO, EstadoTarea.PENDIENTE, EstadoTarea.RESUELTO, EstadoTarea.CERRADO, EstadoTarea.CANCELADA],
     [EstadoTarea.EN_PROGRESO]: [EstadoTarea.EN_PAUSA, EstadoTarea.RESUELTO],
-    [EstadoTarea.EN_PAUSA]:    [EstadoTarea.EN_PROGRESO],
+    // RESUELTO desde EN_PAUSA: técnico pausó, terminó el trabajo sin internet, cierra al final del turno.
+    [EstadoTarea.EN_PAUSA]:    [EstadoTarea.EN_PROGRESO, EstadoTarea.RESUELTO],
     [EstadoTarea.RESUELTO]:    [EstadoTarea.CERRADO, EstadoTarea.RECHAZADO],
     [EstadoTarea.RECHAZADO]:   [EstadoTarea.EN_PROGRESO, EstadoTarea.CANCELADA],
     [EstadoTarea.CERRADO]:     [], 
@@ -117,4 +117,15 @@ export const isValidTransition = (current: EstadoTarea, next: EstadoTarea): bool
   };
 
   return map[current]?.includes(next) || false;
+};
+
+// --- UTILIDADES DE TIEMPO ---
+
+/**
+ * Calcula los minutos transcurridos entre dos fechas.
+ * Garantiza un mínimo de 1 minuto para evitar registros de 0 segundos.
+ */
+export const calcularMinutosEntreFechas = (inicio: Date, fin: Date): number => {
+  const diffMs = fin.getTime() - inicio.getTime();
+  return Math.max(1, Math.round(diffMs / 60000));
 };
