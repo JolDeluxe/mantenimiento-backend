@@ -10,25 +10,45 @@ export const listarTickets = async (req: Request, res: Response) => {
     const user = req.user!;
     const query = req.query as unknown as TicketFilterQuery;
     
-    const { page, limit, sort } = query;
+    const { page, limit, sort, estado } = query;
     const offset = (page - 1) * limit;
 
-    const baseWhere = getTicketFilters({ id: user.id, rol: user.rol }, query);
+    // ── 1. Filtro base sin estado para calcular totales reales de la vista
+    const querySinEstado = { ...query };
+    delete querySinEstado.estado;
+    const searchWhere = getTicketFilters({ id: user.id, rol: user.rol }, querySinEstado);
 
-    const [ tickets, total ] = await Promise.all([
+    // ── 2. Filtro estricto con estado para la tabla paginada
+    const tableWhere = getTicketFilters({ id: user.id, rol: user.rol }, query);
+
+    // ── 3. Ejecución concurrente
+    const [ totalAbsoluto, groupEstados, totalPaginado, tickets ] = await Promise.all([
+      prisma.tarea.count({ where: searchWhere }),
+      prisma.tarea.groupBy({
+        by: ["estado"],
+        _count: { id: true },
+        where: searchWhere 
+      }),
+      prisma.tarea.count({ where: tableWhere }),
       prisma.tarea.findMany({
-        where: baseWhere,
+        where: tableWhere,
         take: limit,
         skip: offset,
         include: ticketStandardInclude,
         orderBy: sort 
-      }),
-      prisma.tarea.count({ where: baseWhere })
+      })
     ]);
+
+    const resumenEstados = groupEstados.reduce((acc, curr) => {
+      acc[curr.estado] = curr._count.id;
+      return acc;
+    }, {} as Record<string, number>);
 
     return res.json({
       status: "success",
-      pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      pagination: { total: totalPaginado, page, limit, totalPages: Math.ceil(totalPaginado / limit) },
+      totalAbsoluto,
+      resumenEstados,
       data: tickets
     });
 
