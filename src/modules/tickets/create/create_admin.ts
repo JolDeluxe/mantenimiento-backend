@@ -64,7 +64,6 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
     let fechaVencimiento: Date | null = null;
     if (data.fechaVencimiento) {
         fechaVencimiento = new Date(data.fechaVencimiento);
-        fechaVencimiento.setHours(23, 59, 59, 999);
     }
 
     const result = await prisma.$transaction(async (tx) => {
