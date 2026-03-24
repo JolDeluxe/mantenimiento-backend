@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { EstadoTarea, Prisma } from "@prisma/client";
 import { prisma } from "../../db";
 import { ticketStandardInclude } from "./types"; 
 import type { TicketFilterQuery } from "./zod";
@@ -19,7 +20,14 @@ export const listarTickets = async (req: Request, res: Response) => {
     const searchWhere = getTicketFilters({ id: user.id, rol: user.rol }, querySinEstado);
 
     // ── 2. Filtro estricto con estado para la tabla paginada
-    const tableWhere = getTicketFilters({ id: user.id, rol: user.rol }, query);
+    const tableWhere: Prisma.TareaWhereInput = getTicketFilters({ id: user.id, rol: user.rol }, query);
+
+    if (!estado) {
+      tableWhere.AND = [
+        ...(Array.isArray(tableWhere.AND) ? tableWhere.AND : (tableWhere.AND ? [tableWhere.AND] : [])),
+        { estado: { notIn: [EstadoTarea.CANCELADA, EstadoTarea.RECHAZADO] } }
+      ];
+    }
 
     // ── 3. Ejecución concurrente
     const [ totalAbsoluto, groupEstados, totalPaginado, tickets ] = await Promise.all([
