@@ -41,7 +41,7 @@ export const listarUsuarios = async (req: Request, res: Response) => {
       }
     }
 
-    // ── 2. [FIX] searchWhere incluye q — los conteos reflejan la búsqueda ─
+    // ── 2. searchWhere incluye q ──────────────────────────────────────────
     const searchWhere: Prisma.UsuarioWhereInput = { ...baseWhere };
 
     if (q) {
@@ -53,7 +53,7 @@ export const listarUsuarios = async (req: Request, res: Response) => {
       }];
     }
 
-    // ── 3. Conteos sobre searchWhere (no baseWhere) ───────────────────────
+    // ── 3. Conteos sobre searchWhere ──────────────────────────────────────
     const [totalAbsoluto, groupRoles] = await Promise.all([
       prisma.usuario.count({ where: searchWhere }),
       prisma.usuario.groupBy({
@@ -68,18 +68,34 @@ export const listarUsuarios = async (req: Request, res: Response) => {
       return acc;
     }, {} as Record<string, number>);
 
-    // ── 4. tableWhere agrega filtro de rol sobre searchWhere ──────────────
+    // ── 4. tableWhere agrega filtro de rol ────────────────────────────────
     const tableWhere: Prisma.UsuarioWhereInput = { ...searchWhere };
 
     if (rol) {
-      if (baseWhere.rol && baseWhere.rol !== rol) {
-        return res.json({
-          status: "success",
-          pagination: { total: 0, page, limit, totalPages: 0 },
-          totalAbsoluto,
-          resumenRoles,
-          data: [],
-        });
+      // FIX: cuando el filtro de seguridad usa { in: [...] } (ej. COORDINADOR_MTTO),
+      // comparar contra string siempre fallaba. Verificamos correctamente.
+      if (baseWhere.rol) {
+        const securityRol = baseWhere.rol as Prisma.UsuarioWhereInput['rol'];
+        if (typeof securityRol === 'object' && securityRol !== null && 'in' in securityRol) {
+          const allowedRoles = (securityRol as { in: string[] }).in ?? [];
+          if (!allowedRoles.includes(rol)) {
+            return res.json({
+              status: "success",
+              pagination: { total: 0, page, limit, totalPages: 0 },
+              totalAbsoluto,
+              resumenRoles,
+              data: [],
+            });
+          }
+        } else if (securityRol !== rol) {
+          return res.json({
+            status: "success",
+            pagination: { total: 0, page, limit, totalPages: 0 },
+            totalAbsoluto,
+            resumenRoles,
+            data: [],
+          });
+        }
       }
       tableWhere.rol = rol as Rol;
     }
