@@ -1,3 +1,4 @@
+// src/modules/tickets/create/create_admin.ts
 import type { Request, Response } from "express";
 import { prisma } from "../../../db"; 
 import { createTicketAdminSchema } from "../zod";
@@ -46,7 +47,9 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
         }
 
         if (user.rol === Rol.COORDINADOR_MTTO) {
-            const asignacionIlegal = usuariosAAsignar.find(u => u.rol !== Rol.TECNICO);
+            const asignacionIlegal = usuariosAAsignar.find(
+                u => u.rol !== Rol.TECNICO && u.rol !== Rol.COORDINADOR_MTTO
+            );
             if (asignacionIlegal) {
                 return res.status(403).json({ error: `No puedes asignar a ${asignacionIlegal.username} (${asignacionIlegal.rol}).` });
             }
@@ -79,7 +82,7 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
           tipo: data.tipo,
           estado: estadoInicial,
           fechaVencimiento,
-          tiempoEstimado: null, 
+          tiempoEstimado: data.tiempoEstimado || null,
           creadorId: user.id,
           departamentoId: user.departamentoId,
           responsables: { connect: responsablesConnect }
