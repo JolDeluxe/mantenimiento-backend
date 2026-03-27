@@ -115,6 +115,8 @@ export const ticketFilterSchema = z.object({
       },
       z.array(
         z.object({
+          id: z.enum(["asc", "desc"]).optional(),
+          fechaVencimiento: z.enum(["asc", "desc"]).optional(),
           createdAt: z.enum(["asc", "desc"]).optional(),
           updatedAt: z.enum(["asc", "desc"]).optional(),
           prioridad: z.enum(["asc", "desc"]).optional(),

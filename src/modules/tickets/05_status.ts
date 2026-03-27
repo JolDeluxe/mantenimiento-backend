@@ -5,6 +5,7 @@ import { registrarError, registrarAccion } from "../../utils/logger";
 import { processTicketImages } from "./create/helper_upload";
 import { notificarCambioEstatus } from "../notificaciones/services"; 
 import { calcularMinutosEntreFechas, isValidTransition } from "./helper";
+import { deleteImageByUrl } from "../../utils/cloudinary";
 import type { ChangeTicketStatusParams, ChangeTicketStatusInput } from "./zod";
 
 export const changeTicketStatus = async (req: Request, res: Response) => {
@@ -73,7 +74,6 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
 
     // --- GESTIÓN DE INTERVALOS AUTOMÁTICOS ---
 
-    // Inicio de cronómetro al pasar a EN_PROGRESO
     if (nuevoEstado === EstadoTarea.EN_PROGRESO && ticket.estado !== EstadoTarea.EN_PROGRESO) {
       if (!ticket.fechaInicio) datosActualizacion.fechaInicio = ahora;
       
@@ -87,7 +87,6 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
       });
     }
 
-    // Cierre de cronómetro automático al salir de EN_PROGRESO
     if (ticket.estado === EstadoTarea.EN_PROGRESO && nuevoEstado !== EstadoTarea.EN_PROGRESO) {
       const intervaloAbierto = await prisma.intervaloTiempo.findFirst({
         where: { tareaId: ticketId, fin: null },
@@ -110,8 +109,6 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
     }
 
     // --- GESTIÓN DE TIEMPO MANUAL RETROACTIVO ---
-    // Se aplica cuando la tarea va a un estado de resolución (RESUELTO o CERRADO para rutinas)
-    // y el técnico declara el tiempo trabajado que no fue medido automáticamente.
 
     const esEstadoResolucion = nuevoEstado === EstadoTarea.RESUELTO ||
       (esRutina && nuevoEstado === EstadoTarea.CERRADO);
@@ -123,14 +120,11 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
 
     if (esEstadoResolucion && registroTiempoManual) {
       if (registroTiempoManual.inicioManual && registroTiempoManual.finManual) {
-        // Forma A: rango de fechas
         inicioIntervaloManual = new Date(registroTiempoManual.inicioManual);
         finIntervaloManual    = new Date(registroTiempoManual.finManual);
         minutosAdicionalesManual = calcularMinutosEntreFechas(inicioIntervaloManual, finIntervaloManual);
       } else if (registroTiempoManual.duracionManualMinutos) {
-        // Forma B: duración directa en minutos
         minutosAdicionalesManual = registroTiempoManual.duracionManualMinutos;
-        // Reconstruimos el intervalo hacia atrás desde "ahora" para tener fechas consistentes
         finIntervaloManual    = ahora;
         inicioIntervaloManual = new Date(ahora.getTime() - minutosAdicionalesManual * 60000);
       }
@@ -142,7 +136,6 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
           data: {
             tareaId:  ticketId,
             usuarioId: user.id,
-            // Se marca como EN_PROGRESO para representar trabajo activo, igual que los automáticos
             estado:   EstadoTarea.EN_PROGRESO,
             inicio:   inicioIntervaloManual,
             fin:      finIntervaloManual,
@@ -159,8 +152,6 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
 
     // --- FECHAS DE CICLO DE VIDA ---
 
-    // fechaInicio retroactiva: si la tarea nunca pasó por EN_PROGRESO (flujo offline)
-    // y se tiene el inicio manual, lo usamos como referencia histórica real.
     if (esEstadoResolucion && !ticket.fechaInicio) {
       datosActualizacion.fechaInicio = hayTiempoManual ? inicioIntervaloManual : ahora;
     }
@@ -180,7 +171,40 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
         data: datosActualizacion
       });
 
-      // Construcción de la nota de auditoría
+      // LÓGICA ESTRICTA DE DESTRUCCIÓN FÍSICA Y REEMPLAZO POR CANCELACIÓN
+      if (nuevoEstado === EstadoTarea.CANCELADA) {
+        const imagenesPrevias = await tx.imagen.findMany({
+          where: {
+            tareaId: ticketId,
+            NOT: { url: { contains: "no-image.avif" } }
+          }
+        });
+
+        if (imagenesPrevias.length > 0) {
+          // Destruir físicamente en paralelo
+          imagenesPrevias.forEach((img) => {
+            deleteImageByUrl(img.url).catch(console.error);
+          });
+
+          // Reemplazar URL por placeholder lógico en la base de datos
+          const urlCompletaPlaceholder = `${req.protocol}://${req.get("host")}/img/no-image.avif`;
+          await tx.imagen.updateMany({
+            where: { id: { in: imagenesPrevias.map((i) => i.id) } },
+            data: {
+              url: urlCompletaPlaceholder,
+              tipo: "EXPIRADO"
+            }
+          });
+        }
+
+        // Bloqueo de seguridad: Si intentaron inyectar imágenes nuevas durante una cancelación
+        if (imagenesFinales.length > 0) {
+          imagenesFinales.forEach((url) => {
+            deleteImageByUrl(url).catch(console.error);
+          });
+        }
+      }
+
       let notaHistorial = nota || `Cambio de estado: ${ticket.estado} → ${nuevoEstado}`;
 
       if (esRutina && nuevoEstado === EstadoTarea.CERRADO) {
@@ -188,7 +212,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
       }
 
       if (hayTiempoManual) {
-        notaHistorial += ` [⏱ Tiempo declarado manualmente: ${minutosAdicionalesManual} minuto${minutosAdicionalesManual !== 1 ? 's' : ''}]`;
+        notaHistorial += `: Tiempo declarado manualmente: ${minutosAdicionalesManual} minuto${minutosAdicionalesManual !== 1 ? 's' : ''}`;
       }
 
       const historial = await tx.historialTarea.create({
@@ -202,7 +226,8 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
         }
       });
 
-      if (imagenesFinales.length > 0) {
+      // Solo guardamos en base de datos si NO estamos cancelando
+      if (imagenesFinales.length > 0 && nuevoEstado !== EstadoTarea.CANCELADA) {
         let tipoEvidencia = "EVIDENCIA_AVANCE";
         if (nuevoEstado === EstadoTarea.RESUELTO)  tipoEvidencia = "EVIDENCIA_SOLUCION";
         else if (nuevoEstado === EstadoTarea.RECHAZADO) tipoEvidencia = "EVIDENCIA_RECHAZO";
@@ -235,16 +260,3 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
     return res.status(500).json({ error: "Error al cambiar estado" });
   }
 };
-// ```
-
-// ---
-
-// **Contrato de uso para el frontend (cuando lo desarrolles):**
-
-// El endpoint `PATCH /api/tickets/:id/status` ahora acepta el campo opcional `registroTiempoManual`. Se envía como JSON string en FormData (por ser multipart):
-// ```
-// // Forma A — con fechas
-// registroTiempoManual = '{"inicioManual":"2026-03-19T08:00:00-06:00","finManual":"2026-03-19T10:30:00-06:00"}'
-
-// // Forma B — con minutos directos  
-// registroTiempoManual = '{"duracionManualMinutos":90}'
