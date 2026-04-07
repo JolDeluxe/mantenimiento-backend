@@ -36,13 +36,17 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
         return res.status(400).json({ error: "Las tareas de INSPECCIÓN deben tener un técnico asignado obligatoriamente." });
     }
 
-    if (tieneResponsables) {
-        const usuariosAAsignar = await prisma.usuario.findMany({
-            where: { id: { in: data.responsables }, estado: "ACTIVO" },
-            select: { id: true, rol: true, username: true }
-        });
+    let nombresAsignados = ""; // <-- Declaramos variable para guardar nombres
 
-        if (usuariosAAsignar.length !== data.responsables!.length) {
+    if (tieneResponsables) {
+        const usuariosAAsignar = await prisma.usuario.findMany({
+            where: { id: { in: data.responsables }, estado: "ACTIVO" },
+            select: { id: true, rol: true, username: true }
+        });
+
+        nombresAsignados = usuariosAAsignar.map(u => u.username).join(', '); // <-- Extraemos los nombres
+        
+        if (usuariosAAsignar.length !== data.responsables!.length) {
             return res.status(400).json({ error: "Uno o más responsables no existen o están INACTIVOS." });
         }
 
@@ -90,14 +94,14 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
       });
 
       const historial = await tx.historialTarea.create({
-        data: {
-          tareaId: nuevaTarea.id,
-          usuarioId: user.id,
-          tipo: TipoEvento.CREACION, 
-          estadoNuevo: estadoInicial,
-          nota: tieneResponsables ? `Tarea creada y asignada a ${responsablesConnect.length} persona(s)` : "Tarea planeada creada (Pendiente)"
-        }
-      });
+        data: {
+          tareaId: nuevaTarea.id,
+          usuarioId: user.id,
+          tipo: TipoEvento.CREACION, 
+          estadoNuevo: estadoInicial,
+          nota: tieneResponsables ? `Tarea creada y asignada a: ${nombresAsignados}` : "Tarea planeada creada (Pendiente)"
+        }
+      });
 
       if (urlsImagenes.length > 0) {
         await tx.imagen.createMany({

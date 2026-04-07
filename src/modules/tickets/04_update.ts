@@ -43,20 +43,23 @@ export const updateTicket = async (req: Request, res: Response) => {
     }
 
     let nuevoEstado = tareaActual.estado;
-    let cambioDeResponsables = false;
-    let idsResponsables: { id: number }[] | undefined = undefined;
+    let cambioDeResponsables = false;
+    let idsResponsables: { id: number }[] | undefined = undefined;
+    let nombresAsignadosStr = ""; // Declaramos la variable para almacenar los nombres
 
-    if (data.responsables !== undefined && esAdmin) { 
-        cambioDeResponsables = true;
-        if (data.responsables.length > 0) {
-            const usuariosActivos = await prisma.usuario.findMany({
-                where: { id: { in: data.responsables }, estado: "ACTIVO" },
-                select: { id: true }
-            });
-            if (usuariosActivos.length !== data.responsables.length) {
-                return res.status(400).json({ error: "Responsables inválidos o inactivos." });
-            }
-        }
+    if (data.responsables !== undefined && esAdmin) { 
+        cambioDeResponsables = true;
+        if (data.responsables.length > 0) {
+            const usuariosActivos = await prisma.usuario.findMany({
+                where: { id: { in: data.responsables }, estado: "ACTIVO" },
+                select: { id: true, nombre: true } // Extraemos también el nombre
+            });
+            if (usuariosActivos.length !== data.responsables.length) {
+                return res.status(400).json({ error: "Responsables inválidos o inactivos." });
+            }
+            // Unimos los nombres separados por coma
+            nombresAsignadosStr = usuariosActivos.map(u => u.nombre).join(', ');
+        }
         idsResponsables = data.responsables.map(id => ({ id }));
         
         if (tareaActual.estado === EstadoTarea.PENDIENTE || tareaActual.estado === EstadoTarea.ASIGNADA) {
@@ -91,11 +94,13 @@ export const updateTicket = async (req: Request, res: Response) => {
         });
 
         let notasCambio: string[] = [];
-        if (esAdmin) {
-            if (cambioDeResponsables) {
-                const num = data.responsables!.length;
-                notasCambio.push(num > 0 ? `Asignados ${num} técnicos` : "Se retiraron técnicos");
-            }
+        if (esAdmin) {
+            if (cambioDeResponsables) {
+                const num = data.responsables!.length;
+                // Inyectamos la cadena de nombres reales
+                notasCambio.push(num > 0 ? `Asignado a: ${nombresAsignadosStr}` : "Se retiraron técnicos");
+            }
+            if (nuevoEstado !== tareaActual.estado) notasCambio.push(`Estado: ${nuevoEstado}`);
             if (nuevoEstado !== tareaActual.estado) notasCambio.push(`Estado: ${nuevoEstado}`);
             if (data.prioridad && data.prioridad !== tareaActual.prioridad) notasCambio.push(`Prioridad: ${data.prioridad}`);
             if (data.fechaVencimiento) notasCambio.push("Se actualizó fecha vencimiento");

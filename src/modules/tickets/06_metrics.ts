@@ -89,7 +89,7 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       
       prisma.tarea.count({ 
         where: { 
-          ...baseWhere, 
+          ...globalWhere, 
           fechaVencimiento: { lt: now },
           estado: { in: activeStates }
         } 
