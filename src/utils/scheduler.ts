@@ -1,22 +1,32 @@
-import cron from 'node-cron';
-import { prisma } from '../db';
-
-//este archivo se encarga de las tareas programadas (cron jobs) del sistema
-// Este trabajo se ejecuta diariamente para limpiar la bitácora antigua
+import cron from "node-cron";
+import { prisma } from "../db";
+import { autoCloseResolvedTickets } from "../modules/tickets/automations";
 
 export const iniciarTareasProgramadas = () => {
-  // Ejecutar todos los días a las 03:00 AM (hora del servidor)
-  cron.schedule('0 3 * * *', async () => {
-    console.log('[CRON] Iniciando limpieza de bitácora antigua...');
+  // CRON 1: Cierre automático de tickets resueltos inactivos
+  // Ejecuta todos los días a la 01:00 AM (hora del servidor)
+  cron.schedule("0 1 * * *", async () => {
+  // cron.schedule("* * * * *", async () => { // Los 5 asteriscos significan "cada minuto"
+
+    console.log("[CRON] Iniciando evaluación de cierre automático de tickets...");
+    try {
+      await autoCloseResolvedTickets();
+      console.log("[CRON] Evaluación de tickets finalizada.");
+    } catch (error) {
+      console.error("[CRON ERROR] Falló el cierre automático de tickets:", error);
+    }
+  });
+
+  // CRON 2: Limpieza de bitácora antigua
+  // Ejecuta todos los días a las 03:00 AM (hora del servidor)
+  cron.schedule("0 3 * * *", async () => {
+    console.log("[CRON] Iniciando limpieza de bitácora antigua...");
     
-    // 6 meses 
     const diasRetencion = 180; 
-    
     const fechaLimite = new Date();
     fechaLimite.setDate(fechaLimite.getDate() - diasRetencion);
 
     try {
-      // ESTO ES LO QUE BORRA FÍSICAMENTE LOS DATOS DE MYSQL
       const borrados = await prisma.bitacora.deleteMany({
         where: {
           createdAt: {
@@ -28,12 +38,12 @@ export const iniciarTareasProgramadas = () => {
       if (borrados.count > 0) {
         console.log(`[CRON] Limpieza completada. Se eliminaron ${borrados.count} registros de hace más de 6 meses.`);
       } else {
-        console.log('[CRON] Todo limpio. No había registros tan antiguos.');
+        console.log("[CRON] Todo limpio. No había registros tan antiguos en bitácora.");
       }
     } catch (error) {
-      console.error('[CRON ERROR] Falló la limpieza de bitácora:', error);
+      console.error("[CRON ERROR] Falló la limpieza de bitácora:", error);
     }
   });
   
-  console.log('[SYSTEM] Tareas programadas (CRON) inicializadas: Limpieza a las 03:00 AM.');
+  console.log("[SYSTEM] Tareas programadas (CRON) inicializadas: Tickets (01:00 AM) | Bitácora (03:00 AM).");
 };

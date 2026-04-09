@@ -205,14 +205,15 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
         }
       }
 
-      let notaHistorial = nota || `Cambio de estado: ${ticket.estado} → ${nuevoEstado}`;
+      // Generación de metadatos de historial limpios
+      let notaHistorial = nota ? nota.trim() : "Sin observaciones";
 
       if (esRutina && nuevoEstado === EstadoTarea.CERRADO) {
-        notaHistorial += ' (Rutina Completada)';
+        notaHistorial += ' [RUTINA]';
       }
 
       if (hayTiempoManual) {
-        notaHistorial += `: Tiempo declarado manualmente: ${minutosAdicionalesManual} minuto${minutosAdicionalesManual !== 1 ? 's' : ''}`;
+        notaHistorial += ` [TIEMPO_MANUAL:${minutosAdicionalesManual}]`;
       }
 
       const historial = await tx.historialTarea.create({
