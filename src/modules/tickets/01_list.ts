@@ -25,7 +25,8 @@ export const listarTickets = async (req: Request, res: Response) => {
     if (!estado) {
       tableWhere.AND = [
         ...(Array.isArray(tableWhere.AND) ? tableWhere.AND : (tableWhere.AND ? [tableWhere.AND] : [])),
-        { estado: { notIn: [EstadoTarea.CANCELADA, EstadoTarea.RECHAZADO] } }
+        // Se remueve RECHAZADO de la exclusión para que viaje al Frontend siempre
+        { estado: { notIn: [EstadoTarea.CANCELADA] } } 
       ];
     }
 
