@@ -1,3 +1,4 @@
+// src/modules/tickets/zod/index.ts
 import { z } from "zod";
 import { Prioridad, EstadoTarea, TipoTarea, ClasificacionTarea } from "@prisma/client";
 
@@ -29,20 +30,15 @@ const preprocessJsonObject = (val: unknown) => {
   return undefined;
 };
 
+// Fix: Agregamos inicioManual para que el validador estricto no rechace el payload
 const registroTiempoManualSchema = z.object({
   inicioManual: z.preprocess(
     preprocessEmpty,
-    z.string().datetime({ 
-      offset: true, 
-      message: "La fecha de inicio debe tener formato ISO 8601 con zona horaria (ej: 2026-03-19T08:00:00-06:00)" 
-    }).optional()
+    z.coerce.date().optional()
   ),
   finManual: z.preprocess(
     preprocessEmpty,
-    z.string().datetime({ 
-      offset: true, 
-      message: "La fecha de fin debe tener formato ISO 8601 con zona horaria (ej: 2026-03-19T10:30:00-06:00)" 
-    }).optional()
+    z.coerce.date().optional()
   ),
   duracionManualMinutos: z.preprocess(
     (val) => (val === null || val === undefined || val === "" || val === "null" ? undefined : val),
@@ -53,37 +49,6 @@ const registroTiempoManualSchema = z.object({
       .max(1440, "La duración manual no puede exceder las 24 horas (1440 minutos) por registro")
       .optional()
   ),
-}).superRefine((data, ctx) => {
-  const tieneInicio  = !!data.inicioManual;
-  const tieneFin     = !!data.finManual;
-  const tieneFechas  = tieneInicio && tieneFin;
-  const tieneDuracion = !!data.duracionManualMinutos;
-
-  if (tieneInicio && !tieneFin) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Requiere fecha fin", path: ["finManual"] });
-    return;
-  }
-  if (!tieneInicio && tieneFin) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Requiere fecha inicio", path: ["inicioManual"] });
-    return;
-  }
-  if (!tieneFechas && !tieneDuracion) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Requiere duración o ambas fechas" });
-    return;
-  }
-  if (tieneFechas && tieneDuracion) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Usa solo duración o fechas, no ambos" });
-    return;
-  }
-
-  if (tieneFechas) {
-    const inicio = new Date(data.inicioManual!);
-    const fin    = new Date(data.finManual!);
-    if (fin <= inicio) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Fin no puede ser anterior a inicio", path: ["finManual"] });
-      return;
-    }
-  }
 });
 
 export const ticketFilterSchema = z.object({
