@@ -217,20 +217,17 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
       }
 
       if (minutosManualesDirectos > 0) {
-        notaHistorial += ` [TIEMPO_MANUAL:${minutosManualesDirectos}m]`;
+        notaHistorial += ' ||[META:TIEMPO_MANUAL]||';
       }
       
-      // ELIMINADO: Se quitó el bloque que concatenaba "[ENTREGA_ATRASADA_MANUAL]"
-      // para evitar que se muestre en el frontend, manteniendo la nota limpia.
-
       const historial = await tx.historialTarea.create({
         data: {
-          tareaId:       ticketId,
-          usuarioId:     user.id,
-          tipo:          TipoEvento.CAMBIO_ESTADO,
+          tareaId:        ticketId,
+          usuarioId:      user.id,
+          tipo:           TipoEvento.CAMBIO_ESTADO,
           estadoAnterior: ticket.estado,
-          estadoNuevo:   nuevoEstado,
-          nota:          notaHistorial
+          estadoNuevo:    nuevoEstado,
+          nota:           notaHistorial
         }
       });
 

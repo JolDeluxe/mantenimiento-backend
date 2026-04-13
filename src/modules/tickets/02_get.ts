@@ -4,13 +4,11 @@ import { Rol } from "@prisma/client";
 import { registrarError } from "../../utils/logger";
 import { ticketStandardInclude } from "./types"; 
 import { checkTicketExpiration } from "./expiration";
-// Importamos directamente el tipo inferido desde Zod
 import type { GetTicketByIdParams } from "./zod";
 
 export const getTicket = async (req: Request, res: Response) => {
   try {
     const user = req.user!; 
-    // Usamos el tipo limpio exportado
     const { id: ticketId } = req.params as unknown as GetTicketByIdParams;
 
     const ticketDB = await prisma.tarea.findUnique({
@@ -43,7 +41,23 @@ export const getTicket = async (req: Request, res: Response) => {
       return res.status(403).json({ error: "No tienes permisos para ver el detalle de este ticket." });
     }
 
-    return res.json(ticket);
+    // Patrón DTO: Intercepción y limpieza antes de serializar
+    const historialMapeado = ticket.historial.map(h => {
+      const notaString = h.nota || "";
+      const esTiempoManual = notaString.includes('||[META:TIEMPO_MANUAL]||');
+      return {
+        ...h,
+        esTiempoManual,
+        nota: notaString.replace(' ||[META:TIEMPO_MANUAL]||', '')
+      };
+    });
+
+    const ticketDTO = {
+      ...ticket,
+      historial: historialMapeado
+    };
+
+    return res.json(ticketDTO);
 
   } catch (error) {
     await registrarError('GET_TICKET_DETAIL', req.user?.id || null, error);

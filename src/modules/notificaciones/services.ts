@@ -200,7 +200,7 @@ export const notificarCambioEstatus = async (
       const tecnicoMap: TecnicoEntry = (() => {
         switch (nuevoEstado) {
           case EstadoTarea.CANCELADA:
-            return { tipo: TipoNotificacion.TAREA_CANCELADA, msg: "⛔ Tarea CANCELADA. Detén labores inmediatamente." };
+            return { tipo: TipoNotificacion.TAREA_CANCELADA, msg: "⛔ Tarea CANCELADA. Ya no es necesario hacer esta tarea." };
           case EstadoTarea.RECHAZADO:
             return { tipo: TipoNotificacion.TAREA_RECHAZADA, msg: "⚠️ Tu trabajo fue RECHAZADO. Debes revisar y corregir." };
           case EstadoTarea.CERRADO:
@@ -227,7 +227,7 @@ export const notificarCambioEstatus = async (
       switch (nuevoEstado) {
         case EstadoTarea.EN_PAUSA: {
           const titulo = "Supervisión de Mantenimiento";
-          const cuerpo  = `Alerta: Una tarea en ${tarea.planta} fue PAUSADA por el técnico.`;
+          const cuerpo  = `🔴 ALERTA: Una tarea en ${tarea.planta} fue PAUSADA por el técnico.`;
           await Promise.all([
             distribuirNotificacion(jefesAvisar, { titulo, cuerpo, url: `/app/tickets/${tarea.id}` }),
             persistirNotificaciones(jefesAvisar, TipoNotificacion.TAREA_PAUSADA, titulo, cuerpo, tarea.id),
@@ -269,7 +269,7 @@ export const notificarCambioEstatus = async (
         case EstadoTarea.CANCELADA: {
           if (actorId === idCliente && rolCreador === Rol.CLIENTE_INTERNO) {
             const titulo = "Supervisión de Mantenimiento";
-            const cuerpo  = `El cliente CANCELÓ el reporte "${tarea.titulo}".`;
+            const cuerpo  = `🔴 ALERTA: El cliente CANCELÓ el reporte "${tarea.titulo}".`;
             await Promise.all([
               distribuirNotificacion(jefesAvisar, { titulo, cuerpo, url: `/app/tickets/${tarea.id}` }),
               persistirNotificaciones(jefesAvisar, TipoNotificacion.TAREA_CANCELADA, titulo, cuerpo, tarea.id),

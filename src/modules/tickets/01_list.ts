@@ -14,23 +14,19 @@ export const listarTickets = async (req: Request, res: Response) => {
     const { page, limit, sort, estado } = query;
     const offset = (page - 1) * limit;
 
-    // ── 1. Filtro base sin estado para calcular totales reales de la vista
     const querySinEstado = { ...query };
     delete querySinEstado.estado;
     const searchWhere = getTicketFilters({ id: user.id, rol: user.rol }, querySinEstado);
 
-    // ── 2. Filtro estricto con estado para la tabla paginada
     const tableWhere: Prisma.TareaWhereInput = getTicketFilters({ id: user.id, rol: user.rol }, query);
 
     if (!estado) {
       tableWhere.AND = [
         ...(Array.isArray(tableWhere.AND) ? tableWhere.AND : (tableWhere.AND ? [tableWhere.AND] : [])),
-        // Se remueve RECHAZADO de la exclusión para que viaje al Frontend siempre
         { estado: { notIn: [EstadoTarea.CANCELADA] } } 
       ];
     }
 
-    // ── 3. Ejecución concurrente
     const [ totalAbsoluto, groupEstados, totalPaginado, tickets ] = await Promise.all([
       prisma.tarea.count({ where: searchWhere }),
       prisma.tarea.groupBy({
@@ -53,12 +49,30 @@ export const listarTickets = async (req: Request, res: Response) => {
       return acc;
     }, {} as Record<string, number>);
 
+    // Patrón DTO: Se replica la intercepción en la lista para evitar inconsistencias de contrato
+    const ticketsDTO = tickets.map(t => {
+      const historialMapeado = t.historial.map(h => {
+        const notaString = h.nota || "";
+        const esTiempoManual = notaString.includes('||[META:TIEMPO_MANUAL]||');
+        return {
+          ...h,
+          esTiempoManual,
+          nota: notaString.replace(' ||[META:TIEMPO_MANUAL]||', '')
+        };
+      });
+
+      return {
+        ...t,
+        historial: historialMapeado
+      };
+    });
+
     return res.json({
       status: "success",
       pagination: { total: totalPaginado, page, limit, totalPages: Math.ceil(totalPaginado / limit) },
       totalAbsoluto,
       resumenEstados,
-      data: tickets
+      data: ticketsDTO
     });
 
   } catch (error) {

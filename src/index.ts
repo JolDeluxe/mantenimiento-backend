@@ -15,6 +15,7 @@ import departamentos from "./routes/departamentos_rutas";
 import bitacora from './routes/bitacora_rutas';
 import tickets from './routes/tickets_rutas';
 import notificaciones from "./routes/notificaciones_rutas";
+import dashboard from "./routes/dashboard_rutas";
 
 const app = express();
 
@@ -38,6 +39,7 @@ app.use("/api/departamentos", departamentos);
 app.use("/api/bitacora", bitacora);
 app.use("/api/tickets", tickets);
 app.use("/api/notificaciones", notificaciones);
+app.use("/api/dashboard", dashboard);
 
 // --- ARRANQUE DEL SERVIDOR ---
 
