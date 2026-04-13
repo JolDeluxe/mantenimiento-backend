@@ -220,9 +220,8 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
         notaHistorial += ` [TIEMPO_MANUAL:${minutosManualesDirectos}m]`;
       }
       
-      if (esCierreManualAtrasado) {
-        notaHistorial += ` [ENTREGA_ATRASADA_MANUAL]`;
-      }
+      // ELIMINADO: Se quitó el bloque que concatenaba "[ENTREGA_ATRASADA_MANUAL]"
+      // para evitar que se muestre en el frontend, manteniendo la nota limpia.
 
       const historial = await tx.historialTarea.create({
         data: {
@@ -254,7 +253,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
       return tareaActualizada;
     });
 
-    void notificarCambioEstatus(ticket, nuevoEstado, user.id);
+    void notificarCambioEstatus(ticket, nuevoEstado, user.id, user.rol);
     await registrarAccion(
       "CAMBIO_ESTATUS",
       user.id,

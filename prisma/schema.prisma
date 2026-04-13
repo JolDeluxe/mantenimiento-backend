@@ -61,6 +61,21 @@ enum ClasificacionTarea {
   RUTINA           
 }
 
+enum TipoNotificacion {
+  NUEVO_REPORTE
+  TAREA_ASIGNADA
+  TAREA_INICIADA
+  TAREA_PAUSADA
+  TAREA_RESUELTA
+  TAREA_CERRADA
+  TAREA_RECHAZADA
+  TAREA_CANCELADA
+  TAREA_MODIFICADA
+  TAREA_REASIGNADA
+  REVISION_PENDIENTE
+  EQUIPO_RECHAZO
+}
+
 // --- MODELOS ---
 
 model Departamento {
@@ -108,6 +123,7 @@ model Usuario {
   resetTokens PasswordResetToken[]
   pushSubscriptions PushSubscription[]
   notificacionesLog NotificacionLog[]
+  notificaciones   Notificacion[]
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -215,6 +231,23 @@ model Bitacora {
   usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
+}
+
+model Notificacion {
+  id        Int              @id @default(autoincrement())
+  usuarioId Int
+  usuario   Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tipo      TipoNotificacion
+  titulo    String           @db.VarChar(255)
+  cuerpo    String           @db.Text
+  tareaId   Int?
+  leida     Boolean          @default(false)
+  accionada Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([usuarioId])
+  @@index([usuarioId, leida])
+  @@index([createdAt])
 }
 
 model IntervaloTiempo {
