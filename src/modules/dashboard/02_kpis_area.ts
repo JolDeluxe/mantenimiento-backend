@@ -26,7 +26,6 @@ export const getKpisArea = async (req: Request, res: Response) => {
 
     const { fechaInicio, fechaFin } = resolverRangoFechas(year, month, fiStr, ffStr);
 
-    // Quitamos la restricción de "solo terminadas" para poder calcular el backlog y totales reales
     const baseWhere: Prisma.TareaWhereInput = {};
 
     if (user.rol === Rol.JEFE_MTTO || user.rol === Rol.COORDINADOR_MTTO) {
@@ -42,7 +41,6 @@ export const getKpisArea = async (req: Request, res: Response) => {
       baseWhere.responsables = { some: { id: tecnicoId } };
     }
 
-    // Para visualizar áreas generales, filtramos por la fecha de creación en el periodo
     if (fechaInicio && fechaFin) {
       baseWhere.createdAt = { gte: fechaInicio, lte: fechaFin };
     }
@@ -62,14 +60,12 @@ export const getKpisArea = async (req: Request, res: Response) => {
       },
     });
 
-    // --- ESTRUCTURAS DE DATOS ---
     type FrecuenciaTicket = { cantidad: number; primeraFecha: Date; ultimaFecha: Date };
     
     type MetricasBase = {
       totalTareas: number;
-      totalTickets: number;
-      totalCorrectivosExtraordinarios: number; // Correctivos que NO son tickets
       backlogActivo: number;
+      tipos: Record<string, number>;
       estados: Record<string, number>;
       clasificaciones: Record<string, number>;
       categorias: Record<string, number>;
@@ -77,9 +73,7 @@ export const getKpisArea = async (req: Request, res: Response) => {
         cantidad: number;
         tiempoRealTotal: number;
         tiempoEstimadoTotal: number;
-        tiempoPromedioCierre: number;
       };
-      // Agrupador interno para calcular frecuencia: key = "clasificacion|categoria"
       _frecuenciaRaw: Map<string, FrecuenciaTicket>; 
     };
 
@@ -90,17 +84,15 @@ export const getKpisArea = async (req: Request, res: Response) => {
 
     const inicializarMetricas = (): MetricasBase => ({
       totalTareas: 0,
-      totalTickets: 0,
-      totalCorrectivosExtraordinarios: 0,
       backlogActivo: 0,
+      tipos: {}, 
       estados: Object.values(EstadoTarea).reduce((acc, curr) => ({ ...acc, [curr]: 0 }), {}),
       clasificaciones: {},
       categorias: {},
-      tiemposCerradas: { cantidad: 0, tiempoRealTotal: 0, tiempoEstimadoTotal: 0, tiempoPromedioCierre: 0 },
+      tiemposCerradas: { cantidad: 0, tiempoRealTotal: 0, tiempoEstimadoTotal: 0 },
       _frecuenciaRaw: new Map(),
     });
 
-    // --- PROCESAMIENTO DE TAREAS ---
     for (const t of tareas) {
       const pName = t.planta || "GENERAL";
       const aName = t.area || "GENERAL";
@@ -117,25 +109,22 @@ export const getKpisArea = async (req: Request, res: Response) => {
       }
       const aEntry = pEntry.areasMap.get(aName)!;
 
-      // Función helper para acumular datos en Planta y en Área simultáneamente
       const registrarDatos = (entry: MetricasBase) => {
         entry.totalTareas++;
         
-        // Estados, Clasificaciones y Categorías
+        // Extracción infalible del tipo de tarea (Evita falsos nulos)
+        const safeTipo = t.tipo ? String(t.tipo).toUpperCase().trim() : 'TICKET';
+        entry.tipos[safeTipo] = (entry.tipos[safeTipo] || 0) + 1;
+        
         entry.estados[t.estado] = (entry.estados[t.estado] || 0) + 1;
         entry.clasificaciones[t.clasificacion] = (entry.clasificaciones[t.clasificacion] || 0) + 1;
         entry.categorias[catName] = (entry.categorias[catName] || 0) + 1;
 
-        // Backlog
         if (ESTADOS_BACKLOG.includes(t.estado)) {
           entry.backlogActivo++;
         }
 
-        // Tickets vs Resto Correctivo
-        if (t.tipo === "TICKET") {
-          entry.totalTickets++;
-          
-          // Frecuencia de tickets por clasificación y categoría
+        if (safeTipo === "TICKET") {
           const freqKey = `${t.clasificacion}|${catName}`;
           if (!entry._frecuenciaRaw.has(freqKey)) {
             entry._frecuenciaRaw.set(freqKey, { cantidad: 0, primeraFecha: t.createdAt, ultimaFecha: t.createdAt });
@@ -144,12 +133,8 @@ export const getKpisArea = async (req: Request, res: Response) => {
           fData.cantidad++;
           if (t.createdAt < fData.primeraFecha) fData.primeraFecha = t.createdAt;
           if (t.createdAt > fData.ultimaFecha) fData.ultimaFecha = t.createdAt;
-
-        } else if (t.clasificacion === "CORRECTIVO") {
-          entry.totalCorrectivosExtraordinarios++;
         }
 
-        // Tiempos (Estrictamente CERRADAS)
         if (t.estado === EstadoTarea.CERRADO) {
           entry.tiemposCerradas.cantidad++;
           entry.tiemposCerradas.tiempoRealTotal += (t.duracionReal || 0);
@@ -161,27 +146,14 @@ export const getKpisArea = async (req: Request, res: Response) => {
       registrarDatos(aEntry);
     }
 
-    // --- FORMATEO FINAL Y CÁLCULOS SECUNDARIOS ---
     const formatearMetricas = (entry: MetricasBase) => {
-      // Calcular el Tiempo Promedio de Cierre (Mins)
-      if (entry.tiemposCerradas.cantidad > 0) {
-        entry.tiemposCerradas.tiempoPromedioCierre = Math.round(
-          entry.tiemposCerradas.tiempoRealTotal / entry.tiemposCerradas.cantidad
-        );
-      }
-
-      // Calcular la frecuencia (Reportes Mensuales Promedio)
       const frecuenciaTickets = Array.from(entry._frecuenciaRaw.entries()).map(([key, data]) => {
         const [clasificacion, categoria] = key.split("|");
         
-        // Calcular días transcurridos entre el primer y último ticket de este grupo
         const spanMs = data.ultimaFecha.getTime() - data.primeraFecha.getTime();
         let spanDias = spanMs / (1000 * 60 * 60 * 24);
-        
-        // Si el span es menor a 1 día (ej. todos los tickets cayeron hoy), asumimos 1 día mínimo
         if (spanDias < 1) spanDias = 1;
 
-        // Proyectar a mes (30 días)
         const frecuenciaMensual = Number(((data.cantidad / spanDias) * 30).toFixed(1));
 
         return {
@@ -192,7 +164,6 @@ export const getKpisArea = async (req: Request, res: Response) => {
         };
       }).sort((a, b) => b.cantidadTotal - a.cantidadTotal);
 
-      // Limpiar el mapa temporal para que no viaje en el JSON
       const { _frecuenciaRaw, ...rest } = entry;
       return { ...rest, frecuenciaTickets };
     };
