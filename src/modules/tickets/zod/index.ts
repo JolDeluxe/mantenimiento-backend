@@ -61,6 +61,7 @@ export const ticketFilterSchema = z.object({
     prioridad: z.preprocess(preprocessEmpty, z.nativeEnum(Prioridad).optional()),
     tipo: z.preprocess(preprocessEmpty, z.nativeEnum(TipoTarea).optional()),
     clasificacion: z.preprocess(preprocessEmpty, z.nativeEnum(ClasificacionTarea).optional()),
+    categoria: z.preprocess(preprocessEmpty, z.string().optional()),
     responsableId: z.preprocess(preprocessEmpty, z.coerce.number().optional()),
     planta: z.preprocess(preprocessEmpty, z.string().optional()),
     area: z.preprocess(preprocessEmpty, z.string().optional()),
@@ -120,7 +121,7 @@ export const createTicketAdminSchema = z.object({
   clasificacion: z.nativeEnum(ClasificacionTarea).default(ClasificacionTarea.CORRECTIVO),
   planta: z.string().optional(),
   area: z.string().optional(),
-  categoria: z.string().optional()
+  categoria: commonString.min(3, "La categoría es obligatoria")
 });
 
 export const updateTicketSchema = z.object({

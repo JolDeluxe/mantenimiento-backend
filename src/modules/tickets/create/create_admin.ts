@@ -79,7 +79,7 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
           titulo: data.titulo,
           descripcion: data.descripcion,
           prioridad: data.prioridad,
-          categoria: data.categoria || "General", 
+          categoria: data.categoria,
           planta: data.planta || "KAPPA",
           area: data.area || "General",
           clasificacion: data.clasificacion,

@@ -24,6 +24,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     prioridad, 
     tipo, 
     clasificacion, 
+    categoria,
     responsableId,
     planta,
     area,
@@ -46,6 +47,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   if (estado) where.estado = estado;
   if (tipo) where.tipo = tipo;
   if (clasificacion) where.clasificacion = clasificacion;
+  if (categoria) where.categoria = categoria;
   if (planta) where.planta = planta;
   if (area) where.area = area;
 

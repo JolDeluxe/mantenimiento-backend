@@ -2,39 +2,33 @@ import { EstadoTarea } from "@prisma/client";
 
 export const UMBRAL_DATOS_SUFICIENTES = 3;
 
-/**
- * KPI por tarea individual (0-100):
- * 50 pts  → tarea en RESUELTO o CERRADO
- * 40 pts  → finalizadoAt <= fechaVencimiento (SLA cumplido)
- * 10 pts  → 0 < duracionReal < tiempoEstimado (eficiencia temporal)
- */
 export const calcularKpiTarea = (tarea: {
   estado: EstadoTarea;
   finalizadoAt: Date | null;
   fechaVencimiento: Date | null;
   duracionReal: number | null;
   tiempoEstimado: number | null;
+  historial: { id: number }[]; // <-- Importante: Ahora requerimos el historial para ver rechazos
 }): number => {
   const ESTADOS_TERMINADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
-  
   if (!ESTADOS_TERMINADOS.includes(tarea.estado)) return 0;
 
-  let kpi = 50;
+  let kpi = 20; // 20% -> Por el simple hecho de entregarla (RESUELTO o CERRADO)
 
+  // 40% -> Entregada a tiempo (<= fecha límite)
   if (tarea.finalizadoAt && tarea.fechaVencimiento) {
-    if (tarea.finalizadoAt <= tarea.fechaVencimiento) {
-      kpi += 40;
-    }
+    if (tarea.finalizadoAt <= tarea.fechaVencimiento) kpi += 40;
   }
 
+  // 20% -> En el tiempo estimado correcto (duracionReal <= tiempoEstimado)
   const duracion = tarea.duracionReal ?? 0;
-  if (
-    duracion > 0 &&
-    tarea.tiempoEstimado !== null &&
-    tarea.tiempoEstimado > 0 &&
-    duracion < tarea.tiempoEstimado
-  ) {
-    kpi += 10;
+  if (duracion > 0 && tarea.tiempoEstimado && tarea.tiempoEstimado > 0 && duracion <= tarea.tiempoEstimado) {
+    kpi += 20;
+  }
+
+  // 20% -> Sin rechazos
+  if (tarea.historial.length === 0) {
+    kpi += 20;
   }
 
   return kpi;
@@ -55,6 +49,10 @@ export const colorParaKpi = (kpi: number): "green" | "amber" | "red" => {
   return "red";
 };
 
+/**
+ * Construye rango de fechas desde year + month (picker tradicional).
+ * month === 0 → año completo.
+ */
 export const buildDateRange = (
   year?: number,
   month?: number
@@ -64,13 +62,47 @@ export const buildDateRange = (
   if (!month || month === 0) {
     return {
       fechaInicio: new Date(year, 0, 1, 0, 0, 0, 0),
-      fechaFin: new Date(year, 11, 31, 23, 59, 59, 999),
+      fechaFin:    new Date(year, 11, 31, 23, 59, 59, 999),
     };
   }
 
   const lastDay = new Date(year, month, 0).getDate();
   return {
     fechaInicio: new Date(year, month - 1, 1, 0, 0, 0, 0),
-    fechaFin: new Date(year, month - 1, lastDay, 23, 59, 59, 999),
+    fechaFin:    new Date(year, month - 1, lastDay, 23, 59, 59, 999),
   };
+};
+
+/**
+ * Construye rango de fechas desde strings ISO (preset rápido del frontend).
+ * Tiene precedencia sobre buildDateRange cuando ambos están presentes.
+ */
+export const buildDateRangeFromStrings = (
+  fechaInicioStr?: string,
+  fechaFinStr?: string
+): { fechaInicio?: Date; fechaFin?: Date } => {
+  if (!fechaInicioStr || !fechaFinStr) return {};
+
+  const fi = new Date(fechaInicioStr);
+  const ff = new Date(fechaFinStr);
+
+  fi.setHours(0, 0, 0, 0);
+  ff.setHours(23, 59, 59, 999);
+
+  if (isNaN(fi.getTime()) || isNaN(ff.getTime())) return {};
+
+  return { fechaInicio: fi, fechaFin: ff };
+};
+
+/** Elige el rango correcto priorizando strings sobre year/month */
+export const resolverRangoFechas = (
+  year?: number,
+  month?: number,
+  fechaInicioStr?: string,
+  fechaFinStr?: string
+): { fechaInicio?: Date; fechaFin?: Date } => {
+  if (fechaInicioStr && fechaFinStr) {
+    return buildDateRangeFromStrings(fechaInicioStr, fechaFinStr);
+  }
+  return buildDateRange(year, month);
 };

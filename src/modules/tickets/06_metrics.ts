@@ -52,6 +52,7 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       conteoPorEstado, 
       conteoGlobalEstados,
       conteoPorTipo, 
+      conteoPorCategoria, 
       countMonth, 
       countWeek, 
       countDay, 
@@ -83,6 +84,7 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       
       // Métricas Operativas Dinámicas (Basadas en baseWhere)
       prisma.tarea.groupBy({ by: ['tipo'], where: baseWhere, _count: { tipo: true } }),
+      prisma.tarea.groupBy({ by: ['categoria'], where: baseWhere, _count: { categoria: true } }), 
       prisma.tarea.count({ where: { ...baseWhere, createdAt: { gte: startOfMonth } } }),
       prisma.tarea.count({ where: { ...baseWhere, createdAt: { gte: startOfWeek } } }),
       prisma.tarea.count({ where: { ...baseWhere, createdAt: { gte: startOfDay } } }),
@@ -193,6 +195,11 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       ...acc, [curr.tipo]: curr._count.tipo 
     }), {} as Record<string, number>);
 
+    const resumenCategoria = conteoPorCategoria.reduce((acc, curr) => {
+      const key = curr.categoria || "Sin Categoría";
+      return { ...acc, [key]: curr._count.categoria };
+    }, {} as Record<string, number>);
+
     // ── 5. PROCESAMIENTO DE EFICACIAS (TIEMPOS) ──────────────────────────────
     
     const eficaciaPorTipo = eficaciaPorTipoData.reduce((acc, curr) => ({
@@ -282,6 +289,7 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
         distribucion: {
           porEstado: resumenEstatus,
           porTipo: resumenTipo,
+          porCategoria: resumenCategoria,
           focosRojos: topFocosRojos
         },
         periodo: {

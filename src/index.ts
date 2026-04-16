@@ -20,8 +20,8 @@ import dashboard from "./routes/dashboard_rutas";
 const app = express();
 
 // --- MIDDLEWARES ---
+app.use(corsMiddleware); 
 app.use(express.json());
-app.use(corsMiddleware);
 app.use(morgan('dev'));
 
 // --- CONFIGURACIÓN DE ARCHIVOS ESTÁTICOS ---

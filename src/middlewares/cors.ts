@@ -9,6 +9,7 @@ const whitelist = [
   "http://200.1.0.72:5000",
   // Aquí agregaremos luego los dominios de Netlify:
   // "https://cuadra-mantenimiento.netlify.app",
+  // "https://cuadra-mbc-mantenimiento-interno.netlify.app"
 ];
 
 const corsOptions: cors.CorsOptions = {
@@ -23,6 +24,7 @@ const corsOptions: cors.CorsOptions = {
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  optionsSuccessStatus: 204, 
 };
 
 export const corsMiddleware = cors(corsOptions);
