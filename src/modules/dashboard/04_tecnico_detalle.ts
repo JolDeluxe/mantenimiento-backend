@@ -7,8 +7,6 @@ import { calcularKpiTarea, colorParaKpi, resolverRangoFechas } from "./helper_me
 
 const ROLES_CON_ACCESO: Rol[] = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO];
 const ESTADOS_TERMINADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
-const ESTADOS_BACKLOG: EstadoTarea[] = [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA];
-const CONSTANTE_CONFIANZA = 5;
 
 export const getTecnicoDetalle = async (req: Request, res: Response) => {
   try {
@@ -31,36 +29,33 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
 
     const { fechaInicio, fechaFin } = resolverRangoFechas(year, month, fiStr, ffStr);
 
-    // 1. TAREAS TERMINADAS (Para Rendimiento, Tiempos y Gráficas) - Filtrado estricto por finalizadoAt
-    const tareasTerminadas = await prisma.tarea.findMany({
+    const tareasPeriodo = await prisma.tarea.findMany({
       where: {
         responsables: { some: { id: tecnicoId } },
-        estado: { in: ESTADOS_TERMINADOS },
-        ...(fechaInicio && fechaFin ? { finalizadoAt: { gte: fechaInicio, lte: fechaFin } } : {}),
+        estado: { not: EstadoTarea.CANCELADA },
+        ...(fechaInicio && fechaFin ? { createdAt: { gte: fechaInicio, lte: fechaFin } } : {}),
       },
       select: {
         id: true, titulo: true, tipo: true, clasificacion: true, categoria: true, estado: true,
         createdAt: true, finalizadoAt: true, fechaVencimiento: true, duracionReal: true, tiempoEstimado: true,
         historial: { where: { estadoNuevo: EstadoTarea.RECHAZADO }, select: { id: true }, take: 1 },
       },
-      orderBy: { finalizadoAt: "desc" },
+      orderBy: { createdAt: "desc" },
     });
 
-    // 2. BACKLOG (Carga Actual) - Es atemporal, son sus tareas activas en este momento
     const backlog = await prisma.tarea.findMany({
       where: {
         responsables: { some: { id: tecnicoId } },
-        estado: { in: ESTADOS_BACKLOG },
+        ...(fechaInicio && fechaFin ? { createdAt: { gte: fechaInicio, lte: fechaFin } } : {}),
       },
       select: { estado: true, clasificacion: true, categoria: true }
     });
 
-    // 3. PROMEDIO DEL EQUIPO (Para el cálculo de Bayes)
-    const todasLasTerminadasEquipo = await prisma.tarea.findMany({
+    const todasLasTareasEquipo = await prisma.tarea.findMany({
       where: {
-        estado: { in: ESTADOS_TERMINADOS },
+        estado: { not: EstadoTarea.CANCELADA },
         ...(tecnico.departamentoId ? { departamentoId: tecnico.departamentoId } : {}),
-        ...(fechaInicio && fechaFin ? { finalizadoAt: { gte: fechaInicio, lte: fechaFin } } : {}),
+        ...(fechaInicio && fechaFin ? { createdAt: { gte: fechaInicio, lte: fechaFin } } : {}),
       },
       select: { 
         estado: true, finalizadoAt: true, fechaVencimiento: true, duracionReal: true, tiempoEstimado: true,
@@ -68,24 +63,20 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
       }
     });
 
-    const kpisEquipo = todasLasTerminadasEquipo.map(t => calcularKpiTarea(t));
+    const kpisEquipo = todasLasTareasEquipo.map(t => ESTADOS_TERMINADOS.includes(t.estado) ? calcularKpiTarea(t as any) : 0);
     const promedioEquipoCrudo = kpisEquipo.length > 0 ? kpisEquipo.reduce((a, b) => a + b, 0) / kpisEquipo.length : 0;
     const promedioEquipo = Number(promedioEquipoCrudo.toFixed(1));
 
-    // 4. CÁLCULO DE SCORE AJUSTADO DEL TÉCNICO
-    const kpisTecnico = tareasTerminadas.map(t => calcularKpiTarea(t));
+    const kpisTecnico = tareasPeriodo.map(t => ESTADOS_TERMINADOS.includes(t.estado) ? calcularKpiTarea(t as any) : 0);
     const kpiCrudo = kpisTecnico.length > 0 ? kpisTecnico.reduce((a, b) => a + b, 0) / kpisTecnico.length : 0;
-    
-    const scoreAjustadoCalc = (
-      (kpiCrudo * kpisTecnico.length) + (promedioEquipoCrudo * CONSTANTE_CONFIANZA)
-    ) / (kpisTecnico.length + CONSTANTE_CONFIANZA);
-    const scoreAjustado = Number(scoreAjustadoCalc.toFixed(1));
+    const scoreAjustado = Number(kpiCrudo.toFixed(1)); 
+
+    const tareasTerminadas = tareasPeriodo.filter(t => ESTADOS_TERMINADOS.includes(t.estado));
 
     const conRechazo = tareasTerminadas.filter((t) => t.historial.length > 0).length;
     const aprobadas = tareasTerminadas.length - conRechazo;
     const tasaAceptacion = tareasTerminadas.length > 0 ? Number(((aprobadas / tareasTerminadas.length) * 100).toFixed(1)) : 0;
 
-    // 5. TIEMPOS EXACTOS REGISTRADOS
     const idsTareasTerminadas = tareasTerminadas.map(t => t.id);
     const cargaRealUsuarioExacta = await prisma.intervaloTiempo.aggregate({
       where: {
@@ -101,7 +92,6 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
     const totalEstimadoMins = conEstimado.reduce((acc, t) => acc + (t.tiempoEstimado || 0), 0);
     const porcentajeConsumo = totalEstimadoMins > 0 ? Math.round((totalRealMins / totalEstimadoMins) * 100) : null;
 
-    // 6. CUMPLIMIENTO DE ENTREGAS
     let entregasA_Tiempo = 0;
     let entregasFuera_Tiempo = 0;
     let planeadoA_Tiempo = 0;
@@ -119,42 +109,51 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
       }
     });
 
-    // 7. ALGORITMO HISTÓRICO GRÁFICA (Ahora aplica Score Ajustado a la gráfica también)
     const grafico: { label: string; score: number; noData: boolean }[] = [];
     
     if (fiStr && ffStr && fechaInicio && fechaFin) {
-      // Días (Lunes a Domingo)
       const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
       const diasDif = Math.round((fechaFin.getTime() - fechaInicio.getTime()) / (1000 * 60 * 60 * 24));
       
       for (let i = 0; i <= diasDif; i++) {
-        const d = new Date(fechaInicio.getTime() + (i * 24 * 60 * 60 * 1000));
-        const tareasDia = tareasTerminadas.filter(t => t.finalizadoAt && t.finalizadoAt.toDateString() === d.toDateString());
+        const startDia = new Date(fechaInicio.getTime() + (i * 24 * 60 * 60 * 1000));
+        const endDia = new Date(startDia.getTime() + (24 * 60 * 60 * 1000) - 1);
         
-        if (tareasDia.length === 0) {
-          grafico.push({ label: dias[d.getDay()] ?? '', score: 0, noData: true });
+        const tareasDiaJoel = tareasPeriodo.filter(t => t.createdAt && t.createdAt.getTime() >= startDia.getTime() && t.createdAt.getTime() <= endDia.getTime());
+        
+        if (tareasDiaJoel.length === 0) {
+          grafico.push({ label: dias[startDia.getDay()] ?? '', score: 0, noData: true });
         } else {
-          const kpis = tareasDia.map(x => calcularKpiTarea(x));
-          const rawAvg = kpis.reduce((a,b) => a+b, 0) / kpis.length;
-          const bucketAjustado = ((rawAvg * kpis.length) + (promedioEquipoCrudo * CONSTANTE_CONFIANZA)) / (kpis.length + CONSTANTE_CONFIANZA);
-          grafico.push({ label: dias[d.getDay()] ?? '', score: Number(bucketAjustado.toFixed(1)), noData: false });
+          const kpisJoelDia = tareasDiaJoel.map(x => ESTADOS_TERMINADOS.includes(x.estado) ? calcularKpiTarea(x as any) : 0);
+          const avgJoelDia = kpisJoelDia.reduce((a,b) => a+b, 0) / kpisJoelDia.length;
+          
+          grafico.push({ label: dias[startDia.getDay()] ?? '', score: Number(avgJoelDia.toFixed(1)), noData: false });
         }
       }
     } else if (Number(month) > 0) {
-      // Si se filtra por un mes específico, no renderizamos gráfica.
     } else {
-      // Meses del Año (Año Completo)
       const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+      const targetYear = year ? Number(year) : new Date().getFullYear();
+
       meses.forEach((nombreMes, i) => {
-        const tareasMes = tareasTerminadas.filter(t => t.finalizadoAt && t.finalizadoAt.getMonth() === i);
+        const bounds = resolverRangoFechas(targetYear, i + 1, undefined, undefined);
+        if (!bounds.fechaInicio || !bounds.fechaFin) {
+          grafico.push({ label: nombreMes, score: 0, noData: true });
+          return;
+        }
+
+        const startMes = bounds.fechaInicio.getTime();
+        const endMes = bounds.fechaFin.getTime();
+
+        const tareasMesJoel = tareasPeriodo.filter(t => t.createdAt && t.createdAt.getTime() >= startMes && t.createdAt.getTime() <= endMes);
         
-        if (tareasMes.length === 0) {
+        if (tareasMesJoel.length === 0) {
           grafico.push({ label: nombreMes, score: 0, noData: true });
         } else {
-          const kpis = tareasMes.map(x => calcularKpiTarea(x));
-          const rawAvg = kpis.reduce((a,b) => a+b, 0) / kpis.length;
-          const bucketAjustado = ((rawAvg * kpis.length) + (promedioEquipoCrudo * CONSTANTE_CONFIANZA)) / (kpis.length + CONSTANTE_CONFIANZA);
-          grafico.push({ label: nombreMes, score: Number(bucketAjustado.toFixed(1)), noData: false });
+          const kpisJoelMes = tareasMesJoel.map(x => ESTADOS_TERMINADOS.includes(x.estado) ? calcularKpiTarea(x as any) : 0);
+          const avgJoelMes = kpisJoelMes.reduce((a,b) => a+b, 0) / kpisJoelMes.length;
+          
+          grafico.push({ label: nombreMes, score: Number(avgJoelMes.toFixed(1)), noData: false });
         }
       });
     }
@@ -196,8 +195,8 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
       const tareasAnteriores = await prisma.tarea.findMany({
         where: {
           responsables: { some: { id: tecnicoId } },
-          estado: { in: ESTADOS_TERMINADOS },
-          finalizadoAt: { gte: prevInicio, lte: prevFin }
+          estado: { not: EstadoTarea.CANCELADA },
+          createdAt: { gte: prevInicio, lte: prevFin }
         },
         select: { 
           estado: true, finalizadoAt: true, fechaVencimiento: true, duracionReal: true, tiempoEstimado: true,
@@ -206,12 +205,9 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
       });
 
       if (tareasAnteriores.length > 0) {
-        const kpisPrev = tareasAnteriores.map(t => calcularKpiTarea(t));
+        const kpisPrev = tareasAnteriores.map(t => ESTADOS_TERMINADOS.includes(t.estado) ? calcularKpiTarea(t as any) : 0);
         const prevCrudo = kpisPrev.reduce((a, b) => a + b, 0) / kpisPrev.length;
-        
-        // Aplicamos la misma fórmula Bayesiana para el periodo anterior para que sea una comparación justa
-        const prevAjustado = ((prevCrudo * kpisPrev.length) + (promedioEquipoCrudo * CONSTANTE_CONFIANZA)) / (kpisPrev.length + CONSTANTE_CONFIANZA);
-        scorePeriodoAnterior = Number(prevAjustado.toFixed(1));
+        scorePeriodoAnterior = Number(prevCrudo.toFixed(1));
       }
     }
 

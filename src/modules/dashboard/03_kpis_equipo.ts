@@ -8,7 +8,6 @@ import { calcularKpiTarea, colorParaKpi, resolverRangoFechas } from "./helper_me
 const ROLES_CON_ACCESO: Rol[] = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO];
 const ROLES_EVALUADOS: Rol[] = [Rol.TECNICO, Rol.COORDINADOR_MTTO];
 const ESTADOS_TERMINADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
-const CONSTANTE_CONFIANZA = 5;
 
 export const getKpisEquipo = async (req: Request, res: Response) => {
   try {
@@ -21,7 +20,9 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
 
     const { fechaInicio, fechaFin } = resolverRangoFechas(year, month, fiStr, ffStr);
 
-    const baseWhere: Prisma.TareaWhereInput = { estado: { in: ESTADOS_TERMINADOS } };
+    const baseWhere: Prisma.TareaWhereInput = { 
+      estado: { not: EstadoTarea.CANCELADA } 
+    };
 
     if (user.rol === Rol.JEFE_MTTO || user.rol === Rol.COORDINADOR_MTTO) {
       if (!user.departamentoId) return res.status(400).json({ error: "Usuario sin departamento." });
@@ -30,7 +31,7 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
 
     if (departamentoId && user.rol === Rol.SUPER_ADMIN) baseWhere.departamentoId = departamentoId;
     if (tecnicoId) baseWhere.responsables = { some: { id: tecnicoId } };
-    if (fechaInicio && fechaFin) baseWhere.finalizadoAt = { gte: fechaInicio, lte: fechaFin };
+    if (fechaInicio && fechaFin) baseWhere.createdAt = { gte: fechaInicio, lte: fechaFin };
 
     const tareas = await prisma.tarea.findMany({
       where: baseWhere,
@@ -45,7 +46,6 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
       by: ["usuarioId"],
       where: {
         fin: { not: null },
-        ...(fechaInicio && fechaFin ? { inicio: { gte: fechaInicio, lte: fechaFin } } : {}),
         tarea: baseWhere,
       },
       _sum: { duracion: true },
@@ -62,7 +62,7 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
     let cantidadTotalTareas = 0;
 
     for (const tarea of tareas) {
-      const kpiTarea = calcularKpiTarea(tarea);
+      const kpiTarea = ESTADOS_TERMINADOS.includes(tarea.estado) ? calcularKpiTarea(tarea as any) : 0;
       sumaTotalKpis += kpiTarea;
       cantidadTotalTareas++;
 
@@ -91,22 +91,29 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
       const cantidadTareas = t.kpis.length;
       const kpiPromedioCrudo = cantidadTareas > 0 ? t.kpis.reduce((a, b) => a + b, 0) / cantidadTareas : 0;
       
-      const scoreAjustadoCalc = (
-        (kpiPromedioCrudo * cantidadTareas) + (promedioEquipoGlobalCrudo * CONSTANTE_CONFIANZA)
-      ) / (cantidadTareas + CONSTANTE_CONFIANZA);
-
-      const scoreAjustado = Number(scoreAjustadoCalc.toFixed(1));
+      const scoreReal = Number(kpiPromedioCrudo.toFixed(1));
 
       return {
         id: t.id, nombre: t.nombre, imagen: t.imagen, cargo: t.cargo, rol: t.rol,
         tareasCompletadas: cantidadTareas, 
-        kpiBase: Number(kpiPromedioCrudo.toFixed(1)), 
-        scoreAjustado,
-        color: colorParaKpi(scoreAjustado),
+        kpiBase: scoreReal, 
+        scoreAjustado: scoreReal, 
+        color: colorParaKpi(scoreReal),
         minutosReales: t.minutosReales,
         minutosEstimados: t.minutosEstimados
       };
-    }).sort((a, b) => b.scoreAjustado - a.scoreAjustado);
+    }).sort((a, b) => {
+      const aCalificaRanking = a.tareasCompletadas >= 5;
+      const bCalificaRanking = b.tareasCompletadas >= 5;
+
+      if (aCalificaRanking && !bCalificaRanking) return -1;
+      if (!aCalificaRanking && bCalificaRanking) return 1;
+
+      if (b.scoreAjustado === a.scoreAjustado) {
+        return b.tareasCompletadas - a.tareasCompletadas;
+      }
+      return b.scoreAjustado - a.scoreAjustado;
+    });
 
     const tecnicos = personalEvaluado.filter(p => p.rol === Rol.TECNICO);
     const coordinadores = personalEvaluado.filter(p => p.rol === Rol.COORDINADOR_MTTO);
