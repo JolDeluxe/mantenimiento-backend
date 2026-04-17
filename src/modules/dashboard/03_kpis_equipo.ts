@@ -6,8 +6,9 @@ import type { DashboardFiltrosQuery } from "./zod";
 import { calcularKpiTarea, colorParaKpi, resolverRangoFechas } from "./helper_metrics";
 
 const ROLES_CON_ACCESO: Rol[] = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO];
+const ROLES_EVALUADOS: Rol[] = [Rol.TECNICO, Rol.COORDINADOR_MTTO];
 const ESTADOS_TERMINADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
-const CONSTANTE_CONFIANZA = 5; // C para el algoritmo de Bayes
+const CONSTANTE_CONFIANZA = 5;
 
 export const getKpisEquipo = async (req: Request, res: Response) => {
   try {
@@ -40,7 +41,6 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
       },
     });
 
-    // 1. Obtener carga real (minutos trabajados)
     const cargaRealRaw = await prisma.intervaloTiempo.groupBy({
       by: ["usuarioId"],
       where: {
@@ -50,11 +50,14 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
       },
       _sum: { duracion: true },
     });
-    const cargaRealPorTecnico = new Map<number, number>(cargaRealRaw.map((r) => [r.usuarioId!, r._sum.duracion ?? 0]));
+    
+    const cargaRealPorUsuario = new Map<number, number>(cargaRealRaw.map((r) => [r.usuarioId!, r._sum.duracion ?? 0]));
 
-    // 2. Agrupar KPIs y calcular el "Promedio del Equipo"
-    type TecnicoEntry = { id: number; nombre: string; imagen: string | null; cargo: string | null; rol: Rol; kpis: number[]; minutosReales: number; };
-    const tecnicosMap = new Map<number, TecnicoEntry>();
+    type EvaluadoEntry = { 
+      id: number; nombre: string; imagen: string | null; cargo: string | null; rol: Rol; 
+      kpis: number[]; minutosReales: number; minutosEstimados: number; 
+    };
+    const personalMap = new Map<number, EvaluadoEntry>();
     let sumaTotalKpis = 0;
     let cantidadTotalTareas = 0;
 
@@ -64,47 +67,54 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
       cantidadTotalTareas++;
 
       for (const resp of tarea.responsables) {
-        if (!tecnicosMap.has(resp.id)) {
-          tecnicosMap.set(resp.id, {
+        if (!ROLES_EVALUADOS.includes(resp.rol)) continue;
+
+        if (!personalMap.has(resp.id)) {
+          personalMap.set(resp.id, {
             id: resp.id, nombre: resp.nombre, imagen: resp.imagen, cargo: resp.cargo, rol: resp.rol,
-            kpis: [], minutosReales: cargaRealPorTecnico.get(resp.id) ?? 0,
+            kpis: [], 
+            minutosReales: cargaRealPorUsuario.get(resp.id) ?? 0,
+            minutosEstimados: 0
           });
         }
-        tecnicosMap.get(resp.id)!.kpis.push(kpiTarea);
+        
+        const evalUser = personalMap.get(resp.id)!;
+        evalUser.kpis.push(kpiTarea);
+        evalUser.minutosEstimados += (tarea.tiempoEstimado ?? 0);
       }
     }
 
-    const promedioEquipoGlobal = cantidadTotalTareas > 0 ? (sumaTotalKpis / cantidadTotalTareas) : 0;
+    const promedioEquipoGlobalCrudo = cantidadTotalTareas > 0 ? (sumaTotalKpis / cantidadTotalTareas) : 0;
+    const promedioEquipoGlobal = Number(promedioEquipoGlobalCrudo.toFixed(1));
 
-    // 3. Aplicar Algoritmo de Bayes y formatear
-    const personalEvaluado = Array.from(tecnicosMap.values()).map((t) => {
+    const personalEvaluado = Array.from(personalMap.values()).map((t) => {
       const cantidadTareas = t.kpis.length;
       const kpiPromedioCrudo = cantidadTareas > 0 ? t.kpis.reduce((a, b) => a + b, 0) / cantidadTareas : 0;
       
-      // Algoritmo Infalible: Score Ajustado por volumen de tareas
-      const scoreAjustado = Math.round(
-        ((kpiPromedioCrudo * cantidadTareas) + (promedioEquipoGlobal * CONSTANTE_CONFIANZA)) / 
-        (cantidadTareas + CONSTANTE_CONFIANZA)
-      );
+      const scoreAjustadoCalc = (
+        (kpiPromedioCrudo * cantidadTareas) + (promedioEquipoGlobalCrudo * CONSTANTE_CONFIANZA)
+      ) / (cantidadTareas + CONSTANTE_CONFIANZA);
+
+      const scoreAjustado = Number(scoreAjustadoCalc.toFixed(1));
 
       return {
         id: t.id, nombre: t.nombre, imagen: t.imagen, cargo: t.cargo, rol: t.rol,
         tareasCompletadas: cantidadTareas, 
-        kpiBase: Math.round(kpiPromedioCrudo), 
-        scoreAjustado, // Este es el que define quién es el mejor
+        kpiBase: Number(kpiPromedioCrudo.toFixed(1)), 
+        scoreAjustado,
         color: colorParaKpi(scoreAjustado),
         minutosReales: t.minutosReales,
+        minutosEstimados: t.minutosEstimados
       };
     }).sort((a, b) => b.scoreAjustado - a.scoreAjustado);
 
-    // 4. Separar por Roles para frontend
     const tecnicos = personalEvaluado.filter(p => p.rol === Rol.TECNICO);
     const coordinadores = personalEvaluado.filter(p => p.rol === Rol.COORDINADOR_MTTO);
 
     return res.json({ 
       status: "success", 
       data: { 
-        promedioEquipoGlobal: Math.round(promedioEquipoGlobal),
+        promedioEquipoGlobal,
         tecnicos, 
         coordinadores 
       } 
