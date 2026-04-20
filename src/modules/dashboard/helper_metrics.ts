@@ -1,3 +1,4 @@
+// src/modules/dashboard/helper_metrics.ts
 import { EstadoTarea } from "@prisma/client";
 
 export const UMBRAL_DATOS_SUFICIENTES = 3;
@@ -8,25 +9,22 @@ export const calcularKpiTarea = (tarea: {
   fechaVencimiento: Date | null;
   duracionReal: number | null;
   tiempoEstimado: number | null;
-  historial: { id: number }[]; // <-- Importante: Ahora requerimos el historial para ver rechazos
+  historial: { id: number }[];
 }): number => {
   const ESTADOS_TERMINADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
   if (!ESTADOS_TERMINADOS.includes(tarea.estado)) return 0;
 
-  let kpi = 20; // 20% -> Por el simple hecho de entregarla (RESUELTO o CERRADO)
+  let kpi = 20; 
 
-  // 40% -> Entregada a tiempo (<= fecha límite)
   if (tarea.finalizadoAt && tarea.fechaVencimiento) {
     if (tarea.finalizadoAt <= tarea.fechaVencimiento) kpi += 40;
   }
 
-  // 20% -> En el tiempo estimado correcto (duracionReal <= tiempoEstimado)
   const duracion = tarea.duracionReal ?? 0;
   if (duracion > 0 && tarea.tiempoEstimado && tarea.tiempoEstimado > 0 && duracion <= tarea.tiempoEstimado) {
     kpi += 20;
   }
 
-  // 20% -> Sin rechazos
   if (tarea.historial.length === 0) {
     kpi += 20;
   }
@@ -49,10 +47,6 @@ export const colorParaKpi = (kpi: number): "green" | "amber" | "red" => {
   return "red";
 };
 
-/**
- * Construye rango de fechas desde year + month (picker tradicional).
- * month === 0 → año completo.
- */
 export const buildDateRange = (
   year?: number,
   month?: number
@@ -73,10 +67,6 @@ export const buildDateRange = (
   };
 };
 
-/**
- * Construye rango de fechas desde strings ISO (preset rápido del frontend).
- * Tiene precedencia sobre buildDateRange cuando ambos están presentes.
- */
 export const buildDateRangeFromStrings = (
   fechaInicioStr?: string,
   fechaFinStr?: string
@@ -94,7 +84,6 @@ export const buildDateRangeFromStrings = (
   return { fechaInicio: fi, fechaFin: ff };
 };
 
-/** Elige el rango correcto priorizando strings sobre year/month */
 export const resolverRangoFechas = (
   year?: number,
   month?: number,

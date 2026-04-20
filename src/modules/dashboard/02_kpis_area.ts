@@ -1,11 +1,12 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { Rol, EstadoTarea, TipoTarea, ClasificacionTarea, Prisma } from "@prisma/client";
+import { Rol, EstadoTarea, Prisma } from "@prisma/client";
 import { registrarError } from "../../utils/logger";
 import { resolverRangoFechas } from "./helper_metrics";
+import { dashboardFiltrosSchema } from "./zod";
 
 const ROLES_CON_ACCESO: Rol[] = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO];
-const ESTADOS_BACKLOG: EstadoTarea[] = [
+const ESTADOS_ACTIVOS: EstadoTarea[] = [
   EstadoTarea.PENDIENTE,
   EstadoTarea.ASIGNADA,
   EstadoTarea.EN_PROGRESO,
@@ -16,15 +17,18 @@ type FrecuenciaTicket = { cantidad: number; primeraFecha: Date; ultimaFecha: Dat
 
 type MetricasBase = {
   totalTareas: number;
-  tickets: number;
-  correctivos: number;
-  backlogActivo: number;
-  tipos: Record<string, number>;
+  tareasActivas: number;
+  ticketsPeriodo: number; 
+  desgloseActivas: Record<string, number>;
+  tiposTotales: { // GLOBAL HISTÓRICO
+    tickets: number;
+    planeadas: number;
+    extraordinarias: number;
+  };
   estados: Record<string, number>;
   clasificaciones: Record<string, number>;
   categorias: Record<string, number>;
-  tiemposCerradas: {
-    cantidad: number;
+  tiempos: {
     tiempoRealTotal: number;
     tiempoEstimadoTotal: number;
   };
@@ -37,14 +41,14 @@ type PlantaEntry = MetricasBase & { planta: string; areasMap: Map<string, AreaEn
 
 const inicializarMetricas = (): MetricasBase => ({
   totalTareas: 0,
-  tickets: 0,
-  correctivos: 0,
-  backlogActivo: 0,
-  tipos: {},
+  tareasActivas: 0,
+  ticketsPeriodo: 0,
+  desgloseActivas: ESTADOS_ACTIVOS.reduce((acc, curr) => ({ ...acc, [curr]: 0 }), {}),
+  tiposTotales: { tickets: 0, planeadas: 0, extraordinarias: 0 },
   estados: Object.values(EstadoTarea).reduce((acc, curr) => ({ ...acc, [curr]: 0 }), {}),
   clasificaciones: {},
   categorias: {},
-  tiemposCerradas: { cantidad: 0, tiempoRealTotal: 0, tiempoEstimadoTotal: 0 },
+  tiempos: { tiempoRealTotal: 0, tiempoEstimadoTotal: 0 },
   _frecuenciaRaw: new Map(),
   _fechasTickets: [],
 });
@@ -85,27 +89,14 @@ const formatearMetricas = (entry: MetricasBase) => {
     }
   }
 
-  const { cantidad, tiempoRealTotal, tiempoEstimadoTotal } = entry.tiemposCerradas;
-  const tiempoPromedioRealMins = cantidad > 0 ? Math.round(tiempoRealTotal / cantidad) : 0;
-  const tiempoPromedioEstimadoMins = cantidad > 0 ? Math.round(tiempoEstimadoTotal / cantidad) : 0;
-  const desviacionPct = tiempoEstimadoTotal > 0
-    ? Math.round(((tiempoRealTotal - tiempoEstimadoTotal) / tiempoEstimadoTotal) * 100)
-    : null;
-  const eficienciaPct = tiempoEstimadoTotal > 0
-    ? Math.round((tiempoRealTotal / tiempoEstimadoTotal) * 100)
-    : null;
+  const { tiempoRealTotal, tiempoEstimadoTotal } = entry.tiempos;
+  const alertaTiempo = tiempoEstimadoTotal > 0 && tiempoRealTotal > (tiempoEstimadoTotal * 1.15);
 
   const { _frecuenciaRaw, _fechasTickets, ...rest } = entry;
 
   return {
     ...rest,
-    tiemposCerradas: {
-      ...rest.tiemposCerradas,
-      tiempoPromedioRealMins,
-      tiempoPromedioEstimadoMins,
-      desviacionPct,
-      eficienciaPct,
-    },
+    tiempos: { tiempoRealTotal, tiempoEstimadoTotal, alertaTiempo },
     frecuenciaDiasPorTicket,
     frecuenciaTickets,
   };
@@ -114,111 +105,105 @@ const formatearMetricas = (entry: MetricasBase) => {
 export const getKpisArea = async (req: Request, res: Response) => {
   try {
     const user = req.user!;
+    if (!ROLES_CON_ACCESO.includes(user.rol)) return res.status(403).json({ error: "Acceso denegado." });
 
-    if (!ROLES_CON_ACCESO.includes(user.rol)) {
-      return res.status(403).json({ error: "Acceso denegado." });
-    }
+    const query = dashboardFiltrosSchema.shape.query.parse(req.query);
+    const { fechaInicio, fechaFin } = resolverRangoFechas(query.year, query.month, query.fechaInicio, query.fechaFin);
 
-    const { year, month, fechaInicio: fiStr, fechaFin: ffStr, departamentoId, tecnicoId } = req.query as any;
-    const { fechaInicio, fechaFin } = resolverRangoFechas(year, month, fiStr, ffStr);
+    // 1. QUERY GLOBAL (Sin filtro de fechas)
+    const globalWhere: Prisma.TareaWhereInput = { estado: { not: EstadoTarea.CANCELADA } };
+    if (query.departamentoId) globalWhere.departamentoId = query.departamentoId;
+    if (query.tecnicoId) globalWhere.responsables = { some: { id: query.tecnicoId } };
 
-    const baseWhere: Prisma.TareaWhereInput = {};
+    // 2. QUERY PERIODO (Con filtro de fechas)
+    const periodoWhere: Prisma.TareaWhereInput = { ...globalWhere };
+    if (fechaInicio && fechaFin) periodoWhere.createdAt = { gte: fechaInicio, lte: fechaFin };
 
-    // Sanitización estricta: Evita que Axios envíe "null" o "undefined" como string y rompa la query.
-    if (departamentoId && departamentoId !== "null" && departamentoId !== "undefined") {
-      baseWhere.departamentoId = Number(departamentoId);
-    }
-    
-    if (tecnicoId && tecnicoId !== "null" && tecnicoId !== "undefined") {
-      baseWhere.responsables = { some: { id: Number(tecnicoId) } };
-    }
-    
-    if (fechaInicio && fechaFin) {
-      baseWhere.createdAt = { gte: fechaInicio, lte: fechaFin };
-    }
-
-    const tareas = await prisma.tarea.findMany({
-      where: baseWhere,
-      select: {
-        tipo: true,
-        clasificacion: true,
-        estado: true,
-        categoria: true,
-        duracionReal: true,
-        tiempoEstimado: true,
-        planta: true,
-        area: true,
-        createdAt: true,
-      },
-    });
-
-    // Log de diagnóstico corto y certero
-    const conteoTicketsReales = tareas.filter(t => String(t.tipo) === "TICKET").length;
-    console.log(`\n[DASHBOARD KPI] Tareas extraídas: ${tareas.length} | De las cuales TICKETS son: ${conteoTicketsReales}`);
+    // Ejecutamos ambas consultas
+    // NOTA: A la global ahora le pedimos 'createdAt', 'clasificacion' y 'categoria' para armar la frecuencia
+    const [tareasGlobales, tareasPeriodo] = await Promise.all([
+      prisma.tarea.findMany({
+        where: globalWhere,
+        select: { planta: true, area: true, tipo: true, createdAt: true, clasificacion: true, categoria: true }, 
+      }),
+      prisma.tarea.findMany({
+        where: periodoWhere,
+        select: {
+          tipo: true, clasificacion: true, estado: true, categoria: true,
+          duracionReal: true, tiempoEstimado: true, planta: true, area: true, createdAt: true,
+        },
+      })
+    ]);
 
     const plantaMap = new Map<string, PlantaEntry>();
 
-    for (const t of tareas) {
+    // Paso A: HISTÓRICO GLOBAL (Tipos y Frecuencias)
+    for (const t of tareasGlobales) {
       const pName = t.planta || "GENERAL";
       const aName = t.area || "GENERAL";
       const catName = t.categoria || "SIN_CATEGORIA";
 
-      if (!plantaMap.has(pName)) {
-        plantaMap.set(pName, { planta: pName, ...inicializarMetricas(), areasMap: new Map() });
-      }
+      if (!plantaMap.has(pName)) plantaMap.set(pName, { planta: pName, ...inicializarMetricas(), areasMap: new Map() });
       const pEntry = plantaMap.get(pName)!;
-
-      if (!pEntry.areasMap.has(aName)) {
-        pEntry.areasMap.set(aName, { area: aName, ...inicializarMetricas() });
-      }
+      if (!pEntry.areasMap.has(aName)) pEntry.areasMap.set(aName, { area: aName, ...inicializarMetricas() });
       const aEntry = pEntry.areasMap.get(aName)!;
 
-      const registrarDatos = (entry: MetricasBase) => {
-        entry.totalTareas++;
-
-        const safeTipo = t.tipo ? String(t.tipo).toUpperCase().trim() : "TICKET";
-        entry.tipos[safeTipo] = (entry.tipos[safeTipo] || 0) + 1;
-
+      const safeTipo = t.tipo ? String(t.tipo).toUpperCase().trim() : "TICKET";
+      const incrementarHistorico = (entry: MetricasBase) => {
         if (safeTipo === "TICKET") {
-          entry.tickets++;
-        } else if (String(t.clasificacion).toUpperCase().trim() === "CORRECTIVO") {
-          entry.correctivos++;
-        }
-
-        entry.estados[t.estado] = (entry.estados[t.estado] || 0) + 1;
-        entry.clasificaciones[t.clasificacion] = (entry.clasificaciones[t.clasificacion] || 0) + 1;
-        entry.categorias[catName] = (entry.categorias[catName] || 0) + 1;
-
-        if (ESTADOS_BACKLOG.includes(t.estado)) {
-          entry.backlogActivo++;
-        }
-
-        if (safeTipo === "TICKET") {
+          entry.tiposTotales.tickets++;
+          
+          // 🚨 AHORA LA FRECUENCIA SE CALCULA AQUÍ EN EL BUCLE GLOBAL 🚨
           entry._fechasTickets.push(t.createdAt);
-
           const freqKey = `${t.clasificacion}|${catName}`;
           if (!entry._frecuenciaRaw.has(freqKey)) {
-            entry._frecuenciaRaw.set(freqKey, {
-              cantidad: 0,
-              primeraFecha: t.createdAt,
-              ultimaFecha: t.createdAt,
-            });
+            entry._frecuenciaRaw.set(freqKey, { cantidad: 0, primeraFecha: t.createdAt, ultimaFecha: t.createdAt });
           }
           const fData = entry._frecuenciaRaw.get(freqKey)!;
           fData.cantidad++;
           if (t.createdAt < fData.primeraFecha) fData.primeraFecha = t.createdAt;
           if (t.createdAt > fData.ultimaFecha) fData.ultimaFecha = t.createdAt;
+
+        }
+        else if (safeTipo === "PLANEADA") entry.tiposTotales.planeadas++;
+        else entry.tiposTotales.extraordinarias++;
+      };
+      
+      incrementarHistorico(pEntry);
+      incrementarHistorico(aEntry);
+    }
+
+    // Paso B: PERIODO SELECCIONADO (Estados y Tiempos)
+    for (const t of tareasPeriodo) {
+      const pName = t.planta || "GENERAL";
+      const aName = t.area || "GENERAL";
+      const catName = t.categoria || "SIN_CATEGORIA";
+      
+      const pEntry = plantaMap.get(pName)!;
+      const aEntry = pEntry.areasMap.get(aName)!;
+
+      const safeTipo = t.tipo ? String(t.tipo).toUpperCase().trim() : "TICKET";
+
+      const registrarPeriodo = (entry: MetricasBase) => {
+        entry.totalTareas++;
+
+        if (safeTipo === "TICKET") entry.ticketsPeriodo++; 
+
+        entry.estados[t.estado] = (entry.estados[t.estado] || 0) + 1;
+        entry.clasificaciones[t.clasificacion] = (entry.clasificaciones[t.clasificacion] || 0) + 1;
+        entry.categorias[catName] = (entry.categorias[catName] || 0) + 1;
+
+        if (ESTADOS_ACTIVOS.includes(t.estado)) {
+          entry.tareasActivas++;
+          entry.desgloseActivas[t.estado] = (entry.desgloseActivas[t.estado] || 0) + 1;
         }
 
-        if (t.estado === EstadoTarea.CERRADO) {
-          entry.tiemposCerradas.cantidad++;
-          entry.tiemposCerradas.tiempoRealTotal += (t.duracionReal || 0);
-          entry.tiemposCerradas.tiempoEstimadoTotal += (t.tiempoEstimado || 0);
-        }
+        entry.tiempos.tiempoRealTotal += (t.duracionReal || 0);
+        entry.tiempos.tiempoEstimadoTotal += (t.tiempoEstimado || 0);
       };
 
-      registrarDatos(pEntry);
-      registrarDatos(aEntry);
+      registrarPeriodo(pEntry);
+      registrarPeriodo(aEntry);
     }
 
     const metricasPorPlanta = Array.from(plantaMap.values()).map(p => ({

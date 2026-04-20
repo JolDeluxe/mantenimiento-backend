@@ -55,7 +55,7 @@ export const ticketFilterSchema = z.object({
   query: z.object({
     q: z.string().optional(),
     page: z.coerce.number().min(1).default(1),
-    limit: z.coerce.number().min(1).max(500).default(100),
+    limit: z.coerce.number().min(1).max(500).default(50),
     
     estado: z.preprocess(preprocessEmpty, z.nativeEnum(EstadoTarea).optional()),
     prioridad: z.preprocess(preprocessEmpty, z.nativeEnum(Prioridad).optional()),
