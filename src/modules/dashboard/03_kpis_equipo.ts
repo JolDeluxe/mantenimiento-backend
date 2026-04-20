@@ -24,14 +24,25 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
       estado: { not: EstadoTarea.CANCELADA } 
     };
 
-    if (user.rol === Rol.JEFE_MTTO || user.rol === Rol.COORDINADOR_MTTO) {
-      if (!user.departamentoId) return res.status(400).json({ error: "Usuario sin departamento." });
-      baseWhere.departamentoId = user.departamentoId;
+    // Determinar el departamento a filtrar
+    let targetDeptoId = (user.rol === Rol.SUPER_ADMIN && departamentoId) ? departamentoId : user.departamentoId;
+
+    if ((user.rol === Rol.JEFE_MTTO || user.rol === Rol.COORDINADOR_MTTO) && !user.departamentoId) {
+        return res.status(400).json({ error: "Usuario sin departamento." });
     }
 
-    if (departamentoId && user.rol === Rol.SUPER_ADMIN) baseWhere.departamentoId = departamentoId;
+    if (targetDeptoId) baseWhere.departamentoId = targetDeptoId;
     if (tecnicoId) baseWhere.responsables = { some: { id: tecnicoId } };
     if (fechaInicio && fechaFin) baseWhere.createdAt = { gte: fechaInicio, lte: fechaFin };
+
+    // 1. Obtener TODOS los usuarios del equipo que deberían ser evaluados
+    const todosLosUsuarios = await prisma.usuario.findMany({
+        where: {
+            rol: { in: ROLES_EVALUADOS },
+            ...(targetDeptoId ? { departamentoId: targetDeptoId } : {})
+        },
+        select: { id: true, nombre: true, imagen: true, cargo: true, rol: true }
+    });
 
     const tareas = await prisma.tarea.findMany({
       where: baseWhere,
@@ -57,7 +68,19 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
       id: number; nombre: string; imagen: string | null; cargo: string | null; rol: Rol; 
       kpis: number[]; minutosReales: number; minutosEstimados: number; 
     };
+    
     const personalMap = new Map<number, EvaluadoEntry>();
+
+    // Inicializar el mapa con todos los usuarios (tengan o no tareas)
+    for (const u of todosLosUsuarios) {
+        personalMap.set(u.id, {
+            id: u.id, nombre: u.nombre, imagen: u.imagen, cargo: u.cargo, rol: u.rol,
+            kpis: [], 
+            minutosReales: cargaRealPorUsuario.get(u.id) ?? 0,
+            minutosEstimados: 0
+        });
+    }
+
     let sumaTotalKpis = 0;
     let cantidadTotalTareas = 0;
 
@@ -67,16 +90,7 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
       cantidadTotalTareas++;
 
       for (const resp of tarea.responsables) {
-        if (!ROLES_EVALUADOS.includes(resp.rol)) continue;
-
-        if (!personalMap.has(resp.id)) {
-          personalMap.set(resp.id, {
-            id: resp.id, nombre: resp.nombre, imagen: resp.imagen, cargo: resp.cargo, rol: resp.rol,
-            kpis: [], 
-            minutosReales: cargaRealPorUsuario.get(resp.id) ?? 0,
-            minutosEstimados: 0
-          });
-        }
+        if (!personalMap.has(resp.id)) continue;
         
         const evalUser = personalMap.get(resp.id)!;
         evalUser.kpis.push(kpiTarea);
@@ -89,30 +103,42 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
 
     const personalEvaluado = Array.from(personalMap.values()).map((t) => {
       const cantidadTareas = t.kpis.length;
-      const kpiPromedioCrudo = cantidadTareas > 0 ? t.kpis.reduce((a, b) => a + b, 0) / cantidadTareas : 0;
-      
+      const kpiPromedioCrudo = cantidadTareas > 0 ? t.kpis.reduce((a, b) => a + b, 0) / cantidadTareas : 0; 
       const scoreReal = Number(kpiPromedioCrudo.toFixed(1));
 
       return {
-        id: t.id, nombre: t.nombre, imagen: t.imagen, cargo: t.cargo, rol: t.rol,
-        tareasCompletadas: cantidadTareas, 
-        kpiBase: scoreReal, 
-        scoreAjustado: scoreReal, 
-        color: colorParaKpi(scoreReal),
+        id: t.id,
+        nombre: t.nombre,
+        imagen: t.imagen,
+        cargo: t.cargo,
+        rol: t.rol,
+        tareasCompletadas: cantidadTareas,
+        kpiBase: scoreReal,
+        scoreAjustado: scoreReal,
+        color: cantidadTareas > 0 ? colorParaKpi(scoreReal) : 'neutral',
         minutosReales: t.minutosReales,
-        minutosEstimados: t.minutosEstimados
+        minutosEstimados: t.minutosEstimados,
+        calificaRanking: cantidadTareas >= 3 
       };
     }).sort((a, b) => {
-      const aCalificaRanking = a.tareasCompletadas >= 5;
-      const bCalificaRanking = b.tareasCompletadas >= 5;
+      // 0. Si uno no tiene tareas y el otro sí, el que no tiene va al final
+      const aTiene = a.tareasCompletadas > 0;
+      const bTiene = b.tareasCompletadas > 0;
+      if (aTiene && !bTiene) return -1;
+      if (!aTiene && bTiene) return 1;
+      if (!aTiene && !bTiene) return a.nombre.localeCompare(b.nombre);
 
-      if (aCalificaRanking && !bCalificaRanking) return -1;
-      if (!aCalificaRanking && bCalificaRanking) return 1;
+      // 1. Los que califican (3+) van primero
+      if (a.calificaRanking && !b.calificaRanking) return -1;
+      if (!a.calificaRanking && b.calificaRanking) return 1;
 
-      if (b.scoreAjustado === a.scoreAjustado) {
-        return b.tareasCompletadas - a.tareasCompletadas;
+      // 2. Score
+      if (b.scoreAjustado !== a.scoreAjustado) {
+        return b.scoreAjustado - a.scoreAjustado;
       }
-      return b.scoreAjustado - a.scoreAjustado;
+      
+      // 3. Volumen
+      return b.tareasCompletadas - a.tareasCompletadas;
     });
 
     const tecnicos = personalEvaluado.filter(p => p.rol === Rol.TECNICO);
