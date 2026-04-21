@@ -5,7 +5,7 @@ import { registrarError, registrarAccion } from "../../utils/logger";
 import { isAdminOrJefe } from "./helper";
 import { processTicketImages } from "./create/helper_upload";
 import { deleteImageByUrl } from "../../utils/cloudinary";
-import { notificarAsignacionTarea } from "../notificaciones/services"; 
+import { notificarAsignacionTarea, notificarModificacionTarea } from "../notificaciones/services";
 import type { UpdateTicketParams, UpdateTicketInput } from "./zod";
 
 export const updateTicket = async (req: Request, res: Response) => {
@@ -27,134 +27,137 @@ export const updateTicket = async (req: Request, res: Response) => {
 
     if (!tareaActual) return res.status(404).json({ error: "Tarea no encontrada" });
 
-    const esAdmin = isAdminOrJefe(user.rol);
+    const esAdmin   = isAdminOrJefe(user.rol);
     const esCliente = user.rol === Rol.CLIENTE_INTERNO;
     const esCreador = tareaActual.creadorId === user.id;
 
     if (esCliente) {
-        if (!esCreador) return res.status(403).json({ error: "No puedes editar un ticket ajeno." });
-        if (tareaActual.estado !== EstadoTarea.PENDIENTE) return res.status(403).json({ error: "Ya no puedes editar este ticket." });
-        
-        if (data.responsables || data.prioridad || data.fechaVencimiento) {
-            return res.status(403).json({ error: "No tienes permisos administrativos." });
-        }
+      if (!esCreador) return res.status(403).json({ error: "No puedes editar un ticket ajeno." });
+      if (tareaActual.estado !== EstadoTarea.PENDIENTE) return res.status(403).json({ error: "Ya no puedes editar este ticket." });
+      if (data.responsables || data.prioridad || data.fechaVencimiento) {
+        return res.status(403).json({ error: "No tienes permisos administrativos." });
+      }
     } else if (!esAdmin) {
-        return res.status(403).json({ error: "No tienes permisos para editar esta tarea." });
+      return res.status(403).json({ error: "No tienes permisos para editar esta tarea." });
     }
 
-    let nuevoEstado = tareaActual.estado;
-    let cambioDeResponsables = false;
-    let idsResponsables: { id: number }[] | undefined = undefined;
-    let nombresAsignadosStr = ""; // Declaramos la variable para almacenar los nombres
+    let nuevoEstado       = tareaActual.estado;
+    let cambioDeResponsables = false;
+    let idsResponsables: { id: number }[] | undefined = undefined;
+    let nombresAsignadosStr = "";
 
-    if (data.responsables !== undefined && esAdmin) { 
-        cambioDeResponsables = true;
-        if (data.responsables.length > 0) {
-            const usuariosActivos = await prisma.usuario.findMany({
-                where: { id: { in: data.responsables }, estado: "ACTIVO" },
-                select: { id: true, nombre: true } // Extraemos también el nombre
-            });
-            if (usuariosActivos.length !== data.responsables.length) {
-                return res.status(400).json({ error: "Responsables inválidos o inactivos." });
-            }
-            // Unimos los nombres separados por coma
-            nombresAsignadosStr = usuariosActivos.map(u => u.nombre).join(', ');
-        }
-        idsResponsables = data.responsables.map(id => ({ id }));
-        
-        if (tareaActual.estado === EstadoTarea.PENDIENTE || tareaActual.estado === EstadoTarea.ASIGNADA) {
-            nuevoEstado = (data.responsables.length > 0) ? EstadoTarea.ASIGNADA : EstadoTarea.PENDIENTE;
+    if (data.responsables !== undefined && esAdmin) {
+      cambioDeResponsables = true;
+      if (data.responsables.length > 0) {
+        const usuariosActivos = await prisma.usuario.findMany({
+          where: { id: { in: data.responsables }, estado: "ACTIVO" },
+          select: { id: true, nombre: true }
+        });
+        if (usuariosActivos.length !== data.responsables.length) {
+          return res.status(400).json({ error: "Responsables inválidos o inactivos." });
         }
+        nombresAsignadosStr = usuariosActivos.map(u => u.nombre).join(', ');
+      }
+      idsResponsables = data.responsables.map(id => ({ id }));
+
+      if (tareaActual.estado === EstadoTarea.PENDIENTE || tareaActual.estado === EstadoTarea.ASIGNADA) {
+        nuevoEstado = (data.responsables.length > 0) ? EstadoTarea.ASIGNADA : EstadoTarea.PENDIENTE;
+      }
     }
 
     let nuevaFechaVencimiento = undefined;
-    if (data.fechaVencimiento && esAdmin) { 
-        const fecha = new Date(data.fechaVencimiento);
-        fecha.setHours(23, 59, 59, 999);
-        nuevaFechaVencimiento = fecha;
+    if (data.fechaVencimiento && esAdmin) {
+      const fecha = new Date(data.fechaVencimiento);
+      fecha.setHours(23, 59, 59, 999);
+      nuevaFechaVencimiento = fecha;
     }
 
     const result = await prisma.$transaction(async (tx) => {
-        const tareaActualizada = await tx.tarea.update({
-            where: { id: ticketId },
-            data: {
-                titulo:      (esCliente || esAdmin) ? data.titulo      : undefined,
-                descripcion: (esCliente || esAdmin) ? data.descripcion : undefined,
-                categoria:   (esCliente || esAdmin) ? data.categoria   : undefined,
-                planta:      esAdmin ? data.planta      : undefined,
-                area:        esAdmin ? data.area        : undefined,
-                prioridad: esAdmin ? data.prioridad : undefined,
-                fechaVencimiento: nuevaFechaVencimiento,
-                estado: nuevoEstado,
-                responsables: idsResponsables ? { set: idsResponsables } : undefined,
-                tipo: esAdmin ? data.tipo : undefined,
-                clasificacion: esAdmin ? data.clasificacion : undefined,
-            },
-            include: { responsables: true }
+      const tareaActualizada = await tx.tarea.update({
+        where: { id: ticketId },
+        data: {
+          titulo:       (esCliente || esAdmin) ? data.titulo       : undefined,
+          descripcion:  (esCliente || esAdmin) ? data.descripcion  : undefined,
+          categoria:    (esCliente || esAdmin) ? data.categoria    : undefined,
+          planta:       esAdmin ? data.planta        : undefined,
+          area:         esAdmin ? data.area          : undefined,
+          prioridad:    esAdmin ? data.prioridad     : undefined,
+          fechaVencimiento: nuevaFechaVencimiento,
+          estado:       nuevoEstado,
+          responsables: idsResponsables ? { set: idsResponsables } : undefined,
+          tipo:         esAdmin ? data.tipo          : undefined,
+          clasificacion: esAdmin ? data.clasificacion : undefined,
+        },
+        include: { responsables: true }
+      });
+
+      let notasCambio: string[] = [];
+
+      if (esAdmin) {
+        if (cambioDeResponsables) {
+          const num = data.responsables!.length;
+          notasCambio.push(num > 0 ? `Asignado a: ${nombresAsignadosStr}` : "Se retiraron técnicos");
+        }
+        if (nuevoEstado !== tareaActual.estado) notasCambio.push(`Estado: ${nuevoEstado}`);
+        if (data.prioridad && data.prioridad !== tareaActual.prioridad) notasCambio.push(`Prioridad: ${data.prioridad}`);
+        if (data.fechaVencimiento) notasCambio.push("Se actualizó fecha vencimiento");
+      }
+
+      if (esCliente) {
+        if (data.titulo || data.descripcion) notasCambio.push("Cliente actualizó detalles del reporte");
+        if (data.imagenes && data.imagenes.length > 0) notasCambio.push(`Cliente agregó ${data.imagenes.length} fotos`);
+        if (data.imagenesEliminadas?.length) notasCambio.push("Cliente eliminó fotos erróneas");
+      }
+
+      if (data.imagenesEliminadas && data.imagenesEliminadas.length > 0 && esCliente) {
+        const imagenesABorrar = await tx.imagen.findMany({
+          where: { id: { in: data.imagenesEliminadas }, tareaId: ticketId }
+        });
+        if (imagenesABorrar.length > 0) {
+          for (const img of imagenesABorrar) {
+            await deleteImageByUrl(img.url).catch(console.error);
+          }
+          await tx.imagen.deleteMany({ where: { id: { in: data.imagenesEliminadas } } });
+        }
+      }
+
+      if (notasCambio.length > 0 || (data.imagenes && data.imagenes.length > 0)) {
+        const historial = await tx.historialTarea.create({
+          data: {
+            tareaId:       ticketId,
+            usuarioId:     user.id,
+            tipo:          TipoEvento.CAMBIO_ESTADO,
+            estadoAnterior: tareaActual.estado,
+            estadoNuevo:   nuevoEstado,
+            nota:          `Edición (${user.rol}): ${notasCambio.join(". ")}`
+          }
         });
 
-        let notasCambio: string[] = [];
-        if (esAdmin) {
-            if (cambioDeResponsables) {
-                const num = data.responsables!.length;
-                // Inyectamos la cadena de nombres reales
-                notasCambio.push(num > 0 ? `Asignado a: ${nombresAsignadosStr}` : "Se retiraron técnicos");
-            }
-            if (nuevoEstado !== tareaActual.estado) notasCambio.push(`Estado: ${nuevoEstado}`);
-            if (nuevoEstado !== tareaActual.estado) notasCambio.push(`Estado: ${nuevoEstado}`);
-            if (data.prioridad && data.prioridad !== tareaActual.prioridad) notasCambio.push(`Prioridad: ${data.prioridad}`);
-            if (data.fechaVencimiento) notasCambio.push("Se actualizó fecha vencimiento");
-        } 
-        
-        if (esCliente) {
-            if (data.titulo || data.descripcion) notasCambio.push("Cliente actualizó detalles del reporte");
-            if (data.imagenes && data.imagenes.length > 0) notasCambio.push(`Cliente agregó ${data.imagenes.length} fotos`);
-            if (data.imagenesEliminadas?.length) notasCambio.push("Cliente eliminó fotos erróneas");
+        if (data.imagenes && data.imagenes.length > 0) {
+          await tx.imagen.createMany({
+            data: data.imagenes.map(url => ({
+              url,
+              tipo:        "EVIDENCIA_ACTUALIZACION",
+              tareaId:     ticketId,
+              historialId: historial.id
+            }))
+          });
         }
+      }
 
-        if (data.imagenesEliminadas && data.imagenesEliminadas.length > 0 && esCliente) {
-            const imagenesABorrar = await tx.imagen.findMany({
-                where: { id: { in: data.imagenesEliminadas }, tareaId: ticketId }
-            });
-
-            if (imagenesABorrar.length > 0) {
-                for (const img of imagenesABorrar) {
-                    await deleteImageByUrl(img.url).catch(console.error);
-                }
-                await tx.imagen.deleteMany({ where: { id: { in: data.imagenesEliminadas } } });
-            }
-        }
-
-        if (notasCambio.length > 0 || (data.imagenes && data.imagenes.length > 0)) {
-            const historial = await tx.historialTarea.create({
-                data: {
-                    tareaId: ticketId,
-                    usuarioId: user.id,
-                    tipo: TipoEvento.CAMBIO_ESTADO,
-                    estadoAnterior: tareaActual.estado,
-                    estadoNuevo: nuevoEstado,
-                    nota: `Edición (${user.rol}): ${notasCambio.join(". ")}`
-                }
-            });
-
-            if (data.imagenes && data.imagenes.length > 0) {
-                await tx.imagen.createMany({
-                    data: data.imagenes.map(url => ({
-                        url,
-                        tipo: "EVIDENCIA_ACTUALIZACION",
-                        tareaId: ticketId,
-                        historialId: historial.id
-                    }))
-                });
-            }
-        }
-
-        return tareaActualizada;
+      return tareaActualizada;
     });
 
+    // ── NOTIFICACIONES ────────────────────────────────────────────────────────
+    // Caso A: Se asignaron nuevos responsables → notificación de asignación
     if (cambioDeResponsables && data.responsables && data.responsables.length > 0) {
-        void notificarAsignacionTarea(result, data.responsables);
+      void notificarAsignacionTarea(result, data.responsables);
+
+    // Caso B: Solo cambios en campos del ticket → notificación de modificación
+    } else if (!cambioDeResponsables) {
+      void notificarModificacionTarea(result, user.id);
     }
+    // Caso C: Se retiraron todos los responsables (data.responsables = []) → sin notificación
 
     await registrarAccion("UPDATE_TAREA", user.id, `Actualización Tarea ID: ${ticketId}. Usuario: ${user.email}`);
     return res.json({ message: "Actualización correcta", data: result });
