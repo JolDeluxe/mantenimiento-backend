@@ -1,3 +1,4 @@
+// src/modules/dashboard/02_kpis_area.ts
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { Rol, EstadoTarea, Prisma } from "@prisma/client";
@@ -20,7 +21,7 @@ type MetricasBase = {
   tareasActivas: number;
   ticketsPeriodo: number; 
   desgloseActivas: Record<string, number>;
-  tiposTotales: { // GLOBAL HISTÓRICO
+  tiposTotales: {
     tickets: number;
     planeadas: number;
     extraordinarias: number;
@@ -54,38 +55,55 @@ const inicializarMetricas = (): MetricasBase => ({
 });
 
 const formatearMetricas = (entry: MetricasBase) => {
+  // 1. Frecuencia Específica (Por Clasificación + Categoría)
   const frecuenciaTickets = Array.from(entry._frecuenciaRaw.entries()).map(([key, data]) => {
     const [clasificacion, categoria] = key.split("|");
     const spanMs = data.ultimaFecha.getTime() - data.primeraFecha.getTime();
-    let spanDias = spanMs / (1000 * 60 * 60 * 24);
-    if (spanDias < 1) spanDias = 1;
+    const spanDias = spanMs / (1000 * 60 * 60 * 24);
 
-    const frecuenciaDias = data.cantidad > 1
-      ? Number((spanDias / (data.cantidad - 1)).toFixed(1))
-      : null;
+    let estadoFrecuencia: "NORMAL" | "UNICO" | "MISMO_DIA" = "NORMAL";
+    let frecuenciaDias: number | null = null;
 
-    const frecuenciaMensual = Number(((data.cantidad / spanDias) * 30).toFixed(1));
+    if (data.cantidad === 1) {
+      estadoFrecuencia = "UNICO";
+    } else if (spanDias < 1) {
+      estadoFrecuencia = "MISMO_DIA";
+    } else {
+      frecuenciaDias = Math.round(spanDias / (data.cantidad - 1));
+    }
 
     return {
       clasificacion,
       categoria,
       cantidadTotal: data.cantidad,
+      estadoFrecuencia,
       frecuenciaDias,
-      frecuenciaMensualEstimada: frecuenciaMensual,
     };
   }).sort((a, b) => b.cantidadTotal - a.cantidadTotal);
 
-  let frecuenciaDiasPorTicket: number | null = null;
-  if (entry._fechasTickets.length > 1) {
+  // 2. Frecuencia General (El promedio de TODOS los tickets del área)
+  let generalEstadoFrecuencia: "NORMAL" | "UNICO" | "MISMO_DIA" | "SIN_DATOS" = "SIN_DATOS";
+  let generalFrecuenciaDias: number | null = null;
+  const totalHistoricoGeneral = entry._fechasTickets.length;
+
+  if (totalHistoricoGeneral === 1) {
+    generalEstadoFrecuencia = "UNICO";
+  } else if (totalHistoricoGeneral > 1) {
     const sorted = [...entry._fechasTickets].sort((a, b) => a.getTime() - b.getTime());
     const primerTicket = sorted[0];
     const ultimoTicket = sorted[sorted.length - 1];
 
+    // FIX: Validación de existencia para TypeScript Strict Mode
     if (primerTicket && ultimoTicket) {
-      const spanDias = (ultimoTicket.getTime() - primerTicket.getTime()) / (1000 * 60 * 60 * 24);
-      frecuenciaDiasPorTicket = spanDias > 0
-        ? Number((spanDias / (entry._fechasTickets.length - 1)).toFixed(1))
-        : null;
+      const spanMs = ultimoTicket.getTime() - primerTicket.getTime();
+      const spanDias = spanMs / (1000 * 60 * 60 * 24);
+
+      if (spanDias < 1) {
+        generalEstadoFrecuencia = "MISMO_DIA";
+      } else {
+        generalEstadoFrecuencia = "NORMAL";
+        generalFrecuenciaDias = Math.round(spanDias / (totalHistoricoGeneral - 1));
+      }
     }
   }
 
@@ -97,7 +115,11 @@ const formatearMetricas = (entry: MetricasBase) => {
   return {
     ...rest,
     tiempos: { tiempoRealTotal, tiempoEstimadoTotal, alertaTiempo },
-    frecuenciaDiasPorTicket,
+    frecuenciaGeneral: {
+      totalHistorico: totalHistoricoGeneral,
+      estadoFrecuencia: generalEstadoFrecuencia,
+      frecuenciaDias: generalFrecuenciaDias,
+    },
     frecuenciaTickets,
   };
 };
@@ -110,17 +132,13 @@ export const getKpisArea = async (req: Request, res: Response) => {
     const query = dashboardFiltrosSchema.shape.query.parse(req.query);
     const { fechaInicio, fechaFin } = resolverRangoFechas(query.year, query.month, query.fechaInicio, query.fechaFin);
 
-    // 1. QUERY GLOBAL (Sin filtro de fechas)
     const globalWhere: Prisma.TareaWhereInput = { estado: { not: EstadoTarea.CANCELADA } };
     if (query.departamentoId) globalWhere.departamentoId = query.departamentoId;
     if (query.tecnicoId) globalWhere.responsables = { some: { id: query.tecnicoId } };
 
-    // 2. QUERY PERIODO (Con filtro de fechas)
     const periodoWhere: Prisma.TareaWhereInput = { ...globalWhere };
     if (fechaInicio && fechaFin) periodoWhere.createdAt = { gte: fechaInicio, lte: fechaFin };
 
-    // Ejecutamos ambas consultas
-    // NOTA: A la global ahora le pedimos 'createdAt', 'clasificacion' y 'categoria' para armar la frecuencia
     const [tareasGlobales, tareasPeriodo] = await Promise.all([
       prisma.tarea.findMany({
         where: globalWhere,
@@ -137,7 +155,6 @@ export const getKpisArea = async (req: Request, res: Response) => {
 
     const plantaMap = new Map<string, PlantaEntry>();
 
-    // Paso A: HISTÓRICO GLOBAL (Tipos y Frecuencias)
     for (const t of tareasGlobales) {
       const pName = t.planta || "GENERAL";
       const aName = t.area || "GENERAL";
@@ -149,11 +166,9 @@ export const getKpisArea = async (req: Request, res: Response) => {
       const aEntry = pEntry.areasMap.get(aName)!;
 
       const safeTipo = t.tipo ? String(t.tipo).toUpperCase().trim() : "TICKET";
+      
       const incrementarHistorico = (entry: MetricasBase) => {
         if (safeTipo === "TICKET") {
-          entry.tiposTotales.tickets++;
-          
-          // 🚨 AHORA LA FRECUENCIA SE CALCULA AQUÍ EN EL BUCLE GLOBAL 🚨
           entry._fechasTickets.push(t.createdAt);
           const freqKey = `${t.clasificacion}|${catName}`;
           if (!entry._frecuenciaRaw.has(freqKey)) {
@@ -163,17 +178,13 @@ export const getKpisArea = async (req: Request, res: Response) => {
           fData.cantidad++;
           if (t.createdAt < fData.primeraFecha) fData.primeraFecha = t.createdAt;
           if (t.createdAt > fData.ultimaFecha) fData.ultimaFecha = t.createdAt;
-
         }
-        else if (safeTipo === "PLANEADA") entry.tiposTotales.planeadas++;
-        else entry.tiposTotales.extraordinarias++;
       };
       
       incrementarHistorico(pEntry);
       incrementarHistorico(aEntry);
     }
 
-    // Paso B: PERIODO SELECCIONADO (Estados y Tiempos)
     for (const t of tareasPeriodo) {
       const pName = t.planta || "GENERAL";
       const aName = t.area || "GENERAL";
@@ -187,7 +198,14 @@ export const getKpisArea = async (req: Request, res: Response) => {
       const registrarPeriodo = (entry: MetricasBase) => {
         entry.totalTareas++;
 
-        if (safeTipo === "TICKET") entry.ticketsPeriodo++; 
+        if (safeTipo === "TICKET") {
+            entry.ticketsPeriodo++; 
+            entry.tiposTotales.tickets++;
+        } else if (safeTipo === "PLANEADA") {
+            entry.tiposTotales.planeadas++;
+        } else {
+            entry.tiposTotales.extraordinarias++;
+        }
 
         entry.estados[t.estado] = (entry.estados[t.estado] || 0) + 1;
         entry.clasificaciones[t.clasificacion] = (entry.clasificaciones[t.clasificacion] || 0) + 1;

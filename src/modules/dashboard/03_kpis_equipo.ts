@@ -24,18 +24,17 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
       estado: { not: EstadoTarea.CANCELADA } 
     };
 
-    // Determinar el departamento a filtrar
     let targetDeptoId = (user.rol === Rol.SUPER_ADMIN && departamentoId) ? departamentoId : user.departamentoId;
 
-    if ((user.rol === Rol.JEFE_MTTO || user.rol === Rol.COORDINADOR_MTTO) && !user.departamentoId) {
-        return res.status(400).json({ error: "Usuario sin departamento." });
+    // 1. APLICAMOS LA MISMA REGLA DE NEGOCIO QUE EL GENERAL
+    if (user.rol === Rol.SUPER_ADMIN && departamentoId) {
+      baseWhere.departamentoId = departamentoId;
     }
 
-    if (targetDeptoId) baseWhere.departamentoId = targetDeptoId;
     if (tecnicoId) baseWhere.responsables = { some: { id: tecnicoId } };
     if (fechaInicio && fechaFin) baseWhere.createdAt = { gte: fechaInicio, lte: fechaFin };
 
-    // 1. Obtener TODOS los usuarios del equipo que deberían ser evaluados
+    // 2. Obtener TODOS los usuarios del equipo que deberían ser evaluados
     const todosLosUsuarios = await prisma.usuario.findMany({
         where: {
             rol: { in: ROLES_EVALUADOS },
@@ -85,7 +84,11 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
     let cantidadTotalTareas = 0;
 
     for (const tarea of tareas) {
-      const kpiTarea = ESTADOS_TERMINADOS.includes(tarea.estado) ? calcularKpiTarea(tarea as any) : 0;
+      // FIX CRÍTICO: Si no está terminada, la saltamos. 
+      // Así no arrastra el promedio a 0 injustamente ni altera el general.
+      if (!ESTADOS_TERMINADOS.includes(tarea.estado)) continue;
+
+      const kpiTarea = calcularKpiTarea(tarea as any);
       sumaTotalKpis += kpiTarea;
       cantidadTotalTareas++;
 
@@ -98,13 +101,14 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
       }
     }
 
+    // Usamos 2 decimales para que haga match exacto con la vista General
     const promedioEquipoGlobalCrudo = cantidadTotalTareas > 0 ? (sumaTotalKpis / cantidadTotalTareas) : 0;
-    const promedioEquipoGlobal = Number(promedioEquipoGlobalCrudo.toFixed(1));
+    const promedioEquipoGlobal = Number(promedioEquipoGlobalCrudo.toFixed(2));
 
     const personalEvaluado = Array.from(personalMap.values()).map((t) => {
       const cantidadTareas = t.kpis.length;
       const kpiPromedioCrudo = cantidadTareas > 0 ? t.kpis.reduce((a, b) => a + b, 0) / cantidadTareas : 0; 
-      const scoreReal = Number(kpiPromedioCrudo.toFixed(1));
+      const scoreReal = Number(kpiPromedioCrudo.toFixed(2)); // También subido a 2 decimales
 
       return {
         id: t.id,
@@ -121,23 +125,19 @@ export const getKpisEquipo = async (req: Request, res: Response) => {
         calificaRanking: cantidadTareas >= 3 
       };
     }).sort((a, b) => {
-      // 0. Si uno no tiene tareas y el otro sí, el que no tiene va al final
       const aTiene = a.tareasCompletadas > 0;
       const bTiene = b.tareasCompletadas > 0;
       if (aTiene && !bTiene) return -1;
       if (!aTiene && bTiene) return 1;
       if (!aTiene && !bTiene) return a.nombre.localeCompare(b.nombre);
 
-      // 1. Los que califican (3+) van primero
       if (a.calificaRanking && !b.calificaRanking) return -1;
       if (!a.calificaRanking && b.calificaRanking) return 1;
 
-      // 2. Score
       if (b.scoreAjustado !== a.scoreAjustado) {
         return b.scoreAjustado - a.scoreAjustado;
       }
       
-      // 3. Volumen
       return b.tareasCompletadas - a.tareasCompletadas;
     });
 

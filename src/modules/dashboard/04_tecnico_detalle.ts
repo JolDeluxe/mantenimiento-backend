@@ -54,7 +54,6 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
     const todasLasTareasEquipo = await prisma.tarea.findMany({
       where: {
         estado: { not: EstadoTarea.CANCELADA },
-        ...(tecnico.departamentoId ? { departamentoId: tecnico.departamentoId } : {}),
         ...(fechaInicio && fechaFin ? { createdAt: { gte: fechaInicio, lte: fechaFin } } : {}),
       },
       select: { 
@@ -63,15 +62,17 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
       }
     });
 
-    const kpisEquipo = todasLasTareasEquipo.map(t => ESTADOS_TERMINADOS.includes(t.estado) ? calcularKpiTarea(t as any) : 0);
+    // 🚨 FIX CRÍTICO: Filtrar solo tareas terminadas antes del promedio de equipo
+    const tareasEquipoTerminadas = todasLasTareasEquipo.filter(t => ESTADOS_TERMINADOS.includes(t.estado));
+    const kpisEquipo = tareasEquipoTerminadas.map(t => calcularKpiTarea(t as any));
     const promedioEquipoCrudo = kpisEquipo.length > 0 ? kpisEquipo.reduce((a, b) => a + b, 0) / kpisEquipo.length : 0;
-    const promedioEquipo = Number(promedioEquipoCrudo.toFixed(1));
+    const promedioEquipo = Number(promedioEquipoCrudo.toFixed(2));
 
-    const kpisTecnico = tareasPeriodo.map(t => ESTADOS_TERMINADOS.includes(t.estado) ? calcularKpiTarea(t as any) : 0);
-    const kpiCrudo = kpisTecnico.length > 0 ? kpisTecnico.reduce((a, b) => a + b, 0) / kpisTecnico.length : 0;
-    const scoreAjustado = Number(kpiCrudo.toFixed(1)); 
-
+    // 🚨 FIX CRÍTICO: Filtrar solo tareas terminadas antes del promedio del técnico
     const tareasTerminadas = tareasPeriodo.filter(t => ESTADOS_TERMINADOS.includes(t.estado));
+    const kpisTecnico = tareasTerminadas.map(t => calcularKpiTarea(t as any));
+    const kpiCrudo = kpisTecnico.length > 0 ? kpisTecnico.reduce((a, b) => a + b, 0) / kpisTecnico.length : 0;
+    const scoreAjustado = Number(kpiCrudo.toFixed(2)); 
 
     const conRechazo = tareasTerminadas.filter((t) => t.historial.length > 0).length;
     const aprobadas = tareasTerminadas.length - conRechazo;
@@ -120,17 +121,20 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
         const endDia = new Date(startDia.getTime() + (24 * 60 * 60 * 1000) - 1);
         
         const tareasDiaJoel = tareasPeriodo.filter(t => t.createdAt && t.createdAt.getTime() >= startDia.getTime() && t.createdAt.getTime() <= endDia.getTime());
+        // 🚨 FIX GRÁFICA DIARIA: Filtrar terminadas
+        const terminadasDiaJoel = tareasDiaJoel.filter(t => ESTADOS_TERMINADOS.includes(t.estado));
         
-        if (tareasDiaJoel.length === 0) {
+        if (terminadasDiaJoel.length === 0) {
           grafico.push({ label: dias[startDia.getDay()] ?? '', score: 0, noData: true });
         } else {
-          const kpisJoelDia = tareasDiaJoel.map(x => ESTADOS_TERMINADOS.includes(x.estado) ? calcularKpiTarea(x as any) : 0);
+          const kpisJoelDia = terminadasDiaJoel.map(x => calcularKpiTarea(x as any));
           const avgJoelDia = kpisJoelDia.reduce((a,b) => a+b, 0) / kpisJoelDia.length;
           
-          grafico.push({ label: dias[startDia.getDay()] ?? '', score: Number(avgJoelDia.toFixed(1)), noData: false });
+          grafico.push({ label: dias[startDia.getDay()] ?? '', score: Number(avgJoelDia.toFixed(2)), noData: false });
         }
       }
     } else if (Number(month) > 0) {
+      // (Lógica para mes específico, actualmente sin implementar según archivo original)
     } else {
       const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
       const targetYear = year ? Number(year) : new Date().getFullYear();
@@ -146,14 +150,16 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
         const endMes = bounds.fechaFin.getTime();
 
         const tareasMesJoel = tareasPeriodo.filter(t => t.createdAt && t.createdAt.getTime() >= startMes && t.createdAt.getTime() <= endMes);
+        // 🚨 FIX GRÁFICA MENSUAL: Filtrar terminadas
+        const terminadasMesJoel = tareasMesJoel.filter(t => ESTADOS_TERMINADOS.includes(t.estado));
         
-        if (tareasMesJoel.length === 0) {
+        if (terminadasMesJoel.length === 0) {
           grafico.push({ label: nombreMes, score: 0, noData: true });
         } else {
-          const kpisJoelMes = tareasMesJoel.map(x => ESTADOS_TERMINADOS.includes(x.estado) ? calcularKpiTarea(x as any) : 0);
+          const kpisJoelMes = terminadasMesJoel.map(x => calcularKpiTarea(x as any));
           const avgJoelMes = kpisJoelMes.reduce((a,b) => a+b, 0) / kpisJoelMes.length;
           
-          grafico.push({ label: nombreMes, score: Number(avgJoelMes.toFixed(1)), noData: false });
+          grafico.push({ label: nombreMes, score: Number(avgJoelMes.toFixed(2)), noData: false });
         }
       });
     }
@@ -204,10 +210,13 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
         }
       });
 
-      if (tareasAnteriores.length > 0) {
-        const kpisPrev = tareasAnteriores.map(t => ESTADOS_TERMINADOS.includes(t.estado) ? calcularKpiTarea(t as any) : 0);
+      // 🚨 FIX PERÍODO ANTERIOR: Filtrar terminadas
+      const terminadasAnteriores = tareasAnteriores.filter(t => ESTADOS_TERMINADOS.includes(t.estado));
+
+      if (terminadasAnteriores.length > 0) {
+        const kpisPrev = terminadasAnteriores.map(t => calcularKpiTarea(t as any));
         const prevCrudo = kpisPrev.reduce((a, b) => a + b, 0) / kpisPrev.length;
-        scorePeriodoAnterior = Number(prevCrudo.toFixed(1));
+        scorePeriodoAnterior = Number(prevCrudo.toFixed(2));
       }
     }
 

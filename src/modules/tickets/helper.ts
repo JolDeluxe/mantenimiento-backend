@@ -18,21 +18,7 @@ export const isTecnico = (rol: Rol): boolean => {
 };
 
 export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFilterQuery): Prisma.TareaWhereInput => {
-  const { 
-    q, 
-    estado, 
-    prioridad, 
-    tipo, 
-    clasificacion, 
-    categoria,
-    responsableId,
-    planta,
-    area,
-    fechaInicio, 
-    fechaFin, 
-    huerfanos, 
-    vencidos 
-  } = query;
+  const { q, estado, prioridad, tipo, clasificacion, categoria, responsableId, planta, area, fechaInicio, fechaFin, huerfanos, vencidos } = query;
 
   const where: Prisma.TareaWhereInput = {};
   const andConditions: Prisma.TareaWhereInput[] = [];
@@ -44,12 +30,20 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   }
 
   if (prioridad) where.prioridad = prioridad;
-  if (estado) where.estado = estado;
   if (tipo) where.tipo = tipo;
   if (clasificacion) where.clasificacion = clasificacion;
   if (categoria) where.categoria = categoria;
   if (planta) where.planta = planta;
   if (area) where.area = area;
+
+  // 🔥 REGLA DE ORO PARA CANCELADAS:
+  // Si te piden explícitamente "CANCELADA", la muestras. 
+  // Si no te la piden, exclúyela de tajo para que no ensucie la app.
+  if (estado) {
+    where.estado = estado;
+  } else if (!vencidos && !huerfanos) {
+    where.estado = { not: EstadoTarea.CANCELADA };
+  }
 
   if (responsableId) {
     andConditions.push({ responsables: { some: { id: responsableId } } });
@@ -62,14 +56,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
 
   if (vencidos) {
     where.fechaVencimiento = { lt: new Date() };
-    where.estado = { 
-      in: [
-        EstadoTarea.PENDIENTE, 
-        EstadoTarea.ASIGNADA, 
-        EstadoTarea.EN_PROGRESO, 
-        EstadoTarea.EN_PAUSA
-      ] 
-    };
+    where.estado = { in: [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA] };
   }
 
   if (q && typeof q === 'string') {
@@ -88,11 +75,13 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
 
   if (fechaInicio || fechaFin) {
     const createdAt: Prisma.DateTimeFilter = {};
-    if (fechaInicio) createdAt.gte = new Date(fechaInicio);
+    if (fechaInicio) {
+      const [y1 = 0, m1 = 1, d1 = 1] = fechaInicio.split('-').map(Number);
+      createdAt.gte = new Date(y1, m1 - 1, d1, 0, 0, 0, 0);
+    }
     if (fechaFin) {
-      const endDay = new Date(fechaFin);
-      endDay.setHours(23, 59, 59, 999);
-      createdAt.lte = endDay;
+      const [y2 = 0, m2 = 1, d2 = 1] = fechaFin.split('-').map(Number);
+      createdAt.lte = new Date(y2, m2 - 1, d2, 23, 59, 59, 999);
     }
     where.createdAt = createdAt;
   }

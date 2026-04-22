@@ -13,19 +13,30 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
     // ── 1. FILTROS DE SEGURIDAD Y CONTEXTO ───────────────────────────────────
     
     // Filtro Estricto: Reacciona a búsqueda, tipo, prioridad y tab de estado
-    const baseWhere = getTicketFilters({ id: user.id, rol: user.rol }, query);
+    const baseWhere: Prisma.TareaWhereInput = getTicketFilters({ id: user.id, rol: user.rol }, query);
+    
+    // Si no estamos buscando un estado en específico, eliminamos las canceladas de las métricas base
+    if (!query.estado) {
+      baseWhere.estado = { not: EstadoTarea.CANCELADA };
+    }
 
     // Filtro Estático: Ignora el "estado" para que la SummaryBar no colapse a 0
     const querySinEstado = { ...query };
     delete querySinEstado.estado;
-    const whereSinEstado = getTicketFilters({ id: user.id, rol: user.rol }, querySinEstado);
+    const whereSinEstado: Prisma.TareaWhereInput = {
+      ...getTicketFilters({ id: user.id, rol: user.rol }, querySinEstado),
+      estado: { not: EstadoTarea.CANCELADA }
+    };
 
-    // 🔥 CORRECCIÓN: Filtro Global con valores por defecto para satisfacer a TS
-    const globalWhere = getTicketFilters({ id: user.id, rol: user.rol }, {
-      page: 1,
-      limit: 100,
-      sort: [{ createdAt: 'desc' }]
-    });
+    // 🔥 CORRECCIÓN: Filtro Global con valores por defecto
+    const globalWhere: Prisma.TareaWhereInput = {
+      ...getTicketFilters({ id: user.id, rol: user.rol }, {
+        page: 1,
+        limit: 100,
+        sort: [{ createdAt: 'desc' }]
+      }),
+      estado: { not: EstadoTarea.CANCELADA }
+    };
 
     // ── 2. PREPARACIÓN DE TIEMPOS ────────────────────────────────────────────
     const now = new Date();
@@ -101,7 +112,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
         where: { 
           ...baseWhere, 
           estado: { in: closedStates },
-          clasificacion: { not: ClasificacionTarea.RUTINA } 
         },
         _avg: { tiempoEstimado: true, duracionReal: true }
       }),
@@ -111,7 +121,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
         where: { 
           ...baseWhere, 
           estado: { in: closedStates },
-          clasificacion: { not: ClasificacionTarea.RUTINA } 
         },
         _avg: { tiempoEstimado: true, duracionReal: true }
       }),
@@ -121,7 +130,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
         where: { 
           ...baseWhere, 
           estado: { in: closedStates },
-          clasificacion: { not: ClasificacionTarea.RUTINA } 
         },
         _avg: { tiempoEstimado: true, duracionReal: true }
       }),
@@ -149,7 +157,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
         where: { 
           ...baseWhere, 
           estado: { in: closedStates },
-          clasificacion: { not: ClasificacionTarea.RUTINA } 
         },
         _avg: { tiempoEstimado: true, duracionReal: true }
       }),
@@ -164,7 +171,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
         where: {
           ...baseWhere,
           estado: { in: closedStates },
-          clasificacion: { not: ClasificacionTarea.RUTINA },
           tiempoEstimado: { not: null }
         },
         select: { tiempoEstimado: true, duracionReal: true }

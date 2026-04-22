@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { Rol, EstadoTarea, Prioridad, Prisma } from "@prisma/client";
+import { Rol, EstadoTarea, Prisma } from "@prisma/client";
 import { registrarError } from "../../utils/logger";
 import type { DashboardFiltrosQuery } from "./zod";
 import {
@@ -12,7 +12,9 @@ import {
 
 const ROLES_CON_ACCESO: Rol[] = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO];
 const ESTADOS_TERMINADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
-const ESTADOS_BACKLOG: EstadoTarea[] = [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA];
+const ESTADOS_ACTIVAS: EstadoTarea[] = [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA];
+
+const toPct = (val: number, total: number) => total > 0 ? Number(((val / total) * 100).toFixed(2)) : 0;
 
 export const getKpisGeneral = async (req: Request, res: Response) => {
   try {
@@ -22,136 +24,171 @@ export const getKpisGeneral = async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Acceso denegado." });
     }
 
-    const { year, month, fechaInicio: fiStr, fechaFin: ffStr, departamentoId, tecnicoId } =
-      req.query as unknown as DashboardFiltrosQuery;
-
+    const { year, month, fechaInicio: fiStr, fechaFin: ffStr, departamentoId, tecnicoId } = req.query as unknown as DashboardFiltrosQuery;
     const { fechaInicio, fechaFin } = resolverRangoFechas(year, month, fiStr, ffStr);
 
-    // 1. BASE WHERE (Buscamos TODAS las tareas del periodo, no solo las terminadas)
-    const baseWhere: Prisma.TareaWhereInput = {};
+    // 🔥 Ignoramos las canceladas por defecto
+    const baseWhere: Prisma.TareaWhereInput = {
+      estado: { not: EstadoTarea.CANCELADA }
+    };
 
-    if (user.rol === Rol.JEFE_MTTO || user.rol === Rol.COORDINADOR_MTTO) {
-      if (!user.departamentoId) return res.status(400).json({ error: "Usuario sin departamento." });
-      baseWhere.departamentoId = user.departamentoId;
+    // 🔥 NUEVA REGLA DE NEGOCIO:
+    // El Jefe y Coordinador ven TODO. No hay filtros de departamento para ellos.
+    // Solo limitamos si es un SUPER_ADMIN usando el selector de departamentos.
+    if (user.rol === Rol.SUPER_ADMIN && departamentoId) {
+      baseWhere.departamentoId = departamentoId;
     }
 
-    if (departamentoId && user.rol === Rol.SUPER_ADMIN) baseWhere.departamentoId = departamentoId;
     if (tecnicoId) baseWhere.responsables = { some: { id: tecnicoId } };
     if (fechaInicio && fechaFin) baseWhere.createdAt = { gte: fechaInicio, lte: fechaFin };
 
-    // 2. CONSULTA PRINCIPAL
     const todasLasTareas = await prisma.tarea.findMany({
       where: baseWhere,
       select: {
-        id: true, titulo: true, descripcion: true, tipo: true, estado: true, prioridad: true,
+        id: true, tipo: true, estado: true,
         finalizadoAt: true, fechaVencimiento: true, duracionReal: true, tiempoEstimado: true,
-        planta: true, area: true, clasificacion: true, categoria: true, createdAt: true,
+        clasificacion: true, categoria: true,
         historial: { where: { estadoNuevo: EstadoTarea.RECHAZADO }, select: { id: true }, take: 1 },
       },
     });
 
-    // Separación Lógica
+    const totalGeneradas = todasLasTareas.length;
     const tareasTerminadas = todasLasTareas.filter(t => ESTADOS_TERMINADOS.includes(t.estado));
-    const tareasBacklog = todasLasTareas.filter(t => ESTADOS_BACKLOG.includes(t.estado));
+    const tareasActivasLista = todasLasTareas.filter(t => ESTADOS_ACTIVAS.includes(t.estado));
 
-    // 3. MÉTRICAS DE RENDIMIENTO GLOBAL (Solo aplica para las Terminadas)
-    const kpisIndividuales = tareasTerminadas.map((t) => calcularKpiTarea(t));
+    const kpisIndividuales = tareasTerminadas.map((t) => calcularKpiTarea(t as any));
     const { kpiPromedio: kpiGlobal, datosSuficientes: kpiDatosSuficientes } = calcularKpiAgregado(kpisIndividuales);
 
-    // Tasa Global de Aceptación vs Rechazo
     const totalTerminadas = tareasTerminadas.length;
     const conRechazos = tareasTerminadas.filter((t) => t.historial.length > 0).length;
     const aprobadasALaPrimera = totalTerminadas - conRechazos;
-    const tasaAceptacion = totalTerminadas > 0 ? Math.round((aprobadasALaPrimera / totalTerminadas) * 100) : 0;
+    const tasaAceptacion = toPct(aprobadasALaPrimera, totalTerminadas);
 
-    // SLA (Cumplimiento de Fechas)
     const conFecha = tareasTerminadas.filter((t) => t.finalizadoAt && t.fechaVencimiento);
-    const aTiempo = conFecha.filter((t) => t.finalizadoAt! <= t.fechaVencimiento!).length;
-    const slaRate = conFecha.length > 0 ? Math.round((aTiempo / conFecha.length) * 100) : null;
+    const aTiempoCount = conFecha.filter((t) => {
+        const fFin = new Date(t.finalizadoAt!).setHours(0, 0, 0, 0);
+        const fVenc = new Date(t.fechaVencimiento!).setHours(0, 0, 0, 0);
+        
+        // Si el día que terminó es menor o IGUAL al día que vencía
+        return fFin <= fVenc; 
+    }).length;
+    const tardeCount = conFecha.filter((t) => {
+        const fFin = new Date(t.finalizadoAt!).setHours(0, 0, 0, 0);
+        const fVenc = new Date(t.fechaVencimiento!).setHours(0, 0, 0, 0);
+        
+        // Solo es tarde si el día es POSTERIOR al del vencimiento
+        return fFin > fVenc; 
+    }).length;
+    const indiceCumplimiento = conFecha.length > 0 ? toPct(aTiempoCount, conFecha.length) : null;
 
-    // Tiempos y Eficiencia Global
+    const conTiempos = tareasTerminadas.filter((t) => t.duracionReal != null && t.tiempoEstimado != null && t.tiempoEstimado > 0);
+    const excedidasCount = conTiempos.filter((t) => t.duracionReal! > t.tiempoEstimado!).length;
+    const deAcuerdoCount = conTiempos.filter((t) => t.duracionReal! <= t.tiempoEstimado!).length;
+
     let totalDuracionReal = 0;
     let totalDuracionEstimada = 0;
-    let sumaRealParaPromedio = 0;
 
     tareasTerminadas.forEach(t => {
-      sumaRealParaPromedio += (t.duracionReal || 0);
       if (t.tiempoEstimado && t.tiempoEstimado > 0) {
         totalDuracionEstimada += t.tiempoEstimado;
         totalDuracionReal += (t.duracionReal || 0);
       }
     });
 
-    const tiempoPromedioCierreMins = totalTerminadas > 0 ? Math.round(sumaRealParaPromedio / totalTerminadas) : 0;
-    const eficienciaEstimacionGlobal = totalDuracionEstimada > 0 ? Math.round((totalDuracionReal / totalDuracionEstimada) * 100) : null;
+    let desviacionEstimacionGlobal: number | null = null;
+    if (totalDuracionEstimada > 0) {
+       desviacionEstimacionGlobal = Number((((totalDuracionReal - totalDuracionEstimada) / totalDuracionEstimada) * 100).toFixed(2));
+    }
 
-    // 4. DISTRIBUCIONES (Para gráficas generales)
-    const distribuciones = {
-      estados: Object.values(EstadoTarea).reduce((acc, e) => ({ ...acc, [e]: 0 }), {} as Record<EstadoTarea, number>),
-      prioridades: Object.values(Prioridad).reduce((acc, p) => ({ ...acc, [p]: 0 }), {} as Record<Prioridad, number>),
-      clasificaciones: {} as Record<string, number>,
-      categorias: {} as Record<string, number>,
+    let desviacionColor = "neutral";
+    if (desviacionEstimacionGlobal !== null) {
+       if (desviacionEstimacionGlobal <= 10) desviacionColor = "verde";
+       else if (desviacionEstimacionGlobal <= 30) desviacionColor = "ambar";
+       else desviacionColor = "rojo";
+    }
+
+    const rendimiento = {
+      aTiempo: { cantidad: aTiempoCount, porcentaje: toPct(aTiempoCount, conFecha.length) },
+      tarde: { cantidad: tardeCount, porcentaje: toPct(tardeCount, conFecha.length) },
+      excedidas: { cantidad: excedidasCount, porcentaje: toPct(excedidasCount, conTiempos.length) },
+      deAcuerdo: { cantidad: deAcuerdoCount, porcentaje: toPct(deAcuerdoCount, conTiempos.length) }
     };
 
+    const tiposMap: Record<string, number> = { TICKET: 0, PLANEADA: 0, EXTRAORDINARIA: 0 };
     todasLasTareas.forEach(t => {
-      distribuciones.estados[t.estado] = (distribuciones.estados[t.estado] || 0) + 1;
-      distribuciones.prioridades[t.prioridad] = (distribuciones.prioridades[t.prioridad] || 0) + 1;
-      distribuciones.clasificaciones[t.clasificacion] = (distribuciones.clasificaciones[t.clasificacion] || 0) + 1;
-      
-      const cat = t.categoria || "SIN_CATEGORIA";
-      distribuciones.categorias[cat] = (distribuciones.categorias[cat] || 0) + 1;
+       const tipoStr = t.tipo.toString();
+       tiposMap[tipoStr] = (tiposMap[tipoStr] || 0) + 1;
     });
+    const tipos = Object.entries(tiposMap).map(([nombre, cantidad]) => ({
+       nombre,
+       cantidad,
+       porcentaje: toPct(cantidad, totalGeneradas)
+    })).sort((a, b) => b.cantidad - a.cantidad);
 
-    // 5. CARGA VIVA (Backlog)
-    const backlog = {
-      totalActivo: tareasBacklog.length,
-      desglose: Object.values(EstadoTarea)
-        .filter(e => ESTADOS_BACKLOG.includes(e))
-        .reduce((acc, e) => ({ ...acc, [e]: distribuciones.estados[e] }), {} as Record<string, number>)
+    const clasiMap: Record<string, number> = {};
+    todasLasTareas.forEach(t => {
+       const c = t.clasificacion || "SIN CLASIFICAR";
+       clasiMap[c] = (clasiMap[c] || 0) + 1;
+    });
+    const topClasificaciones = Object.entries(clasiMap)
+       .sort((a, b) => b[1] - a[1])
+       .slice(0, 5)
+       .map(([nombre, cantidad]) => ({
+           nombre,
+           cantidad,
+           porcentaje: toPct(cantidad, totalGeneradas)
+       }));
+
+    const catMap: Record<string, number> = {};
+    todasLasTareas.forEach(t => {
+       const c = t.categoria || "SIN CATEGORÍA";
+       catMap[c] = (catMap[c] || 0) + 1;
+    });
+    const topCategorias = Object.entries(catMap)
+       .sort((a, b) => b[1] - a[1])
+       .slice(0, 5)
+       .map(([nombre, cantidad]) => ({
+           nombre,
+           cantidad,
+           porcentaje: toPct(cantidad, totalGeneradas)
+       }));
+
+    const activasMap: Record<string, number> = {};
+    tareasActivasLista.forEach(t => {
+       activasMap[t.estado] = (activasMap[t.estado] || 0) + 1;
+    });
+    const activas = {
+       total: tareasActivasLista.length,
+       desglose: Object.entries(activasMap)
+         .map(([estado, cantidad]) => ({
+            estado: estado.replace('_', ' '),
+            cantidad,
+            porcentaje: toPct(cantidad, tareasActivasLista.length)
+         }))
+         .sort((a, b) => b.cantidad - a.cantidad)
     };
 
-    // 6. TICKETS RECIENTES (Evaluados)
-    const ticketsEvaluados = tareasTerminadas
-      .filter((t) => t.tipo === "TICKET")
-      .map((t) => ({
-        id: t.id, titulo: t.titulo, descripcion: t.descripcion, planta: t.planta,
-        area: t.area, clasificacion: t.clasificacion, estado: t.estado, prioridad: t.prioridad,
-        fechaFinalizado: t.finalizadoAt, kpi: calcularKpiTarea(t), colorKpi: colorParaKpi(calcularKpiTarea(t)),
-      }))
-      .sort((a, b) => (b.fechaFinalizado?.getTime() || 0) - (a.fechaFinalizado?.getTime() || 0))
-      .slice(0, 50);
-
-    // 7. AÑOS DISPONIBLES (Para el filtro del frontend)
-    const aniosConDatos = await prisma.tarea.groupBy({
-      by: ["createdAt"],
-      where: {
-        ...(user.rol !== Rol.SUPER_ADMIN ? { departamentoId: user.departamentoId! } : {}),
-      },
-      _count: { id: true },
-    });
-    const aniosDisponibles = Array.from(new Set(aniosConDatos.map((r) => r.createdAt.getFullYear()))).sort((a, b) => b - a);
-
-    // --- RESPUESTA JSON ---
     return res.json({
       status: "success",
       data: {
         resumen: {
-          totalGeneradas: todasLasTareas.length,
+          totalGeneradas,
           totalTerminadas,
-          kpiGlobal,
+          kpiGlobal: Number(kpiGlobal.toFixed(2)),
           kpiColor: colorParaKpi(kpiGlobal),
           kpiDatosSuficientes,
-          tasaAceptacion, // Qué porcentaje pasó sin rechazos
+          tasaAceptacion,
           tasaAceptacionColor: colorParaKpi(tasaAceptacion),
-          slaRate,
-          slaColor: slaRate !== null ? colorParaKpi(slaRate) : null,
-          tiempoPromedioCierreMins,
-          eficienciaEstimacionGlobal // Cerca de 100% es perfecto. >100% se tardaron más de lo planeado.
+          indiceCumplimiento,
+          indiceCumplimientoColor: indiceCumplimiento !== null ? colorParaKpi(indiceCumplimiento) : null,
+          desviacionEstimacionGlobal,
+          desviacionColor
         },
-        backlog,
-        distribuciones,
-        ticketsEvaluados,
-        aniosDisponibles,
+        rendimiento,
+        activas,
+        tipos,
+        topCategorias,
+        topClasificaciones
       },
     });
   } catch (error) {
