@@ -8,6 +8,7 @@ import {
   calcularKpiAgregado,
   colorParaKpi,
   resolverRangoFechas,
+  toMXDateStr,
 } from "./helper_metrics";
 
 const ROLES_CON_ACCESO: Rol[] = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO];
@@ -65,20 +66,12 @@ export const getKpisGeneral = async (req: Request, res: Response) => {
     const tasaAceptacion = toPct(aprobadasALaPrimera, totalTerminadas);
 
     const conFecha = tareasTerminadas.filter((t) => t.finalizadoAt && t.fechaVencimiento);
-    const aTiempoCount = conFecha.filter((t) => {
-        const fFin = new Date(t.finalizadoAt!).setHours(0, 0, 0, 0);
-        const fVenc = new Date(t.fechaVencimiento!).setHours(0, 0, 0, 0);
-        
-        // Si el día que terminó es menor o IGUAL al día que vencía
-        return fFin <= fVenc; 
-    }).length;
-    const tardeCount = conFecha.filter((t) => {
-        const fFin = new Date(t.finalizadoAt!).setHours(0, 0, 0, 0);
-        const fVenc = new Date(t.fechaVencimiento!).setHours(0, 0, 0, 0);
-        
-        // Solo es tarde si el día es POSTERIOR al del vencimiento
-        return fFin > fVenc; 
-    }).length;
+    const aTiempoCount = conFecha.filter((t) =>
+    toMXDateStr(new Date(t.finalizadoAt!)) <= toMXDateStr(new Date(t.fechaVencimiento!))
+).length;
+const tardeCount = conFecha.filter((t) =>
+    toMXDateStr(new Date(t.finalizadoAt!)) > toMXDateStr(new Date(t.fechaVencimiento!))
+).length;
     const indiceCumplimiento = conFecha.length > 0 ? toPct(aTiempoCount, conFecha.length) : null;
 
     const conTiempos = tareasTerminadas.filter((t) => t.duracionReal != null && t.tiempoEstimado != null && t.tiempoEstimado > 0);

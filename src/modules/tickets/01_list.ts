@@ -49,7 +49,19 @@ export const listarTickets = async (req: Request, res: Response) => {
       return acc;
     }, {} as Record<string, number>);
 
-    // Patrón DTO: Se replica la intercepción en la lista para evitar inconsistencias de contrato
+        const toMXDateStr = (d: Date): string =>
+      d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    const hoyMX = toMXDateStr(new Date());
+
+    const ESTADOS_ENTREGADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
+    const ESTADOS_ACTIVOS_VENCIBLES: EstadoTarea[] = [
+      EstadoTarea.PENDIENTE,
+      EstadoTarea.ASIGNADA,
+      EstadoTarea.EN_PROGRESO,
+      EstadoTarea.EN_PAUSA,
+      EstadoTarea.RECHAZADO,
+    ];
+
     const ticketsDTO = tickets.map(t => {
       const historialMapeado = t.historial.map(h => {
         const notaString = h.nota || "";
@@ -61,9 +73,24 @@ export const listarTickets = async (req: Request, res: Response) => {
         };
       });
 
+      // Tarea cerrada/resuelta entregada después del día de vencimiento (calendario México)
+      const isLate =
+        ESTADOS_ENTREGADOS.includes(t.estado) &&
+        !!t.finalizadoAt &&
+        !!t.fechaVencimiento &&
+        toMXDateStr(new Date(t.finalizadoAt)) > toMXDateStr(new Date(t.fechaVencimiento));
+
+      // Tarea activa cuyo día de vencimiento ya pasó (calendario México)
+      const isOverdue =
+        ESTADOS_ACTIVOS_VENCIBLES.includes(t.estado) &&
+        !!t.fechaVencimiento &&
+        toMXDateStr(new Date(t.fechaVencimiento)) < hoyMX;
+
       return {
         ...t,
-        historial: historialMapeado
+        historial: historialMapeado,
+        isLate,
+        isOverdue,
       };
     });
 

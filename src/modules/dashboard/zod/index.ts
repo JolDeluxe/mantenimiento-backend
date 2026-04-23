@@ -13,7 +13,7 @@ export const dashboardFiltrosSchema = z.object({
     departamentoId: z.preprocess(preprocessEmpty, z.coerce.number().int().positive().optional()),
     tecnicoId:      z.preprocess(preprocessEmpty, z.coerce.number().int().positive().optional()),
   }).strict(), 
-}); // 🚨 CERO .strict() exterior para no pelear con Express
+}); 
 
 export const tecnicoDetalleParamsSchema = z.object({
   params: z.object({

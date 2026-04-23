@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { Rol } from "@prisma/client";
+import { Rol, EstadoTarea } from "@prisma/client";
 import { registrarError } from "../../utils/logger";
 import { ticketStandardInclude } from "./types"; 
 import { checkTicketExpiration } from "./expiration";
@@ -24,6 +24,7 @@ export const getTicket = async (req: Request, res: Response) => {
     const host = req.get('host');
     const fullUrlHost = `${protocol}://${host}`;
     
+    // Delegación de regla de dominio pura
     const ticket = await checkTicketExpiration(ticketDB, fullUrlHost);
 
     let tienePermiso = false;
@@ -41,6 +42,32 @@ export const getTicket = async (req: Request, res: Response) => {
       return res.status(403).json({ error: "No tienes permisos para ver el detalle de este ticket." });
     }
 
+    // --- INICIO LÓGICA DE TIEMPOS ESTRICTA (FAT BACKEND) ---
+    const toMXDateStr = (d: Date): string =>
+      d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    const hoyMX = toMXDateStr(new Date());
+
+    const ESTADOS_ENTREGADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
+    const ESTADOS_ACTIVOS_VENCIBLES: EstadoTarea[] = [
+      EstadoTarea.PENDIENTE,
+      EstadoTarea.ASIGNADA,
+      EstadoTarea.EN_PROGRESO,
+      EstadoTarea.EN_PAUSA,
+      EstadoTarea.RECHAZADO,
+    ];
+
+    const isLate =
+      ESTADOS_ENTREGADOS.includes(ticket.estado) &&
+      !!ticket.finalizadoAt &&
+      !!ticket.fechaVencimiento &&
+      toMXDateStr(new Date(ticket.finalizadoAt)) > toMXDateStr(new Date(ticket.fechaVencimiento));
+
+    const isOverdue =
+      ESTADOS_ACTIVOS_VENCIBLES.includes(ticket.estado) &&
+      !!ticket.fechaVencimiento &&
+      toMXDateStr(new Date(ticket.fechaVencimiento)) < hoyMX;
+    // --- FIN LÓGICA DE TIEMPOS ---
+
     // Patrón DTO: Intercepción y limpieza antes de serializar
     const historialMapeado = ticket.historial.map(h => {
       const notaString = h.nota || "";
@@ -54,7 +81,9 @@ export const getTicket = async (req: Request, res: Response) => {
 
     const ticketDTO = {
       ...ticket,
-      historial: historialMapeado
+      historial: historialMapeado,
+      isLate,
+      isOverdue
     };
 
     return res.json(ticketDTO);

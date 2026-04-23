@@ -1,7 +1,17 @@
-// src/modules/dashboard/helper_metrics.ts
 import { EstadoTarea } from "@prisma/client";
 
 export const UMBRAL_DATOS_SUFICIENTES = 3;
+
+/** Zona horaria corporativa — fuente única de verdad para comparaciones de día calendario. */
+const TZ = 'America/Mexico_City';
+
+/**
+ * Normaliza una fecha a YYYY-MM-DD en la zona horaria de México.
+ * Exportada para reutilización en 01_kpis_general y 04_tecnico_detalle.
+ * Elimina por completo el desfase UTC vs horario local.
+ */
+export const toMXDateStr = (date: Date): string =>
+  date.toLocaleDateString('en-CA', { timeZone: TZ });
 
 export const calcularKpiTarea = (tarea: {
   estado: EstadoTarea;
@@ -12,49 +22,34 @@ export const calcularKpiTarea = (tarea: {
   historial: { id: number }[];
 }): number => {
   const ESTADOS_TERMINADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
-  
-  // Si no está terminada, no tiene puntaje de desempeño aún
+
   if (!ESTADOS_TERMINADOS.includes(tarea.estado)) return 0;
 
-  let kpiObtenido = 20; // 20 pts base por el simple hecho de terminarla
-  let kpiMaximo = 100;  // El total posible acumulable
+  let kpiObtenido = 20;
+  let kpiMaximo = 100;
 
-  // 1. EVALUAR PUNTUALIDAD (40 pts)
+  // 1. PUNTUALIDAD (40 pts)
+  // Comparación YYYY-MM-DD en México. Una tarea finalizada el mismo día que vence = A TIEMPO.
   if (tarea.fechaVencimiento && tarea.finalizadoAt) {
-    // NORMALIZACIÓN: Quitamos horas, minutos y segundos para comparar solo el CALENDARIO
-    const fFin = new Date(tarea.finalizadoAt).setHours(0, 0, 0, 0);
-    const fVenc = new Date(tarea.fechaVencimiento).setHours(0, 0, 0, 0);
-
-    if (fFin <= fVenc) {
-      kpiObtenido += 40; // Se ganó sus puntos (entregó antes o el mismo día)
-    }
-    // Si fFin > fVenc, no suma estos 40 puntos (penalización por tardanza)
+    const dFin  = toMXDateStr(new Date(tarea.finalizadoAt));
+    const dVenc = toMXDateStr(new Date(tarea.fechaVencimiento));
+    if (dFin <= dVenc) kpiObtenido += 40;
   } else if (!tarea.fechaVencimiento) {
-    // REGLA DE JUSTICIA: Si no se le asignó fecha límite, no podemos evaluarlo
-    kpiMaximo -= 40; 
+    kpiMaximo -= 40; // Sin fecha límite no se puede evaluar ni penalizar
   }
 
-  // 2. EVALUAR EFICIENCIA DE TIEMPO (20 pts)
+  // 2. EFICIENCIA DE TIEMPO (20 pts)
   if (tarea.tiempoEstimado && tarea.tiempoEstimado > 0) {
     const duracion = tarea.duracionReal ?? 0;
-    if (duracion > 0 && duracion <= tarea.tiempoEstimado) {
-      kpiObtenido += 20; // Cumplió con el tiempo que prometió o estimó
-    }
+    if (duracion > 0 && duracion <= tarea.tiempoEstimado) kpiObtenido += 20;
   } else {
-    // REGLA DE JUSTICIA: Sin tiempo estimado no hay penalización por excederse
-    kpiMaximo -= 20; 
+    kpiMaximo -= 20; // Sin estimado no se evalúa
   }
 
-  // 3. EVALUAR CALIDAD A LA PRIMERA (20 pts)
-  // El historial filtrado solo trae registros de tipo RECHAZADO (según el query del módulo)
-  if (tarea.historial.length === 0) {
-    kpiObtenido += 20; // El trabajo fue aceptado sin correcciones
-  }
+  // 3. CALIDAD A LA PRIMERA (20 pts)
+  if (tarea.historial.length === 0) kpiObtenido += 20;
 
-  // 4. CALCULAR PORCENTAJE FINAL
-  // Evitamos división por cero y devolvemos la relación porcentual real
-  if (kpiMaximo <= 0) return 100; 
-  
+  if (kpiMaximo <= 0) return 100;
   return (kpiObtenido / kpiMaximo) * 100;
 };
 
@@ -63,10 +58,7 @@ export const calcularKpiAgregado = (
 ): { kpiPromedio: number; datosSuficientes: boolean } => {
   const datosSuficientes = kpis.length >= UMBRAL_DATOS_SUFICIENTES;
   if (kpis.length === 0) return { kpiPromedio: 0, datosSuficientes: false };
-  
-  // Devuelve el flotante puro
   const kpiPromedio = kpis.reduce((a, b) => a + b, 0) / kpis.length;
-  
   return { kpiPromedio, datosSuficientes };
 };
 
@@ -81,14 +73,12 @@ export const buildDateRange = (
   month?: number
 ): { fechaInicio?: Date; fechaFin?: Date } => {
   if (!year) return {};
-
   if (!month || month === 0) {
     return {
       fechaInicio: new Date(year, 0, 1, 0, 0, 0, 0),
       fechaFin:    new Date(year, 11, 31, 23, 59, 59, 999),
     };
   }
-
   const lastDay = new Date(year, month, 0).getDate();
   return {
     fechaInicio: new Date(year, month - 1, 1, 0, 0, 0, 0),
@@ -101,18 +91,11 @@ export const buildDateRangeFromStrings = (
   fechaFinStr?: string
 ): { fechaInicio?: Date; fechaFin?: Date } => {
   if (!fechaInicioStr || !fechaFinStr) return {};
-
-  // Separar los valores a mano evita que JS asuma UTC por el formato YYYY-MM-DD
-  // Se agregan valores por defecto para evitar errores de TypeScript (undefined)
   const [y1 = 0, m1 = 1, d1 = 1] = fechaInicioStr.split('-').map(Number);
   const [y2 = 0, m2 = 1, d2 = 1] = fechaFinStr.split('-').map(Number);
-
-  // new Date(Año, Mes (0-11), Día, Hora, Minuto, Segundo) -> Usa hora LOCAL siempre
   const fi = new Date(y1, m1 - 1, d1, 0, 0, 0, 0);
   const ff = new Date(y2, m2 - 1, d2, 23, 59, 59, 999);
-
   if (isNaN(fi.getTime()) || isNaN(ff.getTime())) return {};
-
   return { fechaInicio: fi, fechaFin: ff };
 };
 
@@ -122,8 +105,6 @@ export const resolverRangoFechas = (
   fechaInicioStr?: string,
   fechaFinStr?: string
 ): { fechaInicio?: Date; fechaFin?: Date } => {
-  if (fechaInicioStr && fechaFinStr) {
-    return buildDateRangeFromStrings(fechaInicioStr, fechaFinStr);
-  }
+  if (fechaInicioStr && fechaFinStr) return buildDateRangeFromStrings(fechaInicioStr, fechaFinStr);
   return buildDateRange(year, month);
 };

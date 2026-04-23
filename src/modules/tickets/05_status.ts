@@ -41,7 +41,6 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
     const esAdminJefe  = ([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO] as Rol[]).includes(user.rol);
     const esCreador    = ticket.creadorId === user.id;
     const esResponsable = ticket.responsables.some(r => r.id === user.id);
-    const esRutina     = ticket.clasificacion === ClasificacionTarea.RUTINA;
 
     if (!isValidTransition(ticket.estado, nuevoEstado)) {
         return res.status(400).json({ 
@@ -63,7 +62,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
       if (!esResponsable) {
         return res.status(403).json({ error: "No estás asignado a este ticket." });
       }
-      if (nuevoEstado === EstadoTarea.CERRADO && !esRutina) {
+      if (nuevoEstado === EstadoTarea.CERRADO) {
         return res.status(403).json({ error: "Solo el cliente o el jefe pueden cerrar el ticket definitivamente." });
       }
       if (ticket.estado === EstadoTarea.PENDIENTE) {
@@ -74,7 +73,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
     }
 
     const ahora = new Date();
-    const esEstadoResolucion = nuevoEstado === EstadoTarea.RESUELTO || (esRutina && nuevoEstado === EstadoTarea.CERRADO);
+    const esEstadoResolucion = nuevoEstado === EstadoTarea.RESUELTO || (nuevoEstado === EstadoTarea.CERRADO);
     
     let fechaCierreReal = ahora;
     let esCierreManualAtrasado = false;
@@ -212,7 +211,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
 
       let notaHistorial = nota ? nota.trim() : "Sin observaciones";
 
-      if (esRutina && nuevoEstado === EstadoTarea.CERRADO) {
+      if (nuevoEstado === EstadoTarea.CERRADO) {
         notaHistorial += ' [RUTINA]';
       }
 

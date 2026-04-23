@@ -3,7 +3,7 @@ import { prisma } from "../../db";
 import { Rol, EstadoTarea } from "@prisma/client";
 import { registrarError } from "../../utils/logger";
 import type { TecnicoDetalleParams, TecnicoDetalleQuery } from "./zod";
-import { calcularKpiTarea, colorParaKpi, resolverRangoFechas } from "./helper_metrics";
+import { calcularKpiTarea, colorParaKpi, resolverRangoFechas, toMXDateStr  } from "./helper_metrics";
 
 const ROLES_CON_ACCESO: Rol[] = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO];
 const ESTADOS_TERMINADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
@@ -100,7 +100,9 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
 
     tareasTerminadas.forEach(t => {
       if (t.fechaVencimiento && t.finalizadoAt) {
-        if (t.finalizadoAt <= t.fechaVencimiento) entregasA_Tiempo++;
+        const dFin  = toMXDateStr(new Date(t.finalizadoAt));
+        const dVenc = toMXDateStr(new Date(t.fechaVencimiento));
+        if (dFin <= dVenc) entregasA_Tiempo++;
         else entregasFuera_Tiempo++;
       }
       if (t.tiempoEstimado && t.tiempoEstimado > 0) {
