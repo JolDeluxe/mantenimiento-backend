@@ -1,12 +1,13 @@
 // src/modules/tickets/05_status.ts
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { EstadoTarea, TipoEvento, Rol, ClasificacionTarea } from "@prisma/client";
+import { EstadoTarea, TipoEvento, Rol } from "@prisma/client"; // Removido ClasificacionTarea si no se usa aquí
 import { registrarError, registrarAccion } from "../../utils/logger";
 import { processTicketImages } from "./create/helper_upload";
 import { notificarCambioEstatus } from "../notificaciones/services"; 
 import { isValidTransition } from "./helper";
 import { deleteImageByUrl } from "../../utils/cloudinary";
+import { getIO } from "../../utils/socket"; // Importación corregida según infraestructura
 import type { ChangeTicketStatusParams, ChangeTicketStatusInput } from "./zod";
 
 export const changeTicketStatus = async (req: Request, res: Response) => {
@@ -90,7 +91,6 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
             esCierreManualAtrasado = true;
         } 
         
-        // Fix: Se remueve el 'else' para permitir que el modal envíe fecha de cierre Y minutos trabajados simultáneamente.
         if (registroTiempoManual.duracionManualMinutos) {
             minutosManualesDirectos = Number(registroTiempoManual.duracionManualMinutos);
         }
@@ -122,8 +122,6 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
             ? fechaCierreReal
             : (esCierreManualAtrasado ? intervaloAbierto.inicio : ahora);
 
-        // Fix: Si inyectamos minutos manuales, anulamos la duración de la sesión abierta 
-        // para que no se sumen duplicadamente.
         const duracionMin = minutosManualesDirectos > 0 
             ? 0 
             : Math.floor((finValidado.getTime() - intervaloAbierto.inicio.getTime()) / 60000);
@@ -144,12 +142,12 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
         const inicioIntervaloManual = new Date(ahora.getTime() - minutosManualesDirectos * 60000);
         await prisma.intervaloTiempo.create({
           data: {
-            tareaId:  ticketId,
+            tareaId:   ticketId,
             usuarioId: user.id,
-            estado:   EstadoTarea.EN_PROGRESO,
-            inicio:   inicioIntervaloManual,
-            fin:      ahora,
-            duracion: minutosManualesDirectos
+            estado:    EstadoTarea.EN_PROGRESO,
+            inicio:    inicioIntervaloManual,
+            fin:       ahora,
+            duracion:  minutosManualesDirectos
           }
         });
 
@@ -214,19 +212,22 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
       if (nuevoEstado === EstadoTarea.CERRADO) {
         notaHistorial += ' [RUTINA]';
       }
-
-      if (minutosManualesDirectos > 0) {
-        notaHistorial += ' ||[META:TIEMPO_MANUAL]||';
+if (minutosManualesDirectos > 0) {
+        const h = Math.floor(minutosManualesDirectos / 60);
+        const m = minutosManualesDirectos % 60;
+        const tiempoStr = h > 0 ? (m > 0 ? `${h} h ${m} min` : `${h} h`) : `${m} min`;
+        
+        notaHistorial += ` [TIEMPO_MANUAL:${tiempoStr}]`;
       }
       
       const historial = await tx.historialTarea.create({
         data: {
-          tareaId:        ticketId,
-          usuarioId:      user.id,
-          tipo:           TipoEvento.CAMBIO_ESTADO,
-          estadoAnterior: ticket.estado,
-          estadoNuevo:    nuevoEstado,
-          nota:           notaHistorial
+          tareaId:         ticketId,
+          usuarioId:       user.id,
+          tipo:            TipoEvento.CAMBIO_ESTADO,
+          estadoAnterior:  ticket.estado,
+          estadoNuevo:     nuevoEstado,
+          nota:            notaHistorial
         }
       });
 
@@ -250,11 +251,20 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
     });
 
     void notificarCambioEstatus(ticket, nuevoEstado, user.id, user.rol);
+    
     await registrarAccion(
       "CAMBIO_ESTATUS",
       user.id,
       `Ticket ${ticketId}: ${ticket.estado} → ${nuevoEstado} (Usuario: ${user.email})${minutosManualesDirectos > 0 ? ` | Tiempo manual: ${minutosManualesDirectos} min` : ''}${esCierreManualAtrasado ? ` | Fecha real configurada: ${fechaCierreReal.toISOString()}` : ''}`
     );
+
+    // Integración de Sockets para actualización global
+    try {
+        const io = getIO();
+        io.to("global_updates").emit("datos_actualizados", { module: "tickets" });
+    } catch (_) {
+        // Socket no crítico — no interrumpe el flujo
+    }
     
     return res.json({ message: "Estatus actualizado correctamente", data: result });
 

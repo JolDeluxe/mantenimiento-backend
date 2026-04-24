@@ -133,7 +133,6 @@ model Tarea {
   tipo             TipoTarea          @default(TICKET)  
   clasificacion    ClasificacionTarea @default(CORRECTIVO)
   
-  // Límite explícito para evitar errores en índices de MySQL
   titulo           String             @db.VarChar(255) 
   categoria        String?            
   descripcion      String             @db.Text 
@@ -147,7 +146,6 @@ model Tarea {
   estado           EstadoTarea        @default(PENDIENTE)
   
   fechaVencimiento DateTime?          
-  
   tiempoEstimado   Int? 
   
   fechaInicio      DateTime?   
@@ -155,32 +153,30 @@ model Tarea {
   
   duracionReal     Int?               @default(0)
 
+  // --- RELACIONES ---
   creadorId        Int
-  // Evita borrar a un usuario si tiene tareas creadas
   creador          Usuario            @relation("Creador", fields: [creadorId], references: [id], onDelete: Restrict)
 
-  departamentoId   Int?     
-  // Si se borra el departamento, la tarea queda sin departamento
+  departamentoId   Int?      
   departamento     Departamento?      @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
   responsables     Usuario[]          @relation("Responsables") 
   
   historial        HistorialTarea[] 
   imagenes         Imagen[]
-  
   intervalos       IntervaloTiempo[]
+  notificaciones   Notificacion[]
 
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
-  // --- ÍNDICES DE RENDIMIENTO (PERFORMANCE) ---
+  // --- ÍNDICES DE RENDIMIENTO ---
   @@index([creadorId])         
   @@index([departamentoId])    
   @@index([estado])            
   @@index([createdAt])         
   @@index([titulo])            
   @@index([tipo])              
-  // Índices compuestos para búsquedas comunes más rápidas
   @@index([departamentoId, estado]) 
   @@index([creadorId, createdAt])   
 }
@@ -231,19 +227,25 @@ model Bitacora {
 }
 
 model Notificacion {
-  id        Int              @id @default(autoincrement())
-  usuarioId Int
-  usuario   Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  tipo      TipoNotificacion
-  titulo    String           @db.VarChar(255)
-  cuerpo    String           @db.Text
-  tareaId   Int?
-  leida     Boolean          @default(false)
-  accionada Boolean          @default(false)
-  createdAt DateTime         @default(now())
+  id           Int              @id @default(autoincrement())
+  usuarioId    Int
+  usuario      Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tipo         TipoNotificacion
+  titulo       String           @db.VarChar(255)
+  cuerpo       String           @db.Text
+  
+  // Relación
+  tareaId      Int?
+  tarea        Tarea?           @relation(fields: [tareaId], references: [id], onDelete: SetNull)
 
+  leida        Boolean          @default(false)
+  accionada    Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+
+  // Índices optimizados
   @@index([usuarioId])
-  @@index([usuarioId, leida])
+  @@index([usuarioId, leida]) 
+  @@index([tareaId])
   @@index([createdAt])
 }
 

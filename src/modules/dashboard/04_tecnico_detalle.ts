@@ -5,7 +5,7 @@ import { registrarError } from "../../utils/logger";
 import type { TecnicoDetalleParams, TecnicoDetalleQuery } from "./zod";
 import { calcularKpiTarea, colorParaKpi, resolverRangoFechas, toMXDateStr  } from "./helper_metrics";
 
-const ROLES_CON_ACCESO: Rol[] = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO];
+const ROLES_CON_ACCESO: Rol[] = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO, Rol.TECNICO];
 const ESTADOS_TERMINADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
 
 export const getTecnicoDetalle = async (req: Request, res: Response) => {
@@ -16,13 +16,19 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
     const { id: tecnicoId } = req.params as unknown as TecnicoDetalleParams;
     const { year, month, fechaInicio: fiStr, fechaFin: ffStr } = req.query as unknown as TecnicoDetalleQuery;
 
+    // BARRERA IDOR: Si es técnico, solo puede consultar su propio ID
+    if (user.rol === Rol.TECNICO && user.id !== Number(tecnicoId)) {
+        return res.status(403).json({ error: "Solo puedes ver tus propias métricas." });
+    }
+
     const tecnico = await prisma.usuario.findUnique({
-      where: { id: tecnicoId },
+      where: { id: Number(tecnicoId) },
       select: { id: true, nombre: true, imagen: true, cargo: true, rol: true, departamentoId: true },
     });
 
     if (!tecnico) return res.status(404).json({ error: "Técnico no encontrado." });
 
+    // Regla existente: Jefes y Coordinadores solo ven a gente de su departamento
     if ((user.rol === Rol.JEFE_MTTO || user.rol === Rol.COORDINADOR_MTTO) && tecnico.departamentoId !== user.departamentoId) {
       return res.status(403).json({ error: "Sin acceso a este técnico." });
     }
@@ -222,6 +228,29 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
       }
     }
 
+    const ESTADOS_ACTIVOS: EstadoTarea[] = [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA];
+    
+    const tareasPendientesDetalle = await prisma.tarea.findMany({
+      where: {
+        responsables: { some: { id: Number(tecnicoId) } },
+        estado: { in: ESTADOS_ACTIVOS }
+      },
+      select: {
+        id: true,
+        titulo: true,
+        prioridad: true,
+        fechaVencimiento: true,
+        // Traemos si tiene un rechazo en su historial para etiquetarla
+        historial: {
+          where: { estadoNuevo: EstadoTarea.RECHAZADO },
+          select: { id: true },
+          take: 1
+        }
+      },
+      orderBy: { fechaVencimiento: 'asc' }, // Las más urgentes/atrasadas primero
+      take: 10
+    });
+
     return res.json({
       status: "success",
       data: {
@@ -231,6 +260,8 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
           scoreColor: colorParaKpi(scoreAjustado),
           promedioEquipo,
           tasaAceptacion,
+          aprobadas, 
+          rechazadas: conRechazo,
           totalTerminadas: tareasTerminadas.length,
           scorePeriodoAnterior 
         },
@@ -244,6 +275,7 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
           planeadoFuera_Tiempo
         },
         cargaActual: backlogData,
+        tareasPendientes: tareasPendientesDetalle,
         grafico,
         topTareas,
       },

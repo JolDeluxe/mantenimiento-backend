@@ -22,7 +22,13 @@ export const listarNotificaciones = async (req: Request, res: Response) => {
         where:   whereClause,
         take:    limit,
         skip:    offset,
-        orderBy: { createdAt: "desc" },
+        orderBy: [
+          { createdAt: "desc" },
+          { id: "desc" } // Desempate determinista
+        ],
+        include: {
+          tarea: { select: { estado: true } },
+        },
       }),
     ]);
 

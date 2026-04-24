@@ -1,4 +1,5 @@
 import express from "express";
+import http from "http";
 import path from "path";
 import morgan from 'morgan';
 import { env } from "./env";
@@ -7,6 +8,7 @@ import { corsMiddleware } from "./middlewares/cors";
 // Utilidades del sistema
 import { iniciarTareasProgramadas } from './utils/scheduler';
 import { inicializarSistema } from "./utils/setup"; 
+import { initSocket } from "./utils/socket"; 
 
 // Rutas
 import auth from "./routes/auth_rutas";
@@ -18,6 +20,7 @@ import notificaciones from "./routes/notificaciones_rutas";
 import dashboard from "./routes/dashboard_rutas";
 
 const app = express();
+const httpServer = http.createServer(app);
 
 // --- MIDDLEWARES ---
 app.use(corsMiddleware); 
@@ -44,20 +47,21 @@ app.use("/api/dashboard", dashboard);
 // --- ARRANQUE DEL SERVIDOR ---
 
 const startServer = async () => {
-  try {
-    await inicializarSistema();
+    try {
+        await inicializarSistema();
 
-    app.listen(env.PORT, '0.0.0.0', () => {
-      console.log(`Servidor corriendo en http://localhost:${env.PORT}`);
-      console.log(`Ambiente: ${env.NODE_ENV}`);
-      
-      iniciarTareasProgramadas();
-    });
+        initSocket(httpServer);
 
-  } catch (error) {
-    console.error("❌ Error fatal al iniciar el servidor:", error);
-    process.exit(1);
-  }
+        httpServer.listen(env.PORT, '0.0.0.0', () => {
+            console.log(`Servidor corriendo en http://localhost:${env.PORT}`);
+            console.log(`Ambiente: ${env.NODE_ENV}`);
+            iniciarTareasProgramadas();
+        });
+
+    } catch (error) {
+        console.error("❌ Error fatal al iniciar el servidor:", error);
+        process.exit(1);
+    }
 };
 
 // Ejecutar

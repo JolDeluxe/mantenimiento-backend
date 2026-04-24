@@ -5,6 +5,7 @@ import type { Tarea, Usuario }       from "@prisma/client";
 import { registrarError }            from "../../utils/logger";
 import { prisma }                    from "../../db";
 import type { PayloadBase, TareaConRelaciones } from "./types";
+import { getIO } from "../../utils/socket"; 
 
 const distribuirNotificacion = async (
   idsDestinatarios: number[],
@@ -30,17 +31,18 @@ const distribuirNotificacion = async (
   }
 };
 
-const persistirNotificaciones = async (
-  usuarioIds:  number[],
-  tipo:        TipoNotificacion,
-  titulo:      string,
-  cuerpo:      string,
-  tareaId?:    number
+export const persistirNotificaciones = async (
+  usuarioIds: number[],
+  tipo: TipoNotificacion,
+  titulo: string,
+  cuerpo: string,
+  tareaId?: number
 ) => {
   const uniqueIds = [...new Set(usuarioIds)].filter((id) => id > 0);
   if (uniqueIds.length === 0) return;
 
   try {
+    // 1. Persistencia de datos como única fuente de verdad
     await prisma.notificacion.createMany({
       data: uniqueIds.map((usuarioId) => ({
         usuarioId,
@@ -50,6 +52,22 @@ const persistirNotificaciones = async (
         tareaId: tareaId ?? null,
       })),
     });
+
+    // 2. Despacho a terminales reactivas (Frontend)
+    try {
+      const io = getIO();
+      for (const id of uniqueIds) {
+        io.to(`user_${id}`).emit("notificacion_recibida", {
+          tipo,
+          titulo,
+          mensaje: cuerpo,
+          tareaId: tareaId ?? null,
+        });
+      }
+    } catch (_) {
+      // Socket no crítico — no interrumpe el flujo
+    }
+
   } catch (error) {
     console.error("[NOTIFY PERSIST] Error al persistir notificaciones:", error);
   }
