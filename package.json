@@ -42,9 +42,9 @@
     "zod": "^4.3.6"
   },
   "scripts": {
-    "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
-    "db-seed": "bun run src/utils/seed.ts"
+    "seed": "bun prisma/seed.ts"
   }
 }
