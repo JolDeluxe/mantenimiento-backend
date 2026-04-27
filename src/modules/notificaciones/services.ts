@@ -63,7 +63,7 @@ export const persistirNotificaciones = async (
         });
       }
     } catch (_) {
-      // Degradación silenciosa si el socket falla
+      // Degradación silenciosa
     }
 
   } catch (error) {
@@ -81,8 +81,11 @@ export const notificarNuevoReporte = async (
     const titulo = "🔔 Nuevo Reporte";
     const cuerpo  = `${nombreCreador} reportó: ${reporte.titulo}. ⚡ Prioridad: ${reporte.prioridad}`;
 
+    // NUEVO ENRUTAMIENTO DEEP LINK
+    const urlDestino = `/app/tickets/historico?ticketId=${reporte.id}`;
+
     await Promise.all([
-      distribuirNotificacion(destinatarios, { titulo, cuerpo, url: `/app/tickets/${reporte.id}` }),
+      distribuirNotificacion(destinatarios, { titulo, cuerpo, url: urlDestino }),
       persistirNotificaciones(destinatarios, TipoNotificacion.NUEVO_REPORTE, titulo, cuerpo, reporte.id),
     ]);
   } catch (error) {
@@ -97,9 +100,12 @@ export const notificarAsignacionTarea = async (
   try {
     const titTecnico  = "👨‍🔧 Nueva Tarea Asignada";
     const cuerTecnico = `Se te asignó: ${reporte.titulo}. 📍 Ubicación: ${reporte.planta} - ${reporte.area}`;
+    
+    // NUEVO ENRUTAMIENTO DEEP LINK
+    const urlDestino = `/app/tickets/historico?ticketId=${reporte.id}`;
 
     await Promise.all([
-      distribuirNotificacion(idsNuevosResponsables, { titulo: titTecnico, cuerpo: cuerTecnico, url: `/app/tickets/${reporte.id}` }),
+      distribuirNotificacion(idsNuevosResponsables, { titulo: titTecnico, cuerpo: cuerTecnico, url: urlDestino }),
       persistirNotificaciones(idsNuevosResponsables, TipoNotificacion.TAREA_ASIGNADA, titTecnico, cuerTecnico, reporte.id),
     ]);
 
@@ -114,7 +120,7 @@ export const notificarAsignacionTarea = async (
         const cuerCliente = `Tu reporte "${reporte.titulo}" ya tiene personal asignado y está programado.`;
 
         await Promise.all([
-          distribuirNotificacion([reporte.creadorId], { titulo: titCliente, cuerpo: cuerCliente, url: `/app/tickets/${reporte.id}` }),
+          distribuirNotificacion([reporte.creadorId], { titulo: titCliente, cuerpo: cuerCliente, url: urlDestino }),
           persistirNotificaciones([reporte.creadorId], TipoNotificacion.TAREA_ASIGNADA, titCliente, cuerCliente, reporte.id),
         ]);
       }
@@ -134,9 +140,12 @@ export const notificarModificacionTarea = async (
 
     const titulo = "📝 Tarea Actualizada";
     const cuerpo  = `La tarea "${tarea.titulo}" ha sufrido modificaciones en sus detalles.`;
+    
+    // NUEVO ENRUTAMIENTO DEEP LINK
+    const urlDestino = `/app/tickets/historico?ticketId=${tarea.id}`;
 
     await Promise.all([
-      distribuirNotificacion(idsTecnicos, { titulo, cuerpo, url: `/app/tickets/${tarea.id}` }),
+      distribuirNotificacion(idsTecnicos, { titulo, cuerpo, url: urlDestino }),
       persistirNotificaciones(idsTecnicos, TipoNotificacion.TAREA_MODIFICADA, titulo, cuerpo, tarea.id),
     ]);
   } catch (error) {
@@ -173,6 +182,9 @@ export const notificarCambioEstatus = async (
       rolCreador = creador?.rol ?? null;
     }
 
+    // NUEVO ENRUTAMIENTO DEEP LINK
+    const urlDestino = `/app/tickets/historico?ticketId=${tarea.id}`;
+
     // ── GRUPO A: Cliente ─────────────────────────────────────────────────────
     if (idCliente && idCliente !== actorId && rolCreador === Rol.CLIENTE_INTERNO) {
       type ClienteEntry = { tipo: TipoNotificacion; msg: string } | null;
@@ -192,7 +204,7 @@ export const notificarCambioEstatus = async (
       if (clienteMap) {
         const titulo = `Actualización: ${tarea.titulo}`;
         await Promise.all([
-          distribuirNotificacion([idCliente], { titulo, cuerpo: clienteMap.msg, url: `/app/tickets/${tarea.id}` }),
+          distribuirNotificacion([idCliente], { titulo, cuerpo: clienteMap.msg, url: urlDestino }),
           persistirNotificaciones([idCliente], clienteMap.tipo, titulo, clienteMap.msg, tarea.id),
         ]);
       }
@@ -216,14 +228,13 @@ export const notificarCambioEstatus = async (
       if (tecnicoMap) {
         const titulo = "ℹ️ Aviso de Tarea";
         await Promise.all([
-          distribuirNotificacion(tecnicosAvisar, { titulo, cuerpo: tecnicoMap.msg, url: `/app/tickets/${tarea.id}` }),
+          distribuirNotificacion(tecnicosAvisar, { titulo, cuerpo: tecnicoMap.msg, url: urlDestino }),
           persistirNotificaciones(tecnicosAvisar, tecnicoMap.tipo, titulo, tecnicoMap.msg, tarea.id),
         ]);
       }
     }
 
     // ── GRUPO C: Jefes / Coordinadores ────────────────────────────────────────
-    // REGLA: Jefes NO reciben notificación de EN_PAUSA. Se delegó exclusividad al cliente.
     const jefesAvisar = idsJefes.filter((id) => id !== actorId);
 
     if (jefesAvisar.length > 0) {
@@ -242,7 +253,7 @@ export const notificarCambioEstatus = async (
             const titulo = "🔍 Pendiente de Revisión";
             const cuerpo  = `La tarea "${tarea.titulo}" fue resuelta y espera tu validación.`;
             await Promise.all([
-              distribuirNotificacion(destinosRevision, { titulo, cuerpo, url: `/app/tickets/${tarea.id}` }),
+              distribuirNotificacion(destinosRevision, { titulo, cuerpo, url: urlDestino }),
               persistirNotificaciones(destinosRevision, TipoNotificacion.REVISION_PENDIENTE, titulo, cuerpo, tarea.id),
             ]);
           }
@@ -253,7 +264,7 @@ export const notificarCambioEstatus = async (
           const titulo = "⚠️ Supervisión Requerida";
           const cuerpo  = `El cliente ha rechazado el trabajo de la tarea "${tarea.titulo}".`;
           await Promise.all([
-            distribuirNotificacion(jefesAvisar, { titulo, cuerpo, url: `/app/tickets/${tarea.id}` }),
+            distribuirNotificacion(jefesAvisar, { titulo, cuerpo, url: urlDestino }),
             persistirNotificaciones(jefesAvisar, TipoNotificacion.EQUIPO_RECHAZO, titulo, cuerpo, tarea.id),
           ]);
           break;
@@ -264,7 +275,7 @@ export const notificarCambioEstatus = async (
             const titulo = "🗑️ Tarea Cancelada";
             const cuerpo  = `El cliente ha CANCELADO su reporte "${tarea.titulo}".`;
             await Promise.all([
-              distribuirNotificacion(jefesAvisar, { titulo, cuerpo, url: `/app/tickets/${tarea.id}` }),
+              distribuirNotificacion(jefesAvisar, { titulo, cuerpo, url: urlDestino }),
               persistirNotificaciones(jefesAvisar, TipoNotificacion.TAREA_CANCELADA, titulo, cuerpo, tarea.id),
             ]);
           }
