@@ -1,27 +1,25 @@
-import { PrismaClient, Rol, Estatus } from '@prisma/client';
+import { PrismaClient, Rol } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Iniciando sembrado de datos (Seed)...');
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  console.log('🌱 Iniciando proceso de Seed...');
+  console.log(`Ambiente: ${isProduction ? 'PRODUCCIÓN 🔴' : 'DESARROLLO 🟢'}`);
 
-  // --- 0. CONFIGURACIÓN ---
-  const PASSWORD_DEFAULT = '123456';
-  const passwordHash = await Bun.password.hash(PASSWORD_DEFAULT, {
-    algorithm: "bcrypt",
-    cost: 10,
-  });
+  if (isProduction) {
+    console.log('✅ En producción, la integridad base la maneja setup.ts.');
+    console.log('🏁 Seed finalizado sin cambios adicionales.');
+    return;
+  }
 
-  // --- 1. LIMPIEZA (Opcional) ---
-  // console.log('🧹 Limpiando base de datos...');
-  // await prisma.bitacora.deleteMany();
-  // await prisma.historialTarea.deleteMany();
-  // await prisma.tarea.deleteMany();
-  // await prisma.usuario.deleteMany();
-  // await prisma.departamento.deleteMany();
+  // --- DATOS EXCLUSIVOS PARA DESARROLLO / PRUEBAS ---
+  console.log('🧪 Inyectando catálogos de prueba para desarrollo...');
 
-  // --- 2. DEPARTAMENTOS ---
-  console.log('🏭 Creando Departamentos...');
+  const salt = await bcrypt.genSalt(10);
+  const hash = await bcrypt.hash('123456', salt);
 
   const NAME_MTTO = 'Mantenimiento';
   const NAME_PROCESOS = 'Procesos Tecnológicos';
@@ -44,7 +42,7 @@ async function main() {
     { nombre: 'Almacén de Materia Prima', planta: "KAPPA", tipo: "OPERATIVO" },
     { nombre: 'Almacén de Pieles', planta: "KAPPA", tipo: "OPERATIVO" },
     { nombre: 'Bordado Kappa', planta: "KAPPA", tipo: "OPERATIVO" },
-    { nombre: 'Calidad - Mesas de Trabajo', planta: "KAPPA", tipo: "OPERATIVO" },
+    { nombre: 'Calidad', planta: "KAPPA", tipo: "OPERATIVO" },
     { nombre: 'Célula Desarrollo', planta: "KAPPA", tipo: "OPERATIVO" },
     { nombre: 'Chamarras', planta: "KAPPA", tipo: "OPERATIVO" },
     { nombre: 'Cintos', planta: "KAPPA", tipo: "OPERATIVO" },
@@ -97,7 +95,7 @@ async function main() {
       username: 'jrodriguez',
       email: 'coordinador.procesostecnologicos@cuadra.com.mx',
       nombre: 'Joel Rodríguez',
-      password: passwordHash,
+      password: hash,
       rol: Rol.CLIENTE_INTERNO,
       cargo: 'Coordinador Procesos',
       departamentoId: deptoProcesos.id
@@ -107,7 +105,7 @@ async function main() {
       username: 'jvillegas',
       email: 'admin@cuadra.com.mx',
       nombre: 'Juan Carlos Villegas',
-      password: passwordHash,
+      password: hash,
       rol: Rol.JEFE_MTTO, 
       cargo: 'Jefe de Mantenimiento',
       departamentoId: deptoMantenimiento.id
@@ -117,7 +115,7 @@ async function main() {
       username: 'mhernandez',
       email: 'coordinador@cuadra.com.mx',
       nombre: 'Miguel Hernández',
-      password: passwordHash,
+      password: hash,
       rol: Rol.COORDINADOR_MTTO,
       cargo: 'Coordinador Turno 1',
       departamentoId: deptoMantenimiento.id
@@ -127,7 +125,7 @@ async function main() {
       username: 'llopez',
       email: 'tecnico1@cuadra.com.mx',
       nombre: 'Luis López',
-      password: passwordHash,
+      password: hash,
       rol: Rol.TECNICO,
       cargo: 'Técnico General',
       departamentoId: deptoMantenimiento.id
@@ -137,7 +135,7 @@ async function main() {
       username: 'agarcia',
       email: 'cliente@cuadra.com.mx',
       nombre: 'Ana García',
-      password: passwordHash,
+      password: hash,
       rol: Rol.CLIENTE_INTERNO,
       cargo: 'Supervisor Corte',
       departamentoId: deptoCorte?.id 

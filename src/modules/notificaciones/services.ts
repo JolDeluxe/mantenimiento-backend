@@ -42,7 +42,6 @@ export const persistirNotificaciones = async (
   if (uniqueIds.length === 0) return;
 
   try {
-    // 1. Persistencia de datos como única fuente de verdad
     await prisma.notificacion.createMany({
       data: uniqueIds.map((usuarioId) => ({
         usuarioId,
@@ -53,7 +52,6 @@ export const persistirNotificaciones = async (
       })),
     });
 
-    // 2. Despacho a terminales reactivas (Frontend)
     try {
       const io = getIO();
       for (const id of uniqueIds) {
@@ -65,7 +63,7 @@ export const persistirNotificaciones = async (
         });
       }
     } catch (_) {
-      // Socket no crítico — no interrumpe el flujo
+      // Degradación silenciosa si el socket falla
     }
 
   } catch (error) {
@@ -80,8 +78,8 @@ export const notificarNuevoReporte = async (
   try {
     const destinatarios = await obtenerIdsPorRol([Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO]);
     const nombreCreador = creador?.nombre ?? "Usuario General";
-    const titulo = "Nuevo Reporte Recibido 🚨";
-    const cuerpo  = `${nombreCreador} reportó: ${reporte.titulo}. Prioridad: ${reporte.prioridad}`;
+    const titulo = "🔔 Nuevo Reporte";
+    const cuerpo  = `${nombreCreador} reportó: ${reporte.titulo}. ⚡ Prioridad: ${reporte.prioridad}`;
 
     await Promise.all([
       distribuirNotificacion(destinatarios, { titulo, cuerpo, url: `/app/tickets/${reporte.id}` }),
@@ -97,8 +95,8 @@ export const notificarAsignacionTarea = async (
   idsNuevosResponsables: number[]
 ) => {
   try {
-    const titTecnico  = "Nueva Tarea Asignada 🛠️";
-    const cuerTecnico = `Se te asignó: ${reporte.titulo}. Ubicación: ${reporte.planta} - ${reporte.area}`;
+    const titTecnico  = "👨‍🔧 Nueva Tarea Asignada";
+    const cuerTecnico = `Se te asignó: ${reporte.titulo}. 📍 Ubicación: ${reporte.planta} - ${reporte.area}`;
 
     await Promise.all([
       distribuirNotificacion(idsNuevosResponsables, { titulo: titTecnico, cuerpo: cuerTecnico, url: `/app/tickets/${reporte.id}` }),
@@ -112,7 +110,7 @@ export const notificarAsignacionTarea = async (
       });
 
       if (creador && creador.rol === Rol.CLIENTE_INTERNO) {
-        const titCliente  = "Técnico Asignado 👷";
+        const titCliente  = "👷‍♂️ Técnico Asignado";
         const cuerCliente = `Tu reporte "${reporte.titulo}" ya tiene personal asignado y está programado.`;
 
         await Promise.all([
@@ -134,8 +132,8 @@ export const notificarModificacionTarea = async (
     const idsTecnicos = (tarea.responsables?.map((u) => u.id) ?? []).filter((id) => id !== actorId);
     if (idsTecnicos.length === 0) return;
 
-    const titulo = "Tarea actualizada";
-    const cuerpo  = `La tarea "${tarea.titulo}" ha sido modificada.`;
+    const titulo = "📝 Tarea Actualizada";
+    const cuerpo  = `La tarea "${tarea.titulo}" ha sufrido modificaciones en sus detalles.`;
 
     await Promise.all([
       distribuirNotificacion(idsTecnicos, { titulo, cuerpo, url: `/app/tickets/${tarea.id}` }),
@@ -166,7 +164,6 @@ export const notificarCambioEstatus = async (
     const idsTecnicos = tarea.responsables?.map((u) => u.id) ?? [];
     const idCliente   = tarea.creadorId;
 
-    // Obtenemos el rol del creador del ticket para aplicar la regla estricta
     let rolCreador: Rol | null = null;
     if (idCliente) {
       const creador = await prisma.usuario.findUnique({
@@ -176,26 +173,18 @@ export const notificarCambioEstatus = async (
       rolCreador = creador?.rol ?? null;
     }
 
-    // ── GRUPO A: Cliente (SOLO si es estrictamente CLIENTE_INTERNO) ───────────
-    // Esto evita spam de "Tarea Iniciada" a Jefes/Supervisores y elimina 
-    // las notificaciones duplicadas cuando ellos mismos crean el ticket.
+    // ── GRUPO A: Cliente ─────────────────────────────────────────────────────
     if (idCliente && idCliente !== actorId && rolCreador === Rol.CLIENTE_INTERNO) {
       type ClienteEntry = { tipo: TipoNotificacion; msg: string } | null;
 
       const clienteMap: ClienteEntry = (() => {
         switch (nuevoEstado) {
-          case EstadoTarea.EN_PROGRESO:
-            return { tipo: TipoNotificacion.TAREA_INICIADA,     msg: "El técnico ha comenzado a trabajar en tu reporte." };
-          case EstadoTarea.EN_PAUSA:
-            return { tipo: TipoNotificacion.TAREA_PAUSADA,      msg: "El trabajo en tu reporte ha sido pausado temporalmente." };
-          case EstadoTarea.RESUELTO:
-            return { tipo: TipoNotificacion.REVISION_PENDIENTE, msg: "Trabajo terminado ✅. Por favor valida la solución." };
-          case EstadoTarea.RECHAZADO:
-            return { tipo: TipoNotificacion.TAREA_RECHAZADA,    msg: "Tu reporte ha sido RECHAZADO. Revisa los comentarios." };
-          case EstadoTarea.CANCELADA:
-            return { tipo: TipoNotificacion.TAREA_CANCELADA,    msg: "Tu reporte ha sido CANCELADO por administración." };
-          case EstadoTarea.CERRADO:
-            return { tipo: TipoNotificacion.TAREA_CERRADA,      msg: "Tu reporte ha sido CERRADO definitivamente." };
+          case EstadoTarea.EN_PROGRESO: return { tipo: TipoNotificacion.TAREA_INICIADA,     msg: "▶️ El técnico ha comenzado a trabajar en tu reporte." };
+          case EstadoTarea.EN_PAUSA:    return { tipo: TipoNotificacion.TAREA_PAUSADA,      msg: "⏸️ El trabajo en tu reporte ha sido pausado temporalmente." };
+          case EstadoTarea.RESUELTO:    return { tipo: TipoNotificacion.REVISION_PENDIENTE, msg: "👀 Trabajo terminado. Por favor valida la solución en la app." };
+          case EstadoTarea.RECHAZADO:   return { tipo: TipoNotificacion.TAREA_RECHAZADA,    msg: "❌ Tu reporte ha sido RECHAZADO. Revisa los comentarios." };
+          case EstadoTarea.CANCELADA:   return { tipo: TipoNotificacion.TAREA_CANCELADA,    msg: "🚫 Tu reporte ha sido CANCELADO por administración." };
+          case EstadoTarea.CERRADO:     return { tipo: TipoNotificacion.TAREA_CERRADA,      msg: "🔒 Tu reporte ha sido CERRADO definitivamente." };
           default: return null;
         }
       })();
@@ -217,18 +206,15 @@ export const notificarCambioEstatus = async (
 
       const tecnicoMap: TecnicoEntry = (() => {
         switch (nuevoEstado) {
-          case EstadoTarea.CANCELADA:
-            return { tipo: TipoNotificacion.TAREA_CANCELADA, msg: "⛔ Tarea CANCELADA. Ya no es necesario hacer esta tarea." };
-          case EstadoTarea.RECHAZADO:
-            return { tipo: TipoNotificacion.TAREA_RECHAZADA, msg: "⚠️ Tu trabajo fue RECHAZADO. Debes revisar y corregir." };
-          case EstadoTarea.CERRADO:
-            return { tipo: TipoNotificacion.TAREA_CERRADA,   msg: "Tarea completada y cerrada exitosamente." };
+          case EstadoTarea.CANCELADA: return { tipo: TipoNotificacion.TAREA_CANCELADA, msg: "🚫 Tarea CANCELADA. Ya no es necesario ejecutar este trabajo." };
+          case EstadoTarea.RECHAZADO: return { tipo: TipoNotificacion.TAREA_RECHAZADA, msg: "⚠️ Trabajo RECHAZADO. Debes revisar las notas del cliente y corregir." };
+          case EstadoTarea.CERRADO:   return { tipo: TipoNotificacion.TAREA_CERRADA,   msg: "🏆 Tarea completada y cerrada exitosamente. ¡Buen trabajo!" };
           default: return null;
         }
       })();
 
       if (tecnicoMap) {
-        const titulo = "Aviso Importante de Tarea";
+        const titulo = "ℹ️ Aviso de Tarea";
         await Promise.all([
           distribuirNotificacion(tecnicosAvisar, { titulo, cuerpo: tecnicoMap.msg, url: `/app/tickets/${tarea.id}` }),
           persistirNotificaciones(tecnicosAvisar, tecnicoMap.tipo, titulo, tecnicoMap.msg, tarea.id),
@@ -237,22 +223,11 @@ export const notificarCambioEstatus = async (
     }
 
     // ── GRUPO C: Jefes / Coordinadores ────────────────────────────────────────
-    // Como los Jefes ya NO entran al Grupo A, ahora sí recibirán limpiamente esta 
-    // notificación (sin duplicados) cuando una tarea se Pause o Resuelva.
+    // REGLA: Jefes NO reciben notificación de EN_PAUSA. Se delegó exclusividad al cliente.
     const jefesAvisar = idsJefes.filter((id) => id !== actorId);
 
     if (jefesAvisar.length > 0) {
       switch (nuevoEstado) {
-        case EstadoTarea.EN_PAUSA: {
-          const titulo = "Supervisión de Mantenimiento";
-          const cuerpo  = `🔴 ALERTA: Una tarea en ${tarea.planta} fue PAUSADA por el técnico.`;
-          await Promise.all([
-            distribuirNotificacion(jefesAvisar, { titulo, cuerpo, url: `/app/tickets/${tarea.id}` }),
-            persistirNotificaciones(jefesAvisar, TipoNotificacion.TAREA_PAUSADA, titulo, cuerpo, tarea.id),
-          ]);
-          break;
-        }
-
         case EstadoTarea.RESUELTO: {
           let destinosRevision: number[];
 
@@ -264,7 +239,7 @@ export const notificarCambioEstatus = async (
           }
 
           if (destinosRevision.length > 0) {
-            const titulo = "Tarea pendiente de revisión 🔍";
+            const titulo = "🔍 Pendiente de Revisión";
             const cuerpo  = `La tarea "${tarea.titulo}" fue resuelta y espera tu validación.`;
             await Promise.all([
               distribuirNotificacion(destinosRevision, { titulo, cuerpo, url: `/app/tickets/${tarea.id}` }),
@@ -275,8 +250,8 @@ export const notificarCambioEstatus = async (
         }
 
         case EstadoTarea.RECHAZADO: {
-          const titulo = "Supervisión de Mantenimiento";
-          const cuerpo  = `🔴 ALERTA: El cliente rechazó la tarea resuelta "${tarea.titulo}".`;
+          const titulo = "⚠️ Supervisión Requerida";
+          const cuerpo  = `El cliente ha rechazado el trabajo de la tarea "${tarea.titulo}".`;
           await Promise.all([
             distribuirNotificacion(jefesAvisar, { titulo, cuerpo, url: `/app/tickets/${tarea.id}` }),
             persistirNotificaciones(jefesAvisar, TipoNotificacion.EQUIPO_RECHAZO, titulo, cuerpo, tarea.id),
@@ -286,8 +261,8 @@ export const notificarCambioEstatus = async (
 
         case EstadoTarea.CANCELADA: {
           if (actorId === idCliente && rolCreador === Rol.CLIENTE_INTERNO) {
-            const titulo = "Supervisión de Mantenimiento";
-            const cuerpo  = `🔴 ALERTA: El cliente CANCELÓ el reporte "${tarea.titulo}".`;
+            const titulo = "🗑️ Tarea Cancelada";
+            const cuerpo  = `El cliente ha CANCELADO su reporte "${tarea.titulo}".`;
             await Promise.all([
               distribuirNotificacion(jefesAvisar, { titulo, cuerpo, url: `/app/tickets/${tarea.id}` }),
               persistirNotificaciones(jefesAvisar, TipoNotificacion.TAREA_CANCELADA, titulo, cuerpo, tarea.id),
