@@ -33,30 +33,21 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
     const tieneResponsables = data.responsables && data.responsables.length > 0;
     
     if (data.clasificacion === ClasificacionTarea.INSPECCION && !tieneResponsables) {
-        return res.status(400).json({ error: "Las tareas de INSPECCIÓN deben tener un técnico asignado obligatoriamente." });
+        return res.status(400).json({ error: "Las tareas de INSPECCIÓN deben tener un responsable asignado obligatoriamente." });
     }
 
     let nombresAsignados = ""; // <-- Declaramos variable para guardar nombres
 
-    if (tieneResponsables) {
-        const usuariosAAsignar = await prisma.usuario.findMany({
-            where: { id: { in: data.responsables }, estado: "ACTIVO" },
-            select: { id: true, rol: true, username: true }
-        });
+    if (tieneResponsables) {
+        const usuariosAAsignar = await prisma.usuario.findMany({
+            where: { id: { in: data.responsables }, estado: "ACTIVO" },
+            select: { id: true, rol: true, username: true }
+        });
 
-        nombresAsignados = usuariosAAsignar.map(u => u.username).join(', '); // <-- Extraemos los nombres
+        nombresAsignados = usuariosAAsignar.map(u => u.username).join(', '); // <-- Extraemos los nombres
         
-        if (usuariosAAsignar.length !== data.responsables!.length) {
+        if (usuariosAAsignar.length !== data.responsables!.length) {
             return res.status(400).json({ error: "Uno o más responsables no existen o están INACTIVOS." });
-        }
-
-        if (user.rol === Rol.COORDINADOR_MTTO) {
-            const asignacionIlegal = usuariosAAsignar.find(
-                u => u.rol !== Rol.TECNICO && u.rol !== Rol.COORDINADOR_MTTO
-            );
-            if (asignacionIlegal) {
-                return res.status(403).json({ error: `No puedes asignar a ${asignacionIlegal.username} (${asignacionIlegal.rol}).` });
-            }
         }
     }
 

@@ -18,7 +18,7 @@ const distribuirNotificacion = async (
     title: payload.titulo,
     body:  payload.cuerpo,
     url:   payload.url,
-    icon:  "/img/icon-192.png",
+    icon:  "/CUADRA_MANTENIMIENTO_LOGO.webp",
   };
 
   const resultados = await Promise.allSettled(
@@ -81,8 +81,8 @@ export const notificarNuevoReporte = async (
     const titulo = "🔔 Nuevo Reporte";
     const cuerpo  = `${nombreCreador} reportó: ${reporte.titulo}. ⚡ Prioridad: ${reporte.prioridad}`;
 
-    // NUEVO ENRUTAMIENTO DEEP LINK
-    const urlDestino = `/app/tickets/historico?ticketId=${reporte.id}`;
+    // Matriz: src\features\tickets\pages\tickets-bandeja.jsx
+    const urlDestino = `/tickets/bandeja?ticketId=${reporte.id}`;
 
     await Promise.all([
       distribuirNotificacion(destinatarios, { titulo, cuerpo, url: urlDestino }),
@@ -101,8 +101,8 @@ export const notificarAsignacionTarea = async (
     const titTecnico  = "👨‍🔧 Nueva Tarea Asignada";
     const cuerTecnico = `Se te asignó: ${reporte.titulo}. 📍 Ubicación: ${reporte.planta} - ${reporte.area}`;
     
-    // NUEVO ENRUTAMIENTO DEEP LINK
-    const urlDestino = `/app/tickets/historico?ticketId=${reporte.id}`;
+    // Matriz: src\features\tickets\pages\tickets-page.jsx (Vista de operaciones de técnicos / Hoy)
+    const urlDestino = `/tickets/hoy?ticketId=${reporte.id}`;
 
     await Promise.all([
       distribuirNotificacion(idsNuevosResponsables, { titulo: titTecnico, cuerpo: cuerTecnico, url: urlDestino }),
@@ -141,8 +141,8 @@ export const notificarModificacionTarea = async (
     const titulo = "📝 Tarea Actualizada";
     const cuerpo  = `La tarea "${tarea.titulo}" ha sufrido modificaciones en sus detalles.`;
     
-    // NUEVO ENRUTAMIENTO DEEP LINK
-    const urlDestino = `/app/tickets/historico?ticketId=${tarea.id}`;
+    // Matriz: src\features\notificaciones\pages\notify-page.jsx
+    const urlDestino = `/notificaciones?ticketId=${tarea.id}`;
 
     await Promise.all([
       distribuirNotificacion(idsTecnicos, { titulo, cuerpo, url: urlDestino }),
@@ -182,10 +182,9 @@ export const notificarCambioEstatus = async (
       rolCreador = creador?.rol ?? null;
     }
 
-    // NUEVO ENRUTAMIENTO DEEP LINK
-    const urlDestino = `/app/tickets/historico?ticketId=${tarea.id}`;
+    // Matriz: src\features\notificaciones\pages\notify-page.jsx (Aplica a todos los estatus)
+    const urlDestino = `/notificaciones?ticketId=${tarea.id}`;
 
-    // ── GRUPO A: Cliente ─────────────────────────────────────────────────────
     if (idCliente && idCliente !== actorId && rolCreador === Rol.CLIENTE_INTERNO) {
       type ClienteEntry = { tipo: TipoNotificacion; msg: string } | null;
 
@@ -210,7 +209,6 @@ export const notificarCambioEstatus = async (
       }
     }
 
-    // ── GRUPO B: Técnicos responsables ───────────────────────────────────────
     const tecnicosAvisar = idsTecnicos.filter((id) => id !== actorId && id !== idCliente);
 
     if (tecnicosAvisar.length > 0) {
@@ -234,7 +232,6 @@ export const notificarCambioEstatus = async (
       }
     }
 
-    // ── GRUPO C: Jefes / Coordinadores ────────────────────────────────────────
     const jefesAvisar = idsJefes.filter((id) => id !== actorId);
 
     if (jefesAvisar.length > 0) {

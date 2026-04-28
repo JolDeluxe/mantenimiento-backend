@@ -1,7 +1,7 @@
 // src/modules/tickets/05_status.ts
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { EstadoTarea, TipoEvento, Rol } from "@prisma/client"; // Removido ClasificacionTarea si no se usa aquí
+import { EstadoTarea, TipoEvento, Rol, ClasificacionTarea } from "@prisma/client"; // Removido ClasificacionTarea si no se usa aquí
 import { registrarError, registrarAccion } from "../../utils/logger";
 import { processTicketImages } from "./create/helper_upload";
 import { notificarCambioEstatus } from "../notificaciones/services"; 
@@ -23,7 +23,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
       data.imagenes = urlsImagenes;
     }
   
-    const { estado: nuevoEstado, nota, imagenes: imagenesFinales = [] } = data;
+    let { estado: nuevoEstado, nota, imagenes: imagenesFinales = [] } = data;
     let { registroTiempoManual } = data;
 
     if (typeof registroTiempoManual === 'string') {
@@ -71,6 +71,14 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
       }
     } else if (!esAdminJefe) {
       return res.status(403).json({ error: "No tienes permisos para cambiar el estatus." });
+    }
+
+    // --- INTERCEPCIÓN DE INSPECCIÓN (AUTO-CIERRE) ---
+    // Se ejecuta después de validar permisos y transiciones para que el técnico pueda enviar "RESUELTO"
+    // y el sistema lo promueva a "CERRADO" automáticamente sin disparar errores de validación.
+    if (nuevoEstado === EstadoTarea.RESUELTO && ticket.clasificacion === ClasificacionTarea.INSPECCION) {
+      nuevoEstado = EstadoTarea.CERRADO;
+      nota = nota ? `${nota} (Cierre automático por Inspección)` : "(Cierre automático por Inspección)";
     }
 
     const ahora = new Date();
