@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "../db";
-import { autoCloseResolvedTickets } from "../modules/tickets/automations";
+import { autoCloseResolvedTickets, enviarAdvertenciasFinTurno, ejecutarAutoPausaFinTurno } from "../modules/tickets/automations";
 
 export const iniciarTareasProgramadas = () => {
   // CRON 1: Cierre automático de tickets resueltos inactivos
@@ -44,6 +44,18 @@ export const iniciarTareasProgramadas = () => {
       console.error("[CRON ERROR] Falló la limpieza de bitácora:", error);
     }
   });
+
+  // CRON 3: Advertencia de fin de turno a las 17:45 (Lunes a Sábado)
+  cron.schedule("45 17 * * 1-6", async () => {
+    console.log("[CRON] Ejecutando advertencia de fin de turno (17:45)...");
+    await enviarAdvertenciasFinTurno();
+  });
+
+  // CRON 4: Auto-Pausa y recorte de tiempo a las 19:00 (Lunes a Sábado)
+  cron.schedule("0 19 * * 1-6", async () => {
+    console.log("[CRON] Ejecutando Auto-Pausa implacable (19:00)...");
+    await ejecutarAutoPausaFinTurno();
+  });
   
-  console.log("[SYSTEM] Tareas programadas (CRON) inicializadas: Tickets (01:00 AM) | Bitácora (03:00 AM).");
+  console.log("[SYSTEM] Tareas programadas (CRON) inicializadas: Tickets (01:00 AM) | Bitácora (03:00 AM) | Turno (17:45/19:00).");
 };

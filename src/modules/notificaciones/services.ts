@@ -285,3 +285,33 @@ export const notificarCambioEstatus = async (
     await registrarError("NOTIF_STATUS_CHANGE_FAIL", 0, error);
   }
 };
+
+export const notificarAdvertenciaTurno = async (idsTecnicos: number[]) => {
+  try {
+    const titulo = "⚠️ Turno por terminar";
+    const cuerpo = "Tienes tareas EN PROGRESO. Recuerda pausarlas o finalizarlas antes de irte.";
+    const urlDestino = `/tickets/hoy`;
+
+    await Promise.all([
+      distribuirNotificacion(idsTecnicos, { titulo, cuerpo, url: urlDestino }),
+      persistirNotificaciones(idsTecnicos, TipoNotificacion.TAREA_MODIFICADA, titulo, cuerpo)
+    ]);
+  } catch (error) {
+    await registrarError("NOTIF_ADVERTENCIA_TURNO", 0, error);
+  }
+};
+
+export const notificarAutoPausa = async (idsTecnicos: number[]) => {
+  try {
+    const titulo = "⏸️ Tareas Pausadas Automáticamente";
+    const cuerpo = "El sistema ha pausado tus tareas por fin de turno. Si sigues trabajando, inicia la tarea nuevamente.";
+    const urlDestino = `/tickets/hoy`;
+
+    await Promise.all([
+      distribuirNotificacion(idsTecnicos, { titulo, cuerpo, url: urlDestino }),
+      persistirNotificaciones(idsTecnicos, TipoNotificacion.TAREA_PAUSADA, titulo, cuerpo)
+    ]);
+  } catch (error) {
+    await registrarError("NOTIF_AUTOPAUSA_TURNO", 0, error);
+  }
+};
