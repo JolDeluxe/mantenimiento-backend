@@ -18,7 +18,13 @@ export const isTecnico = (rol: Rol): boolean => {
 };
 
 export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFilterQuery): Prisma.TareaWhereInput => {
-  const { q, estado, prioridad, tipo, clasificacion, categoria, responsableId, planta, area, fechaInicio, fechaFin, huerfanos, vencidos } = query;
+  const { 
+    q, estado, prioridad, tipo, clasificacion, categoria, responsableId, planta, area, 
+    fechaInicio, fechaFin, 
+    vencimientoDesde, vencimientoHasta,
+    finalizadoDesde, finalizadoHasta,
+    huerfanos, vencidos 
+  } = query;
 
   const where: Prisma.TareaWhereInput = {};
   const andConditions: Prisma.TareaWhereInput[] = [];
@@ -54,36 +60,42 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     where.estado = EstadoTarea.PENDIENTE;
   }
 
+  // Combinación inteligente de Vencidos y Rangos
+  const filterVencimiento: Prisma.DateTimeFilter = {};
+  let hasVencimientoFilter = false;
+
   if (vencidos) {
-    where.fechaVencimiento = { lt: new Date() };
+    filterVencimiento.lt = new Date();
     where.estado = { in: [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA] };
+    hasVencimientoFilter = true;
   }
 
-  if (q && typeof q === 'string') {
-    const isNumber = !isNaN(Number(q));
-    andConditions.push({
-      OR: [
-        { titulo: { contains: q } },
-        { descripcion: { contains: q } },
-        { planta: { contains: q } },
-        { area: { contains: q } },
-        { creador: { nombre: { contains: q } } },
-        ...(isNumber ? [{ id: Number(q) }] : [])
-      ]
-    });
+  if (vencimientoDesde) {
+    const [y = 0, m = 1, d = 1] = vencimientoDesde.split('-').map(Number);
+    filterVencimiento.gte = new Date(y, m - 1, d, 0, 0, 0, 0);
+    hasVencimientoFilter = true;
+  }
+  if (vencimientoHasta) {
+    const [y = 0, m = 1, d = 1] = vencimientoHasta.split('-').map(Number);
+    filterVencimiento.lte = new Date(y, m - 1, d, 23, 59, 59, 999);
+    hasVencimientoFilter = true;
   }
 
-  if (fechaInicio || fechaFin) {
-    const createdAt: Prisma.DateTimeFilter = {};
-    if (fechaInicio) {
-      const [y1 = 0, m1 = 1, d1 = 1] = fechaInicio.split('-').map(Number);
-      createdAt.gte = new Date(y1, m1 - 1, d1, 0, 0, 0, 0);
+  if (hasVencimientoFilter) {
+    where.fechaVencimiento = filterVencimiento;
+  }
+
+  if (finalizadoDesde || finalizadoHasta) {
+    const filter: Prisma.DateTimeFilter = {};
+    if (finalizadoDesde) {
+      const [y = 0, m = 1, d = 1] = finalizadoDesde.split('-').map(Number);
+      filter.gte = new Date(y, m - 1, d, 0, 0, 0, 0);
     }
-    if (fechaFin) {
-      const [y2 = 0, m2 = 1, d2 = 1] = fechaFin.split('-').map(Number);
-      createdAt.lte = new Date(y2, m2 - 1, d2, 23, 59, 59, 999);
+    if (finalizadoHasta) {
+      const [y = 0, m = 1, d = 1] = finalizadoHasta.split('-').map(Number);
+      filter.lte = new Date(y, m - 1, d, 23, 59, 59, 999);
     }
-    where.createdAt = createdAt;
+    where.finalizadoAt = filter;
   }
 
   if (andConditions.length > 0) {

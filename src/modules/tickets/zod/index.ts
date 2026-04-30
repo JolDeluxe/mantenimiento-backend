@@ -67,6 +67,12 @@ export const ticketFilterSchema = z.object({
     
     fechaInicio: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),
     fechaFin: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),
+
+    vencimientoDesde: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),
+    vencimientoHasta: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),
+
+    finalizadoDesde: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),
+    finalizadoHasta: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),
     
     huerfanos: z.preprocess((val) => val === "true", z.boolean().optional()),
     vencidos: z.preprocess((val) => val === "true", z.boolean().optional()),
