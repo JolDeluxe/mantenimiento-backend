@@ -34,7 +34,7 @@ export const updateTicket = async (req: Request, res: Response) => {
     if (esCliente) {
       if (!esCreador) return res.status(403).json({ error: "No puedes editar un ticket ajeno." });
       if (tareaActual.estado !== EstadoTarea.PENDIENTE) return res.status(403).json({ error: "Ya no puedes editar este ticket." });
-      if (data.responsables || data.prioridad || data.fechaVencimiento) {
+      if (data.responsables || data.prioridad || data.fechaVencimiento || data.tiempoEstimado) {
         return res.status(403).json({ error: "No tienes permisos administrativos." });
       }
     } else if (!esAdmin) {
@@ -83,6 +83,7 @@ export const updateTicket = async (req: Request, res: Response) => {
           area:         esAdmin ? data.area          : undefined,
           prioridad:    esAdmin ? data.prioridad     : undefined,
           fechaVencimiento: nuevaFechaVencimiento,
+          tiempoEstimado: esAdmin ? data.tiempoEstimado : undefined,
           estado:       nuevoEstado,
           responsables: idsResponsables ? { set: idsResponsables } : undefined,
           tipo:         esAdmin ? data.tipo          : undefined,
@@ -101,6 +102,7 @@ export const updateTicket = async (req: Request, res: Response) => {
         if (nuevoEstado !== tareaActual.estado) notasCambio.push(`Estado: ${nuevoEstado}`);
         if (data.prioridad && data.prioridad !== tareaActual.prioridad) notasCambio.push(`Prioridad: ${data.prioridad}`);
         if (data.fechaVencimiento) notasCambio.push("Se actualizó fecha vencimiento");
+        if (data.tiempoEstimado && data.tiempoEstimado !== tareaActual.tiempoEstimado) notasCambio.push(`Tiempo estimado: ${data.tiempoEstimado} min`);
       }
 
       if (esCliente) {
@@ -148,16 +150,11 @@ export const updateTicket = async (req: Request, res: Response) => {
       return tareaActualizada;
     });
 
-    // ── NOTIFICACIONES ────────────────────────────────────────────────────────
-    // Caso A: Se asignaron nuevos responsables → notificación de asignación
     if (cambioDeResponsables && data.responsables && data.responsables.length > 0) {
       void notificarAsignacionTarea(result, data.responsables);
-
-    // Caso B: Solo cambios en campos del ticket → notificación de modificación
     } else if (!cambioDeResponsables) {
       void notificarModificacionTarea(result, user.id);
     }
-    // Caso C: Se retiraron todos los responsables (data.responsables = []) → sin notificación
 
     await registrarAccion("UPDATE_TAREA", user.id, `Actualización Tarea ID: ${ticketId}. Usuario: ${user.email}`);
     return res.json({ message: "Actualización correcta", data: result });

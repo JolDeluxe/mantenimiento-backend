@@ -29,7 +29,6 @@ const preprocessJsonObject = (val: unknown) => {
   return undefined;
 };
 
-// Fix: Agregamos inicioManual para que el validador estricto no rechace el payload
 const registroTiempoManualSchema = z.object({
   inicioManual: z.preprocess(
     preprocessEmpty,
@@ -64,6 +63,10 @@ export const ticketFilterSchema = z.object({
     responsableId: z.preprocess(preprocessEmpty, z.coerce.number().optional()),
     planta: z.preprocess(preprocessEmpty, z.string().optional()),
     area: z.preprocess(preprocessEmpty, z.string().optional()),
+    
+    // Inyección de parámetros Macro Históricos
+    year: z.preprocess(preprocessEmpty, z.coerce.number().int().positive().optional()),
+    month: z.preprocess(preprocessEmpty, z.coerce.number().int().min(0).max(12).optional()),
     
     fechaInicio: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),
     fechaFin: z.preprocess(preprocessEmpty, z.string().datetime({ offset: true }).optional().or(z.string().date().optional())),

@@ -23,7 +23,8 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     fechaInicio, fechaFin, 
     vencimientoDesde, vencimientoHasta,
     finalizadoDesde, finalizadoHasta,
-    huerfanos, vencidos 
+    huerfanos, vencidos,
+    year, month // Inyección de los parámetros Macro Históricos
   } = query;
 
   const where: Prisma.TareaWhereInput = {};
@@ -41,6 +42,24 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   if (categoria) where.categoria = categoria;
   if (planta) where.planta = planta;
   if (area) where.area = area;
+
+  // Filtro de Periodo Histórico (Año / Mes sobre la creación del ticket)
+  if (year) {
+    const y = Number(year);
+    const m = Number(month || 0);
+
+    if (m > 0) {
+      // Rango del mes exacto: Desde el día 1 hasta el último día del mes
+      const start = new Date(y, m - 1, 1, 0, 0, 0, 0);
+      const end = new Date(y, m, 0, 23, 59, 59, 999); 
+      andConditions.push({ createdAt: { gte: start, lte: end } });
+    } else {
+      // Todo el año: Desde el 1 de Enero hasta el 31 de Diciembre
+      const start = new Date(y, 0, 1, 0, 0, 0, 0);
+      const end = new Date(y, 11, 31, 23, 59, 59, 999);
+      andConditions.push({ createdAt: { gte: start, lte: end } });
+    }
+  }
 
   // 🔥 REGLA DE ORO PARA CANCELADAS:
   // Si te piden explícitamente "CANCELADA", la muestras. 

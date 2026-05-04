@@ -10,17 +10,12 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
     const user = req.user!;
     const query = req.query as unknown as TicketFilterQuery;
     
-    // ── 1. FILTROS DE SEGURIDAD Y CONTEXTO ───────────────────────────────────
-    
-    // Filtro Estricto: Reacciona a búsqueda, tipo, prioridad y tab de estado
     const baseWhere: Prisma.TareaWhereInput = getTicketFilters({ id: user.id, rol: user.rol }, query);
     
-    // Si no estamos buscando un estado en específico, eliminamos las canceladas de las métricas base
     if (!query.estado) {
       baseWhere.estado = { not: EstadoTarea.CANCELADA };
     }
 
-    // Filtro Estático: Ignora el "estado" para que la SummaryBar no colapse a 0
     const querySinEstado = { ...query };
     delete querySinEstado.estado;
     const whereSinEstado: Prisma.TareaWhereInput = {
@@ -28,7 +23,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       estado: { not: EstadoTarea.CANCELADA }
     };
 
-    // 🔥 CORRECCIÓN: Filtro Global con valores por defecto
     const globalWhere: Prisma.TareaWhereInput = {
       ...getTicketFilters({ id: user.id, rol: user.rol }, {
         page: 1,
@@ -38,7 +32,27 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       estado: { not: EstadoTarea.CANCELADA }
     };
 
-    // ── 2. PREPARACIÓN DE TIEMPOS ────────────────────────────────────────────
+    // Propagar la búsqueda en texto para que las métricas reaccionen a la UI
+    if (query.q) {
+      const searchStr = query.q.trim();
+      const searchFilter = {
+        OR: [
+          { titulo: { contains: searchStr } },
+          { area: { contains: searchStr } },
+          ...( !isNaN(Number(searchStr)) ? [{ id: Number(searchStr) }] : [] )
+        ]
+      };
+
+      baseWhere.AND = [
+        ...(Array.isArray(baseWhere.AND) ? baseWhere.AND : (baseWhere.AND ? [baseWhere.AND] : [])),
+        searchFilter
+      ];
+      whereSinEstado.AND = [
+        ...(Array.isArray(whereSinEstado.AND) ? whereSinEstado.AND : (whereSinEstado.AND ? [whereSinEstado.AND] : [])),
+        searchFilter
+      ];
+    }
+
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfWeek = new Date(now);
@@ -57,7 +71,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       EstadoTarea.CERRADO
     ];
 
-    // ── 3. EJECUCIÓN CONCURRENTE (PRISMA TRANSACTION / PROMISE ALL) ──────────
     const [
       total, 
       conteoPorEstado, 
@@ -78,28 +91,22 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       cumplimientoData,
       pausaData
     ] = await Promise.all([
-      // Métricas de Resumen (Basadas en whereSinEstado para consistencia visual)
       prisma.tarea.count({ where: whereSinEstado }),
       prisma.tarea.groupBy({ 
         by: ['estado'], 
         where: whereSinEstado, 
         _count: { estado: true } 
       }),
-
-      // Existencia Global (Para lógica de mostrar/ocultar botones en UI)
       prisma.tarea.groupBy({
         by: ['estado'],
         where: globalWhere,
         _count: { estado: true }
       }),
-      
-      // Métricas Operativas Dinámicas (Basadas en baseWhere)
       prisma.tarea.groupBy({ by: ['tipo'], where: baseWhere, _count: { tipo: true } }),
       prisma.tarea.groupBy({ by: ['categoria'], where: baseWhere, _count: { categoria: true } }), 
       prisma.tarea.count({ where: { ...baseWhere, createdAt: { gte: startOfMonth } } }),
       prisma.tarea.count({ where: { ...baseWhere, createdAt: { gte: startOfWeek } } }),
       prisma.tarea.count({ where: { ...baseWhere, createdAt: { gte: startOfDay } } }),
-      
       prisma.tarea.count({ 
         where: { 
           ...globalWhere, 
@@ -107,7 +114,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
           estado: { in: activeStates }
         } 
       }),
-      
       prisma.tarea.aggregate({
         where: { 
           ...baseWhere, 
@@ -115,7 +121,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
         },
         _avg: { tiempoEstimado: true, duracionReal: true }
       }),
-
       prisma.tarea.groupBy({
         by: ['tipo'],
         where: { 
@@ -124,7 +129,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
         },
         _avg: { tiempoEstimado: true, duracionReal: true }
       }),
-
       prisma.tarea.groupBy({
         by: ['clasificacion'],
         where: { 
@@ -133,7 +137,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
         },
         _avg: { tiempoEstimado: true, duracionReal: true }
       }),
-
       isAdminOrJefe(user.rol)
         ? prisma.usuario.findMany({
             where: { rol: Rol.TECNICO, estado: "ACTIVO" },
@@ -147,11 +150,9 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
             }
           })
         : Promise.resolve([]),
-
       prisma.tarea.count({
         where: { ...baseWhere, estado: EstadoTarea.PENDIENTE, responsables: { none: {} } }
       }),
-
       prisma.tarea.groupBy({
         by: ['prioridad'],
         where: { 
@@ -160,13 +161,11 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
         },
         _avg: { tiempoEstimado: true, duracionReal: true }
       }),
-
       prisma.tarea.groupBy({
         by: ['planta', 'area'],
         where: baseWhere,
         _count: { _all: true }
       }),
-
       prisma.tarea.findMany({
         where: {
           ...baseWhere,
@@ -175,7 +174,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
         },
         select: { tiempoEstimado: true, duracionReal: true }
       }),
-
       prisma.intervaloTiempo.aggregate({
         where: {
           tarea: baseWhere,
@@ -185,14 +183,10 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       })
     ]);
 
-    // ── 4. PROCESAMIENTO DE VOLUMETRÍA Y DISTRIBUCIÓN ────────────────────────
-    
-    // Mapeo de conteos por estado (Filtrado por búsqueda)
     const resumenEstatus = conteoPorEstado.reduce((acc, curr) => ({ 
       ...acc, [curr.estado]: curr._count.estado 
     }), {} as Record<string, number>);
 
-    // Mapeo de existencia global (Ignora búsqueda, para botones de UI)
     const resumenGlobalEstatus = conteoGlobalEstados.reduce((acc, curr) => ({ 
       ...acc, [curr.estado]: curr._count.estado 
     }), {} as Record<string, number>);
@@ -206,8 +200,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       return { ...acc, [key]: curr._count.categoria };
     }, {} as Record<string, number>);
 
-    // ── 5. PROCESAMIENTO DE EFICACIAS (TIEMPOS) ──────────────────────────────
-    
     const eficaciaPorTipo = eficaciaPorTipoData.reduce((acc, curr) => ({
       ...acc, [curr.tipo]: {
         promedioEstimadoMins: Math.round(curr._avg.tiempoEstimado || 0),
@@ -229,8 +221,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       }
     }), {});
 
-    // ── 6. PROCESAMIENTO DE FOCOS ROJOS Y CUMPLIMIENTO ───────────────────────
-    
     const topFocosRojos = focosRojosData
       .map(f => ({
         planta: f.planta,
@@ -255,8 +245,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       ? Math.round((aTiempo / totalCumplimiento) * 100) 
       : 0;
 
-    // ── 7. CARGA DE TRABAJO (TÉCNICOS) ───────────────────────────────────────
-    
     const workload = tecnicosRaw.map(t => ({
       id: t.id,
       nombre: t.nombre,
@@ -266,8 +254,6 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       )
     }));
 
-    // ── 8. RESPUESTA FINAL ESTRUCTURADA ──────────────────────────────────────
-    
     return res.json({
       status: "success",
       data: {
@@ -277,7 +263,7 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
           huerfanos: huerfanos,
           minutosTotalesPausa: pausaData._sum.duracion || 0
         },
-        existenciaGlobal: resumenGlobalEstatus, // Útil para mostrar/ocultar botones UI
+        existenciaGlobal: resumenGlobalEstatus, 
         eficacia: {
           general: {
             promedioEstimadoMins: Math.round(eficaciaGeneral._avg.tiempoEstimado || 0),

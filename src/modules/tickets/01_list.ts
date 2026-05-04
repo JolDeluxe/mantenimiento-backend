@@ -16,9 +16,31 @@ export const listarTickets = async (req: Request, res: Response) => {
 
     const querySinEstado = { ...query };
     delete querySinEstado.estado;
-    const searchWhere = getTicketFilters({ id: user.id, rol: user.rol }, querySinEstado);
-
+    
+    const searchWhere: Prisma.TareaWhereInput = getTicketFilters({ id: user.id, rol: user.rol }, querySinEstado);
     const tableWhere: Prisma.TareaWhereInput = getTicketFilters({ id: user.id, rol: user.rol }, query);
+
+    // Inyección estricta de búsqueda por texto / id en el cerebro del Backend
+    if (query.q) {
+      const searchStr = query.q.trim();
+      const searchFilter = {
+        OR: [
+          { titulo: { contains: searchStr } },
+          { area: { contains: searchStr } },
+          ...( !isNaN(Number(searchStr)) ? [{ id: Number(searchStr) }] : [] )
+        ]
+      };
+
+      searchWhere.AND = [
+        ...(Array.isArray(searchWhere.AND) ? searchWhere.AND : (searchWhere.AND ? [searchWhere.AND] : [])),
+        searchFilter
+      ];
+      
+      tableWhere.AND = [
+        ...(Array.isArray(tableWhere.AND) ? tableWhere.AND : (tableWhere.AND ? [tableWhere.AND] : [])),
+        searchFilter
+      ];
+    }
 
     if (!estado) {
       tableWhere.AND = [
@@ -49,7 +71,12 @@ export const listarTickets = async (req: Request, res: Response) => {
       return acc;
     }, {} as Record<string, number>);
 
-        const toMXDateStr = (d: Date): string =>
+    // Resuelve el Bug del SummaryBar en 0 inyectando el total exacto paginado
+    if (estado === EstadoTarea.CANCELADA || estado === EstadoTarea.RECHAZADO) {
+      resumenEstados[estado] = totalPaginado;
+    }
+
+    const toMXDateStr = (d: Date): string =>
       d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
     const hoyMX = toMXDateStr(new Date());
 
@@ -73,14 +100,12 @@ export const listarTickets = async (req: Request, res: Response) => {
         };
       });
 
-      // Tarea cerrada/resuelta entregada después del día de vencimiento (calendario México)
       const isLate =
         ESTADOS_ENTREGADOS.includes(t.estado) &&
         !!t.finalizadoAt &&
         !!t.fechaVencimiento &&
         toMXDateStr(new Date(t.finalizadoAt)) > toMXDateStr(new Date(t.fechaVencimiento));
 
-      // Tarea activa cuyo día de vencimiento ya pasó (calendario México)
       const isOverdue =
         ESTADOS_ACTIVOS_VENCIBLES.includes(t.estado) &&
         !!t.fechaVencimiento &&
