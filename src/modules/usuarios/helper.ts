@@ -34,33 +34,28 @@ export const validarReglasCreacion = (
 ) => {
   const rolNuevo = datosNuevoUsuario.rol as Rol;
 
-  // ── Blindaje 1: SUPER_ADMIN no puede tener departamento ───────────────────
-  if (rolNuevo === Rol.SUPER_ADMIN && datosNuevoUsuario.departamentoId != null) {
-    throw new Error("El Super Admin no puede tener un departamento asignado.");
+  // ── Blindaje 1: SUPER_ADMIN no puede tener departamento, los demás sí ─────
+  if (rolNuevo === Rol.SUPER_ADMIN) {
+    if (datosNuevoUsuario.departamentoId != null) {
+      throw new Error("El Super Admin no puede tener un departamento asignado.");
+    }
+  } else {
+    if (datosNuevoUsuario.departamentoId == null) {
+      throw new Error("El departamento es obligatorio para todos los usuarios excepto Super Admin.");
+    }
   }
 
-  // ── Blindaje 2: Roles de Mantenimiento → solo depto Mantenimiento ─────────
-  const rolesMantenimiento: Rol[] = [Rol.TECNICO, Rol.COORDINADOR_MTTO, Rol.JEFE_MTTO];
-  if (
-    rolesMantenimiento.includes(rolNuevo) &&
-    datosNuevoUsuario.departamentoId != null &&
-    nombreDepartamentoObjetivo != null &&
-    !nombreDepartamentoObjetivo.toLowerCase().includes("mantenimiento")
-  ) {
-    throw new Error(
-      "Los roles de Mantenimiento solo pueden pertenecer a un departamento de Mantenimiento."
-    );
-  }
+  // ── Blindaje 2: Validar tipo de departamento según rol ───────────────────
+  if (rolNuevo !== Rol.SUPER_ADMIN && nombreDepartamentoObjetivo != null) {
+    const deptoEsMtto = nombreDepartamentoObjetivo.toLowerCase().includes("mantenimiento");
+    const esRolMtto = ([Rol.TECNICO, Rol.COORDINADOR_MTTO, Rol.JEFE_MTTO] as Rol[]).includes(rolNuevo);
 
-  // ── Blindaje 3: CLIENTE_INTERNO no puede estar en Mantenimiento ───────────
-  if (
-    rolNuevo === Rol.CLIENTE_INTERNO &&
-    (nombreDepartamentoObjetivo === "Mantenimiento" ||
-      nombreDepartamentoObjetivo === "Mantenimiento General")
-  ) {
-    throw new Error(
-      "Los Clientes Internos no pueden pertenecer al departamento de Mantenimiento."
-    );
+    if (esRolMtto && !deptoEsMtto) {
+      throw new Error("Los roles de Mantenimiento solo pueden pertenecer a un departamento de Mantenimiento.");
+    }
+    if (rolNuevo === Rol.CLIENTE_INTERNO && deptoEsMtto) {
+      throw new Error("Los Clientes Internos no pueden pertenecer al departamento de Mantenimiento.");
+    }
   }
 
   // ── Reglas por rol solicitante ────────────────────────────────────────────
@@ -91,23 +86,48 @@ export const validarReglasCreacion = (
 export const validarReglasEdicion = (
   usuarioSolicitante: { id: number; rol: Rol; departamentoId: number | null },
   usuarioObjetivo: { id: number; rol: Rol; departamentoId: number | null; estado?: string },
-  datosNuevos: { rol?: string; departamentoId?: number | null; estado?: string }
+  datosNuevos: { rol?: string; departamentoId?: number | null; estado?: string },
+  nombreDepartamentoObjetivo: string | null
 ) => {
   const esMismoUsuario = Number(usuarioSolicitante.id) === Number(usuarioObjetivo.id);
+  const rolFinal = (datosNuevos.rol !== undefined ? datosNuevos.rol : usuarioObjetivo.rol) as Rol;
 
-  // ── Blindaje Central: departamento solo editable para CLIENTE_INTERNO ─────
-  // Un usuario con rol de Mantenimiento tiene su departamento fijo en la
-  // estructura organizacional. Solo CLIENTE_INTERNO puede cambiar de depto
-  // porque representa a distintas áreas de producción / administración.
-  // Este blindaje aplica ANTES que cualquier otro, incluyendo al SUPER_ADMIN
-  // sobre usuarios de mantenimiento (la jerarquía no exime la regla de negocio).
-  if (datosNuevos.departamentoId !== undefined) {
-    const rolEfectivo = (datosNuevos.rol ?? usuarioObjetivo.rol) as Rol;
-    if (ROLES_DEPTO_FIJO.includes(rolEfectivo)) {
-      throw new Error(
-        "El departamento no puede modificarse para este rol. Solo aplica a usuarios con rol Cliente Interno."
-      );
+  // ── Blindaje 1: SUPER_ADMIN no puede tener departamento, los demás sí ─────
+  if (rolFinal === Rol.SUPER_ADMIN) {
+    if (datosNuevos.departamentoId !== undefined && datosNuevos.departamentoId !== null) {
+      throw new Error("El Super Admin no puede tener un departamento asignado.");
     }
+  } else {
+    // Si no es Super Admin, el departamento es obligatorio
+    if (datosNuevos.departamentoId === null || (datosNuevos.departamentoId === undefined && usuarioObjetivo.departamentoId === null)) {
+      throw new Error("El departamento es obligatorio para todos los usuarios excepto Super Admin.");
+    }
+  }
+
+  // ── Blindaje 2: Validar tipo de departamento según rol final ──────────────
+  if (rolFinal !== Rol.SUPER_ADMIN && nombreDepartamentoObjetivo != null) {
+    const deptoEsMtto = nombreDepartamentoObjetivo.toLowerCase().includes("mantenimiento");
+    const esRolMtto = ([Rol.TECNICO, Rol.COORDINADOR_MTTO, Rol.JEFE_MTTO] as Rol[]).includes(rolFinal);
+
+    if (esRolMtto && !deptoEsMtto) {
+      throw new Error("Los roles de Mantenimiento solo pueden pertenecer a un departamento de Mantenimiento.");
+    }
+    if (rolFinal === Rol.CLIENTE_INTERNO && deptoEsMtto) {
+      throw new Error("Los Clientes Internos no pueden pertenecer al departamento de Mantenimiento.");
+    }
+  }
+
+  // ── Blindaje 3: Si ya era rol de mantenimiento y sigue siéndolo, su depto es fijo ─
+  const eraMtto = ([Rol.TECNICO, Rol.COORDINADOR_MTTO, Rol.JEFE_MTTO] as Rol[]).includes(usuarioObjetivo.rol);
+  const esMtto = ([Rol.TECNICO, Rol.COORDINADOR_MTTO, Rol.JEFE_MTTO] as Rol[]).includes(rolFinal);
+  if (
+    usuarioSolicitante.rol !== Rol.SUPER_ADMIN &&
+    eraMtto &&
+    esMtto &&
+    datosNuevos.departamentoId !== undefined &&
+    datosNuevos.departamentoId !== usuarioObjetivo.departamentoId
+  ) {
+    throw new Error("El departamento de mantenimiento es fijo y no se puede modificar para este rol.");
   }
 
   // ── Reglas de auto-edición ────────────────────────────────────────────────

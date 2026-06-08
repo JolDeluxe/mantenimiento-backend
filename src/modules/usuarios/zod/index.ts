@@ -34,7 +34,7 @@ export const listUsuariosSchema = z.object({
           departamento:z.enum(["asc", "desc"]).optional(),
         }).strict()
       )
-    ).default([{ nombre: "asc" }]),
+    ).default([{ rol: "asc" }]),
   }),
 });
 

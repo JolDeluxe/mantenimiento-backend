@@ -17,8 +17,15 @@ export const updateUsuario = async (req: Request, res: Response) => {
 
     if (!usuarioActual) return res.status(404).json({ error: "Usuario no encontrado" });
 
+    let nombreDepartamentoObjetivo: string | null = null;
+    const deptoIdFinal = datos.departamentoId !== undefined ? datos.departamentoId : usuarioActual.departamentoId;
+    if (deptoIdFinal) {
+      const departamento = await prisma.departamento.findUnique({ where: { id: deptoIdFinal } });
+      nombreDepartamentoObjetivo = departamento ? departamento.nombre : null;
+    }
+
     try {
-      validarReglasEdicion(usuarioSolicitante, usuarioActual, datos);
+      validarReglasEdicion(usuarioSolicitante, usuarioActual, datos, nombreDepartamentoObjetivo);
     } catch (error: any) {
       return res.status(403).json({ error: error.message });
     }

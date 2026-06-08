@@ -3,10 +3,34 @@ import { prisma } from "../../db";
 import { Rol, Estatus, Prisma } from "@prisma/client";
 import { registrarError } from "../../utils/logger";
 import type { ListDepartamentosQuery, GetDepartamentoByIdParams } from "./zod";
+import jwt from "jsonwebtoken";
+import { env } from "../../env";
+import type { TokenPayload } from "../auth/types";
 
 export const listDepartamentos = async (req: Request, res: Response) => {
   try {
-    const esSuperAdmin = req.user?.rol === Rol.SUPER_ADMIN;
+    let esSuperAdmin = req.user?.rol === Rol.SUPER_ADMIN;
+
+    if (!esSuperAdmin) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const token = authHeader.split(" ")[1];
+        if (token) {
+          try {
+            const decoded = jwt.verify(token, env.JWT_SECRET as string) as unknown as TokenPayload;
+            const usuario = await prisma.usuario.findUnique({
+              where: { id: decoded.id },
+              select: { rol: true }
+            });
+            if (usuario && usuario.rol === Rol.SUPER_ADMIN) {
+              esSuperAdmin = true;
+            }
+          } catch {
+            // Ignorar token inválido/expirado
+          }
+        }
+      }
+    }
     const { q, page, limit, sortBy, sortOrder } = req.query as unknown as ListDepartamentosQuery;
     
     const offset = (page - 1) * limit;
