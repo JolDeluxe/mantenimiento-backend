@@ -299,7 +299,7 @@ async function main() {
   await prisma.passwordResetToken.deleteMany({});
   await prisma.bitacora.deleteMany({});
   await prisma.tarea.deleteMany({});
-  await prisma.usuario.deleteMany({ where: { username: { not: "SUPER_ADMIN" } } });
+  await prisma.usuario.deleteMany({});
   await prisma.departamento.deleteMany({});
 
   // Actualizar la contraseña del SUPER_ADMIN principal a "123456"

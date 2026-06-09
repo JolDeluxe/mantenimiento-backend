@@ -5,6 +5,8 @@ import { Prioridad, EstadoTarea, TipoTarea, ClasificacionTarea } from "@prisma/c
 const clasificacionesCliente = [
   ClasificacionTarea.CORRECTIVO, 
   ClasificacionTarea.PREVENTIVO,
+  ClasificacionTarea.MEJORA,
+  ClasificacionTarea.INFRAESTRUCTURA,
 ] as [string, ...string[]];
 
 const commonString = z.string().trim();

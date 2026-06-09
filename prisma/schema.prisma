@@ -56,6 +56,9 @@ enum ClasificacionTarea {
   PREVENTIVO        
   CORRECTIVO        
   INSPECCION        
+  RUTINA
+  MEJORA
+  INFRAESTRUCTURA
 }
 
 enum TipoNotificacion {
