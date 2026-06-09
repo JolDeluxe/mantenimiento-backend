@@ -34,9 +34,9 @@ enum EstadoTarea {
   ASIGNADA    
   EN_PROGRESO 
   EN_PAUSA    
+  RECHAZADO   
   RESUELTO    
   CERRADO     
-  RECHAZADO   
   CANCELADA   
 }
 
