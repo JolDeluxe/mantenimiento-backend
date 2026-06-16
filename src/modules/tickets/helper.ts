@@ -77,6 +77,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   if (huerfanos) {
     andConditions.push({ responsables: { none: {} } });
     where.estado = EstadoTarea.PENDIENTE;
+    where.tipo = "TICKET";
   }
 
   // Combinación inteligente de Vencidos y Rangos
@@ -86,6 +87,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   if (vencidos) {
     filterVencimiento.lt = new Date();
     where.estado = { in: [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA] };
+    where.tipo = "TICKET";
     hasVencimientoFilter = true;
   }
 
