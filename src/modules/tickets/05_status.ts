@@ -23,7 +23,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
       data.imagenes = urlsImagenes;
     }
   
-    let { estado: nuevoEstado, nota, imagenes: imagenesFinales = [] } = data;
+    let { estado: nuevoEstado, nota, imagenes: imagenesFinales = [], fechaVencimiento } = data;
     let { registroTiempoManual } = data;
 
     if (typeof registroTiempoManual === 'string') {
@@ -43,7 +43,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
     const esCreador    = ticket.creadorId === user.id;
     const esResponsable = ticket.responsables.some(r => r.id === user.id);
 
-    if (!isValidTransition(ticket.estado, nuevoEstado)) {
+    if (!isValidTransition(ticket.estado, nuevoEstado, ticket.clasificacion)) {
         return res.status(400).json({ 
             error: `Transición no permitida: ${ticket.estado} → ${nuevoEstado}` 
         });
@@ -63,7 +63,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
       if (!esResponsable) {
         return res.status(403).json({ error: "No estás asignado a este ticket." });
       }
-      if (nuevoEstado === EstadoTarea.CERRADO) {
+      if (nuevoEstado === EstadoTarea.CERRADO && ticket.clasificacion !== ClasificacionTarea.RUTINA) {
         return res.status(403).json({ error: "Solo el cliente o el jefe pueden cerrar el ticket definitivamente." });
       }
       if (ticket.estado === EstadoTarea.PENDIENTE) {
@@ -161,7 +161,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
 
         await prisma.tarea.update({
           where: { id: ticketId },
-          data: { duracionReal: { increment: minutosManualesDirectos } }
+          data: { duracionReal: minutosManualesDirectos }
         });
     }
 
@@ -177,6 +177,9 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
 
     if (nuevoEstado === EstadoTarea.RECHAZADO) {
       datosActualizacion.finalizadoAt = null;
+      if (fechaVencimiento) {
+        datosActualizacion.fechaVencimiento = fechaVencimiento;
+      }
     }
 
     const result = await prisma.$transaction(async (tx) => {

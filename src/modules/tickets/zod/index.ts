@@ -159,7 +159,19 @@ export const changeStatusSchema = z.object({
     estado: z.nativeEnum(EstadoTarea),
     nota: z.string().optional(), 
     imagenes: z.array(z.string().url()).optional(),
-    registroTiempoManual: z.preprocess(preprocessJsonObject, registroTiempoManualSchema.optional())
+    registroTiempoManual: z.preprocess(preprocessJsonObject, registroTiempoManualSchema.optional()),
+    fechaVencimiento: z.preprocess(
+      preprocessDate,
+      z.coerce.date()
+        .refine((val) => {
+          const toMXDateStr = (d: Date): string =>
+            d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+          const hoyMX = toMXDateStr(new Date());
+          const valMX = toMXDateStr(val);
+          return valMX >= hoyMX;
+        }, { message: "La fecha de vencimiento no puede estar en el pasado" })
+        .optional()
+    )
   })
 });
 

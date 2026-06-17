@@ -1,7 +1,8 @@
 import { 
   EstadoTarea, 
   Rol, 
-  Prisma 
+  Prisma,
+  ClasificacionTarea
 } from "@prisma/client";
 import { z } from "zod";
 import { ticketFilterSchema } from "./zod";
@@ -126,7 +127,13 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   return where;
 };
 
-export const isValidTransition = (current: EstadoTarea, next: EstadoTarea): boolean => {
+export const isValidTransition = (current: EstadoTarea, next: EstadoTarea, clasificacion?: ClasificacionTarea): boolean => {
+  if (clasificacion === ClasificacionTarea.RUTINA) {
+    if (next === EstadoTarea.CERRADO && ([EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.RECHAZADO] as EstadoTarea[]).includes(current)) {
+      return true;
+    }
+  }
+
   const map: Record<EstadoTarea, EstadoTarea[]> = {
     [EstadoTarea.PENDIENTE]:   [EstadoTarea.ASIGNADA, EstadoTarea.CANCELADA],
     [EstadoTarea.ASIGNADA]:    [EstadoTarea.EN_PROGRESO, EstadoTarea.PENDIENTE, EstadoTarea.RESUELTO, EstadoTarea.CERRADO, EstadoTarea.CANCELADA],

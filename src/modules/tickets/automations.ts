@@ -89,7 +89,14 @@ export const ejecutarAutoPausaFinTurno = async () => {
   try {
     const ahora = new Date();
     const horaCorte = new Date(ahora);
-    horaCorte.setHours(17, 30, 0, 0); // Hora oficial fin de turno
+    
+    // Si es sábado (getDay() === 6), el turno oficial termina a las 14:00.
+    // De lunes a viernes termina a las 17:30.
+    if (ahora.getDay() === 6) {
+      horaCorte.setHours(14, 0, 0, 0);
+    } else {
+      horaCorte.setHours(17, 30, 0, 0);
+    }
 
     const tareasActivas = await prisma.tarea.findMany({
       where: { estado: EstadoTarea.EN_PROGRESO },
@@ -109,8 +116,18 @@ export const ejecutarAutoPausaFinTurno = async () => {
       if (!intervaloAbierto) continue;
 
       // REGLA DE RECORTE: Proteger horas extra, cortar tiempo fantasma
-      const finValidado = intervaloAbierto.inicio < horaCorte ? horaCorte : ahora;
-      const duracionMin = Math.max(0, Math.floor((finValidado.getTime() - intervaloAbierto.inicio.getTime()) / 60000));
+      const inicioMs = intervaloAbierto.inicio.getTime();
+      const horaCorteMs = horaCorte.getTime();
+      
+      let finValidado: Date;
+      if (inicioMs < horaCorteMs) {
+        finValidado = horaCorte;
+      } else {
+        // Horas extra legítimas iniciadas después del corte oficial, pero dejadas activas.
+        // Recortar a inicio (duración 0) para evitar tiempo fantasma nocturno.
+        finValidado = new Date(inicioMs);
+      }
+      const duracionMin = Math.max(0, Math.floor((finValidado.getTime() - inicioMs) / 60000));
 
       await prisma.$transaction(async (tx) => {
         await tx.intervaloTiempo.update({
