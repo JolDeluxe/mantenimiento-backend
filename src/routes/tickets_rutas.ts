@@ -8,7 +8,8 @@ import {
   ticketFilterSchema, 
   getTicketByIdSchema, 
   updateTicketSchema, 
-  changeStatusSchema 
+  changeStatusSchema,
+  createTicketBatchSchema
 } from "../modules/tickets/zod"; 
 
 import { listarTickets } from "../modules/tickets/01_list";
@@ -17,6 +18,7 @@ import { createTicket } from "../modules/tickets/03_create";
 import { updateTicket } from "../modules/tickets/04_update";
 import { changeTicketStatus } from "../modules/tickets/05_status"; 
 import { obtenerMetricasTickets } from "../modules/tickets/06_metrics";
+import { createBatchTickets } from "../modules/tickets/create/create_batch";
 
 const router = Router();
 router.use(authenticate);
@@ -48,6 +50,14 @@ router.post(
     "/", 
     upload.array('imagenes', 5),
     createTicket 
+);
+
+// POST /api/tickets/batch
+router.post(
+    "/batch", 
+    authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO]),
+    validate(createTicketBatchSchema), 
+    createBatchTickets
 );
 
 

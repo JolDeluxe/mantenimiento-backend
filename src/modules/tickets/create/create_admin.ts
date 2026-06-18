@@ -68,12 +68,12 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
       const nuevaTarea = await tx.tarea.create({
         data: {
           titulo: data.titulo,
-          descripcion: data.descripcion,
+          descripcion: data.descripcion || "Sin descripción.",
           prioridad: data.prioridad,
           categoria: data.categoria,
           planta: data.planta || "KAPPA",
           area: data.area || "General",
-          clasificacion: data.clasificacion,
+          clasificacion: data.clasificacion || (data.categoria === 'RUTINA' ? ClasificacionTarea.RUTINA : ClasificacionTarea.PREVENTIVO),
           tipo: data.tipo,
           estado: estadoInicial,
           fechaVencimiento,

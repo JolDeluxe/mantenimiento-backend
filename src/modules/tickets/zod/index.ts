@@ -111,24 +111,24 @@ export const getTicketByIdSchema = z.object({
 export const createTicketClientSchema = z.object({
   titulo: commonString.min(3),
   categoria: commonString.min(1),
-  descripcion: commonString.min(10),
+  descripcion: commonString.optional(),
   prioridad: z.nativeEnum(Prioridad).optional(),
   planta: commonString.min(1),
   area: commonString.min(1),
-  clasificacion: z.enum(clasificacionesCliente),
+  clasificacion: z.nativeEnum(ClasificacionTarea).optional(),
   imagenes: z.array(z.string().url()).optional()
 });
 
 export const createTicketAdminSchema = z.object({
   titulo: commonString.min(3),
-  descripcion: commonString.min(3),
+  descripcion: commonString.optional(),
   fechaVencimiento: z.preprocess(preprocessDate, z.coerce.date().optional()), 
   tiempoEstimado: z.coerce.number().int().nonnegative().optional(),
   responsables: z.preprocess(preprocessNumberArray, z.array(z.number()).optional()),
   imagenes: z.array(z.string().url()).optional(),
   prioridad: z.nativeEnum(Prioridad).default(Prioridad.MEDIA),
   tipo: z.nativeEnum(TipoTarea).default(TipoTarea.TICKET),
-  clasificacion: z.nativeEnum(ClasificacionTarea).default(ClasificacionTarea.CORRECTIVO),
+  clasificacion: z.nativeEnum(ClasificacionTarea).optional(),
   planta: z.string().optional(),
   area: z.string().optional(),
   categoria: commonString.min(3, "La categoría es obligatoria")
@@ -138,7 +138,7 @@ export const updateTicketSchema = z.object({
   params: z.object({ id: z.coerce.number().int().positive() }),
   body: z.object({
     titulo: z.string().min(5).optional(),
-    descripcion: z.string().min(10).optional(),
+    descripcion: z.string().optional(),
     prioridad: z.nativeEnum(Prioridad).optional(),
     categoria: z.string().optional(),
     planta: z.string().optional(),
@@ -174,6 +174,37 @@ export const changeStatusSchema = z.object({
     )
   })
 });
+
+export const createTicketBatchSchema = z.object({
+  body: z.object({
+    tareas: z.array(z.object({
+      titulo: z.string().trim().min(3).max(255),
+      descripcion: z.preprocess(
+        (val) => !val || val === '' ? 'Sin descripción.' : val,
+        z.string()
+      ),
+      planta: z.string().default('KAPPA'),
+      area: z.string().min(1),
+      
+      // La categoría SIGUE SIENDO obligatoria.
+      categoria: z.string().min(1),
+      
+      departamentoId: z.number().int().positive().optional(),
+      
+      tipo: z.nativeEnum(TipoTarea).optional().default(TipoTarea.PLANEADA),
+      prioridad: z.nativeEnum(Prioridad).optional().default(Prioridad.MEDIA),
+      
+      // La clasificación es opcional, el controlador decide.
+      clasificacion: z.nativeEnum(ClasificacionTarea).optional(),
+      
+      tiempoEstimado: z.coerce.number().int().nonnegative().optional().default(0),
+      responsables: z.preprocess(preprocessNumberArray, z.array(z.number()).optional().default([])),
+      fechaVencimiento: z.preprocess(preprocessDate, z.coerce.date().optional()),
+    })).min(1).max(50)
+  })
+});
+
+export type CreateTicketBatchInput = z.infer<typeof createTicketBatchSchema>['body'];
 
 export type TicketFilterQuery           = z.infer<typeof ticketFilterSchema>["query"];
 export type GetTicketByIdParams         = z.infer<typeof getTicketByIdSchema>["params"];

@@ -127,8 +127,8 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   return where;
 };
 
-export const isValidTransition = (current: EstadoTarea, next: EstadoTarea, clasificacion?: ClasificacionTarea): boolean => {
-  if (clasificacion === ClasificacionTarea.RUTINA) {
+export const isValidTransition = (current: EstadoTarea, next: EstadoTarea, clasificacion?: ClasificacionTarea, categoria?: string | null): boolean => {
+  if (clasificacion === ClasificacionTarea.RUTINA || categoria === 'RUTINA') {
     if (next === EstadoTarea.CERRADO && ([EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.RECHAZADO] as EstadoTarea[]).includes(current)) {
       return true;
     }
