@@ -80,7 +80,10 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
           tiempoEstimado: data.tiempoEstimado || null,
           creadorId: user.id,
           departamentoId: user.departamentoId,
-          responsables: { connect: responsablesConnect }
+          responsables: { connect: responsablesConnect },
+          maquinaId: data.maquinaId,
+          paroProduccion: data.paroProduccion,
+          impactoProduccion: data.impactoProduccion,
         }
       });
 

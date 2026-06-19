@@ -61,6 +61,19 @@ enum ClasificacionTarea {
   INFRAESTRUCTURA
 }
 
+enum CriticidadMaquina {
+  A
+  B
+  C
+}
+
+enum EstadoMaquina {
+  OPERATIVA
+  EN_REPARACION
+  INACTIVA
+  BAJA
+}
+
 enum TipoNotificacion {
   NUEVO_REPORTE
   TAREA_ASIGNADA
@@ -88,6 +101,7 @@ model Departamento {
   estado    Estatus  @default(ACTIVO)
   usuarios  Usuario[]
   tareas    Tarea[]
+  maquinas  Maquina[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -156,6 +170,12 @@ model Tarea {
   
   duracionReal     Int?               @default(0)
 
+  // --- INDUSTRIAL/MAQUINARIA ---
+  maquinaId         Int?
+  maquina           Maquina?           @relation(fields: [maquinaId], references: [id], onDelete: SetNull)
+  paroProduccion    Boolean            @default(false)
+  impactoProduccion Int?
+
   // --- RELACIONES ---
   creadorId        Int
   creador          Usuario            @relation("Creador", fields: [creadorId], references: [id], onDelete: Restrict)
@@ -182,6 +202,47 @@ model Tarea {
   @@index([tipo])              
   @@index([departamentoId, estado]) 
   @@index([creadorId, createdAt])   
+  @@index([maquinaId])
+  @@index([maquinaId, estado])
+}
+
+model Maquina {
+  id                  Int               @id @default(autoincrement())
+  
+  codigo              String            @unique @db.VarChar(50) // Formato estricto MBC + 4 dígitos (ej: MBC0018)
+  nombre              String            @db.VarChar(255)
+  proceso             String            @db.VarChar(150)        // Proceso (Tipo de Maquinaria)
+  descripcion         String?           @db.Text
+  imagen              String?           @db.VarChar(255)
+
+  criticidad          CriticidadMaquina @default(C)
+  estado              EstadoMaquina     @default(OPERATIVA)
+
+  marca               String?           @db.VarChar(100)
+  modelo              String?           @db.VarChar(100)
+  numeroSerie         String?           @unique @db.VarChar(100)
+
+  planta              String            @db.VarChar(100)        // Planta Baja o Planta Alta
+  area                String            @db.VarChar(100)        // Ubicación corta (Cinturones, Lambda, Acabado L1)
+  ubicacionDetalle    String?           @db.VarChar(255)        // Ubicación física completa del catálogo
+
+  fechaInstalacion    DateTime?
+  fechaUltimoServicio DateTime?
+
+  departamentoId      Int?
+  departamento        Departamento?     @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
+  
+  tareas              Tarea[]
+
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([codigo])
+  @@index([estado])
+  @@index([planta, area])
+  @@index([proceso])
+  @@index([criticidad])
+  @@index([departamentoId])
 }
 
 model HistorialTarea {

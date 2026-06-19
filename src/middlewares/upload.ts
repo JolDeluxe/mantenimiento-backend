@@ -8,10 +8,13 @@ export const upload = multer({
     fileSize: 20 * 1024 * 1024, 
   },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
+    const isImageMime = file.mimetype.startsWith("image/");
+    const hasHeicExt = /\.(heic|heif)$/i.test(file.originalname);
+    
+    if (isImageMime || hasHeicExt) {
       cb(null, true);
     } else {
-      cb(new Error("Solo se permiten archivos de imagen"));
+      cb(new Error("Solo se permiten archivos de imagen (Formatos aceptados: JPEG, PNG, WEBP, HEIC)"));
     }
   },
 });

@@ -6,7 +6,9 @@ import {
   EstadoTarea, 
   TipoTarea, 
   ClasificacionTarea, 
-  TipoEvento 
+  TipoEvento,
+  CriticidadMaquina,
+  EstadoMaquina
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
@@ -753,6 +755,133 @@ async function main() {
 
     // Avanzar un día
     cursor.setDate(cursor.getDate() + 1);
+  }
+
+  console.log("🚀 Iniciando sembrado del catálogo de máquinas...");
+  
+  const catalogoMaquinas = [
+    { codigo: "MBC0001", nombre: "Cabina Ecológica", proceso: "Cabina Ecologica", planta: "Planta Baja", area: "Cinturones", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0003", nombre: "Cabina Ecológica", proceso: "Cabina Ecologica", planta: "Planta Baja", area: "Cinturones", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0004", nombre: "Banco con Brochuelos", proceso: "Banco con Brochuelos", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0005", nombre: "Banco con Brochuelos", proceso: "Banco con Brochuelos", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0006", nombre: "Maquina para pulir", proceso: "Pulir", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0007", nombre: "Maquina para pulir", proceso: "Pulir", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0008", nombre: "Banco de Lijas", proceso: "Banco de Lijas", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0009", nombre: "Banco para acabar Calzado", proceso: "Banco de Lijas", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0010", nombre: "Banco de Lijas", proceso: "Banco de Lijas", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0011", nombre: "Banco de Lijas", proceso: "Banco de Lijas", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0015", nombre: "Flameadora con vapor automática", proceso: "Flameadora Montado", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0018", nombre: "Modificada a cuatro estaciones", proceso: "Conformar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0019", nombre: "Planchar tubo 4 estaciones", proceso: "Conformar Acabado L2", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0020", nombre: "Troquelar", proceso: "Troquelar Acabado Riel", planta: "Planta Baja", area: "Acabado Riel", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0021", nombre: "Maquina para Troquelar", proceso: "Troquelar Chamarras", planta: "Planta Alta", area: "Chamarras", ubicacionDetalle: "Planta Alta Mezannine ACC", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0022", nombre: "Maquina de troquelar etiqueta", proceso: "Troquelar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0023", nombre: "Maquina de grabar y timbrar", proceso: "Grabar Billeteras Lambda", planta: "Planta Baja", area: "Billeteras Lambda", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0024", nombre: "Troquelar Hidráulica", proceso: "Troquelar Cinturones", planta: "Planta Baja", area: "Cinturones", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0025", nombre: "Apomazadora", proceso: "Apomazadora Acabado L2", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0026", nombre: "Maquina para apomazar suela", proceso: "Apomazadora Acabado L1", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0027", nombre: "Pre acabar", proceso: "Preacabar Acabado L1", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.A },
+    { codigo: "MBC0029", nombre: "Desvirar Tacón", proceso: "Desvirar Tacon Acabado L2", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.A },
+    { codigo: "MBC0030", nombre: "Desvirar Tacón", proceso: "Desvirar Tacon Acabado L1", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.A },
+    { codigo: "MBC0032", nombre: "Entaconar automática", proceso: "Entaconar Acabado L2", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0033", nombre: "Entaconar automática", proceso: "Entaconar Acabado L1", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0035", nombre: "Remachar neumática", proceso: "Remachar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0036", nombre: "Remachar neumática", proceso: "Remachar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0037", nombre: "Remachar neumática", proceso: "Remachar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0038", nombre: "Coser Suela Stitcher", proceso: "Coser suela Acabado L1", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.A },
+    { codigo: "MBC0039", nombre: "Coser Suela Stitcher", proceso: "Coser suela Acabado L2", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.A },
+    { codigo: "MBC0041", nombre: "Asentar Suela", proceso: "Asentar Suela Acabado L2", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0043", nombre: "Costear", proceso: "Costear Acabado L1", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0044", nombre: "Coser Welt", proceso: "Coser Suela Acabado L1", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.A },
+    { codigo: "MBC0045", nombre: "Coser Welt", proceso: "Coser Suela Acabado L2", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.A },
+    { codigo: "MBC0046", nombre: "Coser Welt", proceso: "Coser suela Acabado L1", planta: "Planta Baja", area: "Acabado L1", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.A },
+    { codigo: "MBC0047", nombre: "Rebatir Talón", proceso: "Rebatir Talon MONTADO", planta: "Planta Baja", area: "Montado", ubicacionDetalle: "Planta Baja MONTADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0048", nombre: "Maquina estabilizadora para humedecer", proceso: "Horno Estabilizador Montado", planta: "Planta Baja", area: "Montado", ubicacionDetalle: "Planta Baja MONTADO", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0049", nombre: "Horno de secado", proceso: "Horno de secado Acabado L2", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0050", nombre: "Secador Activador", proceso: "Secador Activador Acabado L2", planta: "Planta Baja", area: "Acabado L2", ubicacionDetalle: "Planta Baja ACABADO", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0051", nombre: "Horno de secado", proceso: "Horno de secado Cinturones", planta: "Planta Baja", area: "Cinturones", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0052", nombre: "Prensar Tacón", proceso: "Prensar tacon Avios", planta: "Planta Baja", area: "Avios", ubicacionDetalle: "Planta Baja AVIOS", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0053", nombre: "Clavadora para fijar Planta", proceso: "Clavadora Montado", planta: "Planta Baja", area: "Montado", ubicacionDetalle: "Planta Baja MONTADO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0054", nombre: "Maquina engrapadora neumatica", proceso: "Engrapadora Neumatica Cinturones", planta: "Planta Baja", area: "Cinturones", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0056", nombre: "Maquina Calcera Montar Talón", proceso: "Montar Talon Montado", planta: "Planta Baja", area: "Montado", ubicacionDetalle: "Planta Baja MONTADO", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0057", nombre: "Maq. de montar lados", proceso: "Montar Enfranques Montado", planta: "Planta Baja", area: "Montado", ubicacionDetalle: "Planta Baja MONTADO", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0058", nombre: "Montar Puntas", proceso: "Montar puntas Montado", planta: "Planta Baja", area: "Montado", ubicacionDetalle: "Planta Baja MONTADO", criticidad: CriticidadMaquina.B },
+    { codigo: "MBC0060", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Chamarras", planta: "Planta Alta", area: "Chamarras", ubicacionDetalle: "Planta Alta Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0063", nombre: "Pesp. Cerrar", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0069", nombre: "Pesp. Plana 1 aguja", proceso: "Pespuntar Chamarras", planta: "Planta Alta", area: "Chamarras", ubicacionDetalle: "Planta Alta Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0072", nombre: "Costura recta c/palanca de retroceso", proceso: "Pespuntar Cinturones", planta: "Planta Baja", area: "Cinturones", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0077", nombre: "Pesp. Plana 1 aguja", proceso: "Pespuntar Chamarras", planta: "Planta Alta", area: "Chamarras", ubicacionDetalle: "Planta Alta Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0078", nombre: "Plana 2 agujas", proceso: "Pespuntar Cinturones", planta: "Planta Baja", area: "Cinturones", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0079", nombre: "Maquina de Pespuntar", proceso: "Pespuntar Chamarras", planta: "Planta Baja", area: "Chamarras", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0080", nombre: "Pesp. Zic Zac", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0081", nombre: "Pesp. Zic Zac", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0082", nombre: "Pesp. Zic Zac", proceso: "Pespuntar Chamarras", planta: "Planta Alta", area: "Chamarras", ubicacionDetalle: "Planta Alta Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0084", nombre: "Pesp. Zic Zac", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0085", nombre: "Pesp. Zic Zac", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0091", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Cinturones", planta: "Planta Baja", area: "Cinturones", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0092", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Billeteras Lambda", planta: "Planta Baja", area: "Billeteras Lambda", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0093", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0101", nombre: "Pesp. Poste automática 2 agujas", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0103", nombre: "Pesp. Poste automática 2 agujas", proceso: "Pespuntar Billeteras Lambda", planta: "Planta Baja", area: "Billeteras Lambda", ubicacionDetalle: "Planta Baja Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0104", nombre: "Pesp. Poste automática 1 agujas", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0105", nombre: "Pesp. Poste automática 2 agujas", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0107", nombre: "Pesp. Poste automática 2 agujas", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0108", nombre: "Pesp. Poste automática 2 agujas", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "DESUSO", ubicacionDetalle: "Planta Alta DESUSO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0109", nombre: "Pesp. Poste automática 2 agujas", proceso: "Pespuntar PESPUNTE", planta: "Planta Alta", area: "DESUSO", ubicacionDetalle: "Planta Alta DESUSO", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0110", nombre: "Pesp. Poste automática 2 agujas", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0111", nombre: "Pesp. Poste automática 1 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0112", nombre: "Pesp. Poste automática 1 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0113", nombre: "Pesp. Poste automática 1 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0114", nombre: "Pesp. Poste automática 1 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0115", nombre: "Pesp. Poste automática 2 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0116", nombre: "Pesp. Poste automática 2 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0117", nombre: "Pesp. Poste automática 2 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0121", nombre: "Pesp. Sobre costura poste giratorio", proceso: "Pespuntar Lambda", planta: "Planta Baja", area: "Accesorios Lambda", ubicacionDetalle: "Accesorios Lambda", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0122", nombre: "Pesp. Sobre costura poste giratorio", proceso: "Pespuntar Lambda", planta: "Planta Baja", area: "Accesorios Lambda", ubicacionDetalle: "Accesorios Lambda", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0124", nombre: "Costura recta c/corte de hilo", proceso: "Pespuntar Lambda", planta: "Planta Baja", area: "Accesorios Lambda", ubicacionDetalle: "Accesorios Lambda", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0126", nombre: "Costura recta c/corte de hilo", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0127", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Chamarras", planta: "Planta Alta", area: "Chamarras", ubicacionDetalle: "Planta Alta Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0128", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0129", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0131", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Chamarras", planta: "Planta Alta", area: "Chamarras", ubicacionDetalle: "Planta Alta Mezannine ACC", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0132", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0133", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Lambda", planta: "Planta Baja", area: "Accesorios Lambda", ubicacionDetalle: "Accesorios Lambda", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0136", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0137", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0138", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Pespunte", planta: "Planta Alta", area: "Pespunte", ubicacionDetalle: "Planta Alta Mezannine PESPUNTE PRELIMINARES", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0139", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Lambda", planta: "Planta Baja", area: "Accesorios Lambda", ubicacionDetalle: "Accesorios Lambda", criticidad: CriticidadMaquina.C },
+    { codigo: "MBC0140", nombre: "Pesp. Plana automática 1 aguja", proceso: "Pespuntar Lambda", planta: "Planta Baja", area: "Accesorios Lambda", ubicacionDetalle: "Accesorios Lambda", criticidad: CriticidadMaquina.C },
+  ];
+
+  for (const item of catalogoMaquinas) {
+    let deptoId = mttoDeptoId;
+    if (item.area.includes("Pespunte") || item.area.includes("Acabado") || item.area.includes("Montado")) {
+      deptoId = deptoMap["Producción Kappa"];
+    }
+
+    await prisma.maquina.upsert({
+      where: { codigo: item.codigo },
+      update: {
+        nombre: item.nombre,
+        proceso: item.proceso,
+        planta: item.planta,
+        area: item.area,
+        ubicacionDetalle: item.ubicacionDetalle,
+        criticidad: item.criticidad,
+        departamentoId: deptoId
+      },
+      create: {
+        codigo: item.codigo,
+        nombre: item.nombre,
+        proceso: item.proceso,
+        planta: item.planta,
+        area: item.area,
+        ubicacionDetalle: item.ubicacionDetalle,
+        criticidad: item.criticidad,
+        estado: EstadoMaquina.OPERATIVA,
+        departamentoId: deptoId
+      }
+    });
   }
 
   console.log(`✅ Base de datos poblada exitosamente.`);

@@ -188,6 +188,51 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
         data: datosActualizacion
       });
 
+      if (nuevoEstado === EstadoTarea.EN_PROGRESO && ticket.maquinaId && ticket.paroProduccion) {
+        await tx.maquina.update({
+          where: { id: ticket.maquinaId },
+          data: { estado: "EN_REPARACION" }
+        });
+      }
+
+      if (nuevoEstado === EstadoTarea.RECHAZADO && ticket.maquinaId && ticket.paroProduccion) {
+        await tx.maquina.update({
+          where: { id: ticket.maquinaId },
+          data: { estado: "EN_REPARACION" }
+        });
+      }
+
+      if (esEstadoResolucion && ticket.maquinaId) {
+        await tx.maquina.update({
+          where: { id: ticket.maquinaId },
+          data: { fechaUltimoServicio: ahora }
+        });
+
+        const otrosParosActivos = await tx.tarea.count({
+          where: {
+            maquinaId: ticket.maquinaId,
+            paroProduccion: true,
+            estado: {
+              in: [
+                EstadoTarea.PENDIENTE,
+                EstadoTarea.ASIGNADA,
+                EstadoTarea.EN_PROGRESO,
+                EstadoTarea.EN_PAUSA,
+                EstadoTarea.RECHAZADO
+              ]
+            },
+            NOT: { id: ticketId }
+          }
+        });
+
+        if (otrosParosActivos === 0) {
+          await tx.maquina.update({
+            where: { id: ticket.maquinaId },
+            data: { estado: "OPERATIVA" }
+          });
+        }
+      }
+
       if (nuevoEstado === EstadoTarea.CANCELADA) {
         const imagenesPrevias = await tx.imagen.findMany({
           where: {

@@ -65,6 +65,16 @@ export const ticketStandardInclude = {
             select: { nombre: true }
         }
     }
+  },
+  maquina: {
+    select: {
+      id: true,
+      codigo: true,
+      nombre: true,
+      proceso: true,
+      criticidad: true,
+      estado: true
+    }
   }
 } satisfies Prisma.TareaInclude;
 

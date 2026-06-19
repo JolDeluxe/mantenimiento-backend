@@ -8,37 +8,45 @@ cloudinary.config({
 });
 
 export const uploadUserProfileImage = async (buffer: Buffer): Promise<string> => {
-  const base64 = buffer.toString("base64");
-  const dataUri = `data:image/jpeg;base64,${base64}`;
-
-  const result = await cloudinary.uploader.upload(dataUri, {
-    folder: "Mantenimiento/Usuarios",
-    resource_type: "image",
-    transformation: [
-      { width: 500, height: 500, crop: "thumb", gravity: "face" },
-      { quality: "auto:good" },
-      { fetch_format: "auto" },
-    ],
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: "Mantenimiento/Usuarios",
+        resource_type: "image",
+        transformation: [
+          { width: 500, height: 500, crop: "thumb", gravity: "face" },
+          { quality: "auto:good" },
+          { fetch_format: "auto" },
+        ],
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result!.secure_url);
+      }
+    );
+    uploadStream.end(buffer);
   });
-
-  return result.secure_url;
 };
 
 export const uploadTaskImage = async (buffer: Buffer): Promise<string> => {
-  const base64 = buffer.toString("base64");
-  const dataUri = `data:image/jpeg;base64,${base64}`;
-
-  const result = await cloudinary.uploader.upload(dataUri, {
-    folder: "Mantenimiento/Tareas",
-    resource_type: "image",
-    transformation: [
-      { width: 1280, crop: "limit" },
-      { quality: "auto:good" },
-      { fetch_format: "auto" },
-    ],
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: "Mantenimiento/Tareas",
+        resource_type: "image",
+        transformation: [
+          { width: 1280, crop: "limit" },
+          { quality: "auto:good" },
+          { fetch_format: "auto" },
+        ],
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result!.secure_url);
+      }
+    );
+    uploadStream.end(buffer);
   });
-
-  return result.secure_url;
 };
 
 export const deleteImageByUrl = async (imageUrl: string) => {

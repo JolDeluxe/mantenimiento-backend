@@ -18,6 +18,7 @@ import bitacora from './routes/bitacora_rutas';
 import tickets from './routes/tickets_rutas';
 import notificaciones from "./routes/notificaciones_rutas";
 import dashboard from "./routes/dashboard_rutas";
+import maquinas from "./routes/maquinas_rutas";
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -43,6 +44,7 @@ app.use("/api/bitacora", bitacora);
 app.use("/api/tickets", tickets);
 app.use("/api/notificaciones", notificaciones);
 app.use("/api/dashboard", dashboard);
+app.use("/api/maquinas", maquinas);
 
 // --- ARRANQUE DEL SERVIDOR ---
 

@@ -40,6 +40,9 @@ export const createTicketCliente = async (req: Request, res: Response) => {
           creadorId: user.id,
           departamentoId: user.departamentoId,
           duracionReal: 0,
+          maquinaId: data.maquinaId,
+          paroProduccion: data.paroProduccion,
+          impactoProduccion: data.impactoProduccion,
         },
         include: { creador: true }
       });
