@@ -2,13 +2,6 @@
 import { z } from "zod";
 import { Prioridad, EstadoTarea, TipoTarea, ClasificacionTarea } from "@prisma/client";
 
-const clasificacionesCliente = [
-  ClasificacionTarea.CORRECTIVO, 
-  ClasificacionTarea.PREVENTIVO,
-  ClasificacionTarea.MEJORA,
-  ClasificacionTarea.INFRAESTRUCTURA,
-] as [string, ...string[]];
-
 const commonString = z.string().trim();
 
 const preprocessNumberArray = (val: unknown) => {
@@ -125,8 +118,14 @@ export const createTicketClientSchema = z.object({
     (val) => val === "true" || val === true,
     z.boolean().default(false)
   ),
-  impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional())
+  impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
+  // NUEVO: bandera TPM — el operario ya resolvió el fallo de forma autónoma
+  esMantenimientoAutonomo: z.preprocess(
+    (val) => val === "true" || val === true,
+    z.boolean().default(false)
+  ),
 });
+
 
 export const createTicketAdminSchema = z.object({
   titulo: commonString.min(3),

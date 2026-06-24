@@ -53,25 +53,9 @@ enum TipoTarea {
 }
 
 enum ClasificacionTarea {
-  PREVENTIVO        
-  CORRECTIVO        
-  INSPECCION        
-  RUTINA
-  MEJORA
-  INFRAESTRUCTURA
-}
-
-enum CriticidadMaquina {
-  A
-  B
-  C
-}
-
-enum EstadoMaquina {
-  OPERATIVA
-  EN_REPARACION
-  INACTIVA
-  BAJA
+  PREVENTIVO
+  CORRECTIVO
+  AUTONOMO
 }
 
 enum TipoNotificacion {
@@ -148,7 +132,7 @@ model Tarea {
   
   // --- CLASIFICACIÓN DEL TRABAJO ---
   tipo             TipoTarea          @default(TICKET)  
-  clasificacion    ClasificacionTarea @default(CORRECTIVO)
+  clasificacion    ClasificacionTarea?
   
   titulo           String             @db.VarChar(255) 
   categoria        String?            
@@ -209,27 +193,27 @@ model Tarea {
 model Maquina {
   id                  Int               @id @default(autoincrement())
   
-  codigo              String            @unique @db.VarChar(50) // Formato estricto MBC + 4 dígitos (ej: MBC0018)
-  nombre              String            @db.VarChar(255)
-  proceso             String            @db.VarChar(150)        // Proceso (Tipo de Maquinaria)
-  descripcion         String?           @db.Text
+  codigo              String            @unique @db.VarChar(50) // Formato MBC0000 (ERP Magnus)
+  nombre              String            @db.VarChar(255)        // Nombre descriptivo (ERP Magnus)
+  proceso             String            @db.VarChar(150)        // Proceso/Tipo (ERP Magnus)
+  descripcion         String?           @db.Text                // Observaciones (ERP Magnus)
   imagen              String?           @db.VarChar(255)
 
-  criticidad          CriticidadMaquina @default(C)
-  estado              EstadoMaquina     @default(OPERATIVA)
+  criticidad          String?           @default("C") @db.VarChar(10)       // Clasificación ABC (Editable localmente)
+  estado              String            @default("OPERATIVA") @db.VarChar(50)  // Estado operativo (Operativa, En Reparación, Inactiva, Baja, Baja_ERP)
 
-  marca               String?           @db.VarChar(100)
-  modelo              String?           @db.VarChar(100)
-  numeroSerie         String?           @unique @db.VarChar(100)
+  marca               String?           @db.VarChar(100)        // Fabricante (ERP Magnus)
+  modelo              String?           @db.VarChar(100)        // Modelo (ERP Magnus)
+  numeroSerie         String?           @unique @db.VarChar(100) // S/N (ERP Magnus)
 
-  planta              String            @db.VarChar(100)        // Planta Baja o Planta Alta
-  area                String            @db.VarChar(100)        // Ubicación corta (Cinturones, Lambda, Acabado L1)
-  ubicacionDetalle    String?           @db.VarChar(255)        // Ubicación física completa del catálogo
+  planta              String            @db.VarChar(100)        // Planta/Piso derivada (ERP Magnus)
+  area                String            @db.VarChar(100)        // Área/Línea derivada (ERP Magnus)
+  ubicacionDetalle    String?           @db.VarChar(255)        // Ubicación cruda (ERP Magnus)
 
-  fechaInstalacion    DateTime?
-  fechaUltimoServicio DateTime?
+  fechaInstalacion    DateTime?                                 // Instalación (ERP Magnus)
+  fechaUltimoServicio DateTime?                                 // Último Servicio (Calculado localmente)
 
-  departamentoId      Int?
+  departamentoId      Int?                                      // Departamento derivado (ERP Magnus)
   departamento        Departamento?     @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
   
   tareas              Tarea[]

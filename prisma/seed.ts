@@ -6,11 +6,22 @@ import {
   EstadoTarea, 
   TipoTarea, 
   ClasificacionTarea, 
-  TipoEvento,
-  CriticidadMaquina,
-  EstadoMaquina
+  TipoEvento
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+
+const CriticidadMaquina = {
+  A: 'A',
+  B: 'B',
+  C: 'C',
+} as const;
+
+const EstadoMaquina = {
+  OPERATIVA: 'OPERATIVA',
+  EN_REPARACION: 'EN_REPARACION',
+  INACTIVA: 'INACTIVA',
+  BAJA: 'BAJA',
+} as const;
 
 const prisma = new PrismaClient();
 
@@ -65,7 +76,7 @@ const templates: TareaTemplate[] = [
     area: "LASER",
     categoria: "GESTION",
     tipo: TipoTarea.PLANEADA,
-    clasificacion: ClasificacionTarea.INSPECCION,
+    clasificacion: ClasificacionTarea.PREVENTIVO,
     tiempoEstimado: 120
   },
   {
@@ -105,7 +116,7 @@ const templates: TareaTemplate[] = [
     area: "LASER Y BORDADO",
     categoria: "MAQUINARIA",
     tipo: TipoTarea.PLANEADA,
-    clasificacion: ClasificacionTarea.INSPECCION,
+    clasificacion: ClasificacionTarea.PREVENTIVO,
     tiempoEstimado: 60
   },
   {
@@ -115,7 +126,7 @@ const templates: TareaTemplate[] = [
     area: "PATIO",
     categoria: "INFRAESTRUCTURA",
     tipo: TipoTarea.PLANEADA,
-    clasificacion: ClasificacionTarea.INSPECCION,
+    clasificacion: ClasificacionTarea.PREVENTIVO,
     tiempoEstimado: 90
   },
   {
@@ -155,7 +166,7 @@ const templates: TareaTemplate[] = [
     area: "PATIO",
     categoria: "EQUIPO/MATERIAL",
     tipo: TipoTarea.PLANEADA,
-    clasificacion: ClasificacionTarea.INSPECCION,
+    clasificacion: ClasificacionTarea.PREVENTIVO,
     tiempoEstimado: 120
   },
   {
@@ -195,7 +206,7 @@ const templates: TareaTemplate[] = [
     area: "TALLER MTTO",
     categoria: "GESTION",
     tipo: TipoTarea.PLANEADA,
-    clasificacion: ClasificacionTarea.INSPECCION,
+    clasificacion: ClasificacionTarea.PREVENTIVO,
     tiempoEstimado: 60
   },
   {
@@ -205,7 +216,7 @@ const templates: TareaTemplate[] = [
     area: "PESPUNTE",
     categoria: "MAQUINARIA",
     tipo: TipoTarea.PLANEADA,
-    clasificacion: ClasificacionTarea.INSPECCION,
+    clasificacion: ClasificacionTarea.PREVENTIVO,
     tiempoEstimado: 90
   },
   {
@@ -255,7 +266,7 @@ const templates: TareaTemplate[] = [
     area: "PATIO",
     categoria: "EQUIPO/MATERIAL",
     tipo: TipoTarea.PLANEADA,
-    clasificacion: ClasificacionTarea.INSPECCION,
+    clasificacion: ClasificacionTarea.PREVENTIVO,
     tiempoEstimado: 45
   },
   {
@@ -859,26 +870,48 @@ async function main() {
       deptoId = deptoMap["Producción Kappa"];
     }
 
+    let plantName = "KAPPA";
+    const areaUpper = item.area.toUpperCase();
+    const processUpper = item.proceso.toUpperCase();
+    const detailUpper = item.ubicacionDetalle.toUpperCase();
+    if (areaUpper.includes("PT") || detailUpper.includes("OMEGA") || item.area === "PT OMEGA") {
+      plantName = "OMEGA";
+    } else if (areaUpper.includes("SIGMA") || areaUpper.includes("LASER") || processUpper.includes("LASER")) {
+      plantName = "SIGMA";
+    } else if (areaUpper.includes("LAMBDA") || areaUpper.includes("BILLETERAS")) {
+      plantName = "LAMBDA";
+    } else if (areaUpper.includes("VENTA")) {
+      plantName = "VENTA";
+    } else if (areaUpper.includes("BAJA")) {
+      plantName = "BAJA";
+    } else if (areaUpper.includes("SERVICIOS") || areaUpper.includes("GENERAL") || detailUpper.includes("SERVICIOS")) {
+      plantName = "GENERAL";
+    }
+
+    const isBaja = areaUpper.includes("BAJA");
+    const estadoFinal = isBaja ? EstadoMaquina.BAJA : EstadoMaquina.OPERATIVA;
+
     await prisma.maquina.upsert({
       where: { codigo: item.codigo },
       update: {
         nombre: item.nombre,
         proceso: item.proceso,
-        planta: item.planta,
+        planta: plantName,
         area: item.area,
         ubicacionDetalle: item.ubicacionDetalle,
         criticidad: item.criticidad,
-        departamentoId: deptoId
+        departamentoId: deptoId,
+        ...(isBaja ? { estado: EstadoMaquina.BAJA } : {})
       },
       create: {
         codigo: item.codigo,
         nombre: item.nombre,
         proceso: item.proceso,
-        planta: item.planta,
+        planta: plantName,
         area: item.area,
         ubicacionDetalle: item.ubicacionDetalle,
         criticidad: item.criticidad,
-        estado: EstadoMaquina.OPERATIVA,
+        estado: estadoFinal,
         departamentoId: deptoId
       }
     });

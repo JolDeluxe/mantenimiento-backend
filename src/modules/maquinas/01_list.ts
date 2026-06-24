@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { Prisma, EstadoTarea, EstadoMaquina } from "@prisma/client";
+import { Prisma, EstadoTarea } from "@prisma/client";
 import type { ListMaquinasQuery, KpisMaquinaQuery } from "./zod";
+import { getMaquinasDistinctValues } from "./helper";
 
 export const listarMaquinas = async (req: Request, res: Response) => {
   try {
@@ -28,7 +29,7 @@ export const listarMaquinas = async (req: Request, res: Response) => {
       ];
     }
 
-    const [total, maquinas] = await Promise.all([
+    const [total, maquinas, catalogs] = await Promise.all([
       prisma.maquina.count({ where }),
       prisma.maquina.findMany({
         where,
@@ -36,7 +37,8 @@ export const listarMaquinas = async (req: Request, res: Response) => {
         skip: offset,
         include: { departamento: true },
         orderBy: { codigo: "asc" }
-      })
+      }),
+      getMaquinasDistinctValues()
     ]);
 
     return res.json({
@@ -47,6 +49,7 @@ export const listarMaquinas = async (req: Request, res: Response) => {
         limit,
         totalPages: Math.ceil(total / limit)
       },
+      catalogs,
       data: maquinas
     });
 

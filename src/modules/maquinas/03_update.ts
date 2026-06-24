@@ -36,19 +36,8 @@ export const updateMaquina = async (req: Request, res: Response) => {
     const maquinaActualizada = await prisma.maquina.update({
       where: { id },
       data: {
-        nombre: data.nombre,
-        proceso: data.proceso,
-        descripcion: data.descripcion,
         criticidad: data.criticidad,
-        estado: data.estado,
-        marca: data.marca,
-        modelo: data.modelo,
-        numeroSerie: data.numeroSerie,
-        planta: data.planta,
-        area: data.area,
-        ubicacionDetalle: data.ubicacionDetalle,
-        departamentoId: data.departamentoId,
-        fechaInstalacion: data.fechaInstalacion
+        descripcion: data.descripcion
       }
     });
 

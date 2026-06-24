@@ -29,7 +29,11 @@ export const patchMaquinaEstado = async (req: Request, res: Response) => {
       data: { estado }
     });
 
-    await registrarAccion("PATCH_MAQUINA_ESTADO", user.id, `Estado de máquina ${maquinaActualizada.codigo} cambiado a ${estado}`);
+    await registrarAccion(
+      "PATCH_MAQUINA_ESTADO",
+      user.id,
+      `Estado de máquina ${maquinaActualizada.codigo} cambiado a ${estado}`
+    );
 
     return res.json({
       status: "success",
