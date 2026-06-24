@@ -72,6 +72,32 @@ export const updateTicket = async (req: Request, res: Response) => {
       nuevaFechaVencimiento = fecha;
     }
 
+    const categoriaFinal = data.categoria !== undefined ? data.categoria : tareaActual.categoria;
+    let finalMaquinaId   = data.maquinaId !== undefined ? data.maquinaId : tareaActual.maquinaId;
+    let finalPlanta      = data.planta !== undefined ? data.planta : (esAdmin ? tareaActual.planta : undefined);
+    let finalArea        = data.area !== undefined ? data.area : (esAdmin ? tareaActual.area : undefined);
+
+    if (categoriaFinal === "MAQUINARIA" && finalMaquinaId) {
+      const maquinaDb = await prisma.maquina.findUnique({
+        where: { id: finalMaquinaId },
+        select: { planta: true, area: true, estado: true }
+      });
+
+      if (!maquinaDb) {
+        return res.status(400).json({ error: "La máquina seleccionada no existe." });
+      }
+
+      if (maquinaDb.estado === "BAJA" || maquinaDb.estado === "BAJA_ERP") {
+        return res.status(400).json({ error: "No se pueden asociar máquinas dadas de baja." });
+      }
+
+      // La verdad absoluta viene de la máquina
+      finalPlanta = maquinaDb.planta;
+      finalArea   = maquinaDb.area;
+    } else if (categoriaFinal !== "MAQUINARIA") {
+      finalMaquinaId = null;
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const tareaActualizada = await tx.tarea.update({
         where: { id: ticketId },
@@ -79,8 +105,11 @@ export const updateTicket = async (req: Request, res: Response) => {
           titulo:       (esCliente || esAdmin) ? data.titulo       : undefined,
           descripcion:  (esCliente || esAdmin) ? data.descripcion  : undefined,
           categoria:    (esCliente || esAdmin) ? data.categoria    : undefined,
-          planta:       esAdmin ? data.planta        : undefined,
-          area:         esAdmin ? data.area          : undefined,
+          planta:       (esAdmin || (esCliente && finalPlanta !== undefined)) ? finalPlanta : undefined,
+          area:         (esAdmin || (esCliente && finalArea !== undefined)) ? finalArea : undefined,
+          maquinaId:    (esAdmin || esCliente) ? finalMaquinaId : undefined,
+          paroProduccion: (esAdmin || esCliente) ? data.paroProduccion : undefined,
+          impactoProduccion: (esAdmin || esCliente) ? data.impactoProduccion : undefined,
           prioridad:    esAdmin ? data.prioridad     : undefined,
           fechaVencimiento: nuevaFechaVencimiento,
           tiempoEstimado: esAdmin ? data.tiempoEstimado : undefined,

@@ -78,6 +78,11 @@ export const ticketStandardInclude = {
   }
 } satisfies Prisma.TareaInclude;
 
-export type TicketWithDetails = Prisma.TareaGetPayload<{
+export type TicketWithDetails = Omit<Prisma.TareaGetPayload<{
   include: typeof ticketStandardInclude
-}>;
+}>, "maquinaId" | "maquina"> & {
+  maquinaId: number | null;
+  maquina: Prisma.TareaGetPayload<{
+    include: typeof ticketStandardInclude
+  }>["maquina"] | null;
+};

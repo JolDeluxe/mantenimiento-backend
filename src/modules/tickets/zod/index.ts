@@ -124,7 +124,7 @@ export const createTicketClientSchema = z.object({
     (val) => val === "true" || val === true,
     z.boolean().default(false)
   ),
-});
+}).strict();
 
 
 export const createTicketAdminSchema = z.object({
@@ -146,7 +146,7 @@ export const createTicketAdminSchema = z.object({
     z.boolean().default(false)
   ),
   impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional())
-});
+}).strict();
 
 export const updateTicketSchema = z.object({
   params: z.object({ id: z.coerce.number().int().positive() }),

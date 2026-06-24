@@ -56,7 +56,7 @@ export const listMaquinasSchema = z.object({
   query: z.object({
     q: z.string().optional(),
     page: z.coerce.number().min(1).default(1),
-    limit: z.coerce.number().min(1).max(100).default(20),
+    limit: z.coerce.number().min(1).max(1000).default(20),
     estado: z.preprocess(preprocessEmpty, z.enum(ESTADOS_MAQUINA_VALIDOS).optional()),
     criticidad: z.preprocess(preprocessEmpty, z.enum(CRITICIDADES_VALIDAS).optional()),
     proceso: z.preprocess(preprocessEmpty, z.string().optional()),
