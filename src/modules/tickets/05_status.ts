@@ -63,7 +63,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
       if (!esResponsable) {
         return res.status(403).json({ error: "No estás asignado a este ticket." });
       }
-      if (nuevoEstado === EstadoTarea.CERRADO && ticket.clasificacion !== ClasificacionTarea.RUTINA && ticket.categoria !== 'RUTINA') {
+      if (nuevoEstado === EstadoTarea.CERRADO && (ticket.clasificacion as any) !== 'RUTINA' && ticket.categoria !== 'RUTINA') {
         return res.status(403).json({ error: "Solo el cliente o el jefe pueden cerrar el ticket definitivamente." });
       }
       if (ticket.estado === EstadoTarea.PENDIENTE) {
@@ -76,7 +76,7 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
     // --- INTERCEPCIÓN DE INSPECCIÓN (AUTO-CIERRE) ---
     // Se ejecuta después de validar permisos y transiciones para que el técnico pueda enviar "RESUELTO"
     // y el sistema lo promueva a "CERRADO" automáticamente sin disparar errores de validación.
-    if (nuevoEstado === EstadoTarea.RESUELTO && ticket.clasificacion === ClasificacionTarea.INSPECCION) {
+    if (nuevoEstado === EstadoTarea.RESUELTO && (ticket.clasificacion as any) === 'INSPECCION') {
       nuevoEstado = EstadoTarea.CERRADO;
       nota = nota ? `${nota} (Cierre automático por Inspección)` : "(Cierre automático por Inspección)";
     }
@@ -265,15 +265,11 @@ export const changeTicketStatus = async (req: Request, res: Response) => {
 
       let notaHistorial = nota ? nota.trim() : "Sin observaciones";
 
-      if (nuevoEstado === EstadoTarea.CERRADO && (ticket.clasificacion === ClasificacionTarea.RUTINA || ticket.categoria === 'RUTINA')) {
+      if (nuevoEstado === EstadoTarea.CERRADO && ((ticket.clasificacion as any) === 'RUTINA' || ticket.categoria === 'RUTINA')) {
         notaHistorial += ' [RUTINA]';
       }
-if (minutosManualesDirectos > 0) {
-        const h = Math.floor(minutosManualesDirectos / 60);
-        const m = minutosManualesDirectos % 60;
-        const tiempoStr = h > 0 ? (m > 0 ? `${h} h ${m} min` : `${h} h`) : `${m} min`;
-        
-        notaHistorial += ` [TIEMPO_MANUAL:${tiempoStr}]`;
+      if (minutosManualesDirectos > 0) {
+        notaHistorial += ` ||[META:TIEMPO_MANUAL]||`;
       }
       
       const historial = await tx.historialTarea.create({

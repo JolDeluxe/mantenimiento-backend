@@ -208,7 +208,7 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
     }), {});
 
     const eficaciaPorClasificacion = eficaciaPorClasificacionData.reduce((acc, curr) => ({
-      ...acc, [curr.clasificacion]: {
+      ...acc, [curr.clasificacion || "Sin Clasificación"]: {
         promedioEstimadoMins: Math.round(curr._avg.tiempoEstimado || 0),
         promedioRealMins: Math.round(curr._avg.duracionReal || 0)
       }

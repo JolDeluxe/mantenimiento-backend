@@ -25,16 +25,21 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     vencimientoDesde, vencimientoHasta,
     finalizadoDesde, finalizadoHasta,
     huerfanos, vencidos,
-    year, month // Inyección de los parámetros Macro Históricos
+    year, month, // Inyección de los parámetros Macro Históricos
+    maquinaId
   } = query;
 
   const where: Prisma.TareaWhereInput = {};
   const andConditions: Prisma.TareaWhereInput[] = [];
 
   if (user.rol === Rol.TECNICO) {
-    andConditions.push({ responsables: { some: { id: user.id } } });
+    if (!maquinaId) {
+      andConditions.push({ responsables: { some: { id: user.id } } });
+    }
   } else if (user.rol === Rol.CLIENTE_INTERNO) {
-    where.creadorId = user.id;
+    if (!maquinaId) {
+      where.creadorId = user.id;
+    }
   }
 
   if (prioridad) where.prioridad = prioridad;
@@ -43,6 +48,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   if (categoria) where.categoria = categoria;
   if (planta) where.planta = planta;
   if (area) where.area = area;
+  if (maquinaId) where.maquinaId = maquinaId;
 
   // Filtro de Periodo Histórico (Año / Mes sobre la creación del ticket)
   if (year) {
@@ -127,8 +133,8 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   return where;
 };
 
-export const isValidTransition = (current: EstadoTarea, next: EstadoTarea, clasificacion?: ClasificacionTarea, categoria?: string | null): boolean => {
-  if (clasificacion === ClasificacionTarea.RUTINA || categoria === 'RUTINA') {
+export const isValidTransition = (current: EstadoTarea, next: EstadoTarea, clasificacion?: ClasificacionTarea | null, categoria?: string | null): boolean => {
+  if ((clasificacion as any) === 'RUTINA' || categoria === 'RUTINA') {
     if (next === EstadoTarea.CERRADO && ([EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.RECHAZADO] as EstadoTarea[]).includes(current)) {
       return true;
     }

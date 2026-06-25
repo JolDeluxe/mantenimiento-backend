@@ -82,6 +82,9 @@ export const getMaquinaById = async (req: Request, res: Response) => {
 export const getMaquinaPrefill = async (req: Request, res: Response) => {
   try {
     const { codigo } = req.params;
+    if (!codigo) {
+      return res.status(400).json({ error: "Código de máquina no provisto" });
+    }
     const maquina = await prisma.maquina.findUnique({
       where: { codigo: codigo.toUpperCase() },
       include: {
@@ -112,11 +115,13 @@ export const getMaquinaPrefill = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Máquina no encontrada" });
     }
 
-    const prioridadSugerida = {
+    const criticidadKey = (maquina.criticidad || "C") as "A" | "B" | "C";
+    const sugeridaMap = {
       A: "ALTA",
       B: "MEDIA",
       C: "BAJA"
-    }[maquina.criticidad];
+    };
+    const prioridadSugerida = sugeridaMap[criticidadKey] || "MEDIA";
 
     return res.json({
       status: "success",
@@ -179,11 +184,28 @@ export const getMaquinaKPIs = async (req: Request, res: Response) => {
     const mttr = totalFallas > 0 ? Math.round(tiempoReparacionTotal / totalFallas) : null;
 
     let mtbfDays: number | null = null;
-    if (totalFallas > 1) {
-      const primerFalla = tareas[0].createdAt.getTime();
-      const ultimaFalla = tareas[totalFallas - 1].createdAt.getTime();
+    const firstTask = tareas[0];
+    const lastTask = tareas[totalFallas - 1];
+    if (totalFallas > 1 && firstTask && lastTask) {
+      const primerFalla = firstTask.createdAt.getTime();
+      const ultimaFalla = lastTask.createdAt.getTime();
       const diffDias = (ultimaFalla - primerFalla) / (1000 * 60 * 60 * 24);
       mtbfDays = Math.round(diffDias / (totalFallas - 1));
+    }
+
+    // Buscar el último servicio de forma robusta
+    let fechaUltimoServicio = maquina.fechaUltimoServicio;
+    if (!fechaUltimoServicio) {
+      const ultimaTarea = await prisma.tarea.findFirst({
+        where: {
+          maquinaId: id,
+          estado: { in: [EstadoTarea.RESUELTO, EstadoTarea.CERRADO] }
+        },
+        orderBy: { finalizadoAt: "desc" }
+      });
+      if (ultimaTarea) {
+        fechaUltimoServicio = ultimaTarea.finalizadoAt || ultimaTarea.updatedAt || ultimaTarea.createdAt;
+      }
     }
 
     // Tendencia agrupada temporal
@@ -220,7 +242,7 @@ export const getMaquinaKPIs = async (req: Request, res: Response) => {
           minutosReparacionAcumulados: tiempoReparacionTotal,
           mttrMinutos: mttr,
           mtbfDias: mtbfDays,
-          fechaUltimoServicio: maquina.fechaUltimoServicio
+          fechaUltimoServicio: fechaUltimoServicio
         },
         tendencia
       }
