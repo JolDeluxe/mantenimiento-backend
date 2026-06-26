@@ -77,6 +77,8 @@ export const ticketFilterSchema = z.object({
     
     huerfanos: z.preprocess((val) => val === "true", z.boolean().optional()),
     vencidos: z.preprocess((val) => val === "true", z.boolean().optional()),
+    perteneceAHoy: z.preprocess((val) => val === "true", z.boolean().optional()),
+    venceManana: z.preprocess((val) => val === "true", z.boolean().optional()),
     
     sort: z.preprocess(
       (val) => {

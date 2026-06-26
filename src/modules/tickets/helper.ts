@@ -27,11 +27,29 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     finalizadoDesde, finalizadoHasta,
     huerfanos, vencidos,
     year, month, // Inyección de los parámetros Macro Históricos
-    maquinaId
+    maquinaId,
+    perteneceAHoy,
+    venceManana
   } = query;
 
   const where: Prisma.TareaWhereInput = {};
   const andConditions: Prisma.TareaWhereInput[] = [];
+
+  // Configuración del huso horario de Ciudad de México para filtros temporales
+  const toMXDateStr = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const hoyMXStr = toMXDateStr(new Date());
+  const parts = hoyMXStr.split('-').map(Number);
+  const [yMX, mMX, dMX] = [parts[0]!, parts[1]!, parts[2]!];
+  // Probar offset CDT (UTC-5, hora 5) primero; si el resultado MX coincide con hoy, úsalo.
+  // De lo contrario caer a CST (UTC-6, hora 6).
+  const candidateCDT = new Date(Date.UTC(yMX, mMX - 1, dMX, 5, 0, 0, 0));
+  const inicioDiaHoyMX = toMXDateStr(candidateCDT) === hoyMXStr
+    ? candidateCDT
+    : new Date(Date.UTC(yMX, mMX - 1, dMX, 6, 0, 0, 0));
+
+  const finDiaHoyMX = new Date(inicioDiaHoyMX.getTime() + 24 * 60 * 60 * 1000 - 1);
+  const inicioDiaMananaMX = new Date(inicioDiaHoyMX.getTime() + 24 * 60 * 60 * 1000);
+  const finDiaMananaMX = new Date(inicioDiaHoyMX.getTime() + 48 * 60 * 60 * 1000 - 1);
 
   if (user.rol === Rol.TECNICO) {
     if (!maquinaId) {
@@ -74,7 +92,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   // Si no te la piden, exclúyela de tajo para que no ensucie la app.
   if (estado) {
     where.estado = estado;
-  } else if (!vencidos && !huerfanos) {
+  } else if (!vencidos && !huerfanos && !perteneceAHoy && !venceManana) {
     where.estado = { not: EstadoTarea.CANCELADA };
   }
 
@@ -87,28 +105,51 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     where.estado = EstadoTarea.PENDIENTE;
   }
 
+  if (perteneceAHoy) {
+    // Excluir estados terminales: RESUELTO, CERRADO, CANCELADA
+    andConditions.push({
+      estado: {
+        notIn: [EstadoTarea.RESUELTO, EstadoTarea.CERRADO, EstadoTarea.CANCELADA]
+      }
+    });
+
+    // Pertenece a Hoy: vence hoy o antes (atrasada) o está rechazada
+    andConditions.push({
+      OR: [
+        {
+          fechaVencimiento: {
+            lte: finDiaHoyMX
+          }
+        },
+        {
+          estado: EstadoTarea.RECHAZADO
+        }
+      ]
+    });
+  }
+
+  if (venceManana) {
+    // Excluir estados terminales: RESUELTO, CERRADO, CANCELADA
+    andConditions.push({
+      estado: {
+        notIn: [EstadoTarea.RESUELTO, EstadoTarea.CERRADO, EstadoTarea.CANCELADA]
+      }
+    });
+
+    // Vence exactamente mañana
+    andConditions.push({
+      fechaVencimiento: {
+        gte: inicioDiaMananaMX,
+        lte: finDiaMananaMX
+      }
+    });
+  }
+
   // Combinación inteligente de Vencidos y Rangos
   const filterVencimiento: Prisma.DateTimeFilter = {};
   let hasVencimientoFilter = false;
 
   if (vencidos) {
-    // BUG FIX: No usar `new Date()` (datetime actual) porque causa falsos positivos.
-    // Las tareas se guardan como YYYY-MM-DDT12:00:00.000Z (mediodía UTC).
-    // Si comparamos con `new Date()` (ej. 19:00Z), las de HOY (12:00Z) quedan incluidas.
-    // Solución: comparar contra el INICIO del día en zona horaria MX.
-    //   - CDT (verano, UTC-5): medianoche MX = 05:00 UTC
-    //   - CST (invierno, UTC-6): medianoche MX = 06:00 UTC
-    const toMXDateStr = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-    const hoyMXStr = toMXDateStr(new Date());
-    const parts = hoyMXStr.split('-').map(Number);
-    const [y, m, d] = [parts[0]!, parts[1]!, parts[2]!];
-    // Probar offset CDT (UTC-5, hora 5) primero; si el resultado MX coincide con hoy, úsalo.
-    // De lo contrario caer a CST (UTC-6, hora 6).
-    const candidateCDT = new Date(Date.UTC(y, m - 1, d, 5, 0, 0, 0));
-    const inicioDiaHoyMX = toMXDateStr(candidateCDT) === hoyMXStr
-      ? candidateCDT
-      : new Date(Date.UTC(y, m - 1, d, 6, 0, 0, 0));
-
     filterVencimiento.lt = inicioDiaHoyMX;
     where.estado = { in: [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA] };
     hasVencimientoFilter = true;
