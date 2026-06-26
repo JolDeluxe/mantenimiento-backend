@@ -190,17 +190,13 @@ export const computeTicketTemporalState = (tarea: TicketWithDetails): TicketDTO 
   const diasEnEspera = Math.max(0, Math.floor((endMX.getTime() - startMX.getTime()) / msPerDay));
 
   const vencMX = tarea.fechaVencimiento ? toMXDateStr(new Date(tarea.fechaVencimiento)) : null;
-  const esAtrasadaActiva = 
-    !!vencMX &&
-    vencMX < hoyMX &&
-    ([EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA] as EstadoTarea[]).includes(tarea.estado);
-  const belongsToDate = 
-    !!vencMX && 
-    vencMX === hoyMX;
-  const perteneceAHoy =
-    ([EstadoTarea.RECHAZADO, EstadoTarea.RESUELTO, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA] as EstadoTarea[]).includes(tarea.estado) ||
+  const belongsToDate = !!vencMX && vencMX === hoyMX;
+  const esTerminal = ([EstadoTarea.RESUELTO, EstadoTarea.CERRADO, EstadoTarea.CANCELADA] as EstadoTarea[]).includes(tarea.estado);
+  const perteneceAHoy = !esTerminal && (
     belongsToDate ||
-    esAtrasadaActiva;
+    isOverdue ||
+    tarea.estado === EstadoTarea.RECHAZADO
+  );
 
   const historialMapeado = tarea.historial.map(h => {
     const notaString = h.nota || "";

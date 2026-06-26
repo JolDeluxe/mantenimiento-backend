@@ -208,7 +208,8 @@ export const getKpisArea = async (req: Request, res: Response) => {
         }
 
         entry.estados[t.estado] = (entry.estados[t.estado] || 0) + 1;
-        entry.clasificaciones[t.clasificacion] = (entry.clasificaciones[t.clasificacion] || 0) + 1;
+        const clasif = t.clasificacion || "SIN_CLASIFICACION";
+        entry.clasificaciones[clasif] = (entry.clasificaciones[clasif] || 0) + 1;
         entry.categorias[catName] = (entry.categorias[catName] || 0) + 1;
 
         if (ESTADOS_ACTIVOS.includes(t.estado)) {

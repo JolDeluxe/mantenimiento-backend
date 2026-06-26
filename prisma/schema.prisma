@@ -147,6 +147,7 @@ model Tarea {
   estado           EstadoTarea        @default(PENDIENTE)
   
   fechaVencimiento DateTime?          
+  fechaVencimientoOriginal DateTime?
   tiempoEstimado   Int? 
   
   fechaInicio      DateTime?   

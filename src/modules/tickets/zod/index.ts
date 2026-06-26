@@ -98,11 +98,11 @@ export const ticketFilterSchema = z.object({
       )
     ).default([{ createdAt: "desc" }])
   }).strict()
-}).strict();
+});
 
 export const getTicketByIdSchema = z.object({
   params: z.object({ id: z.coerce.number().int().positive() }).strict()
-}).strict();
+});
 
 export const createTicketClientSchema = z.object({
   titulo: commonString.min(3),
@@ -171,7 +171,7 @@ export const updateTicketSchema = z.object({
     ),
     impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional())
   }).strict()
-}).strict();
+});
 
 export const changeStatusSchema = z.object({
   params: z.object({ id: z.coerce.number().int().positive() }).strict(),
@@ -193,7 +193,7 @@ export const changeStatusSchema = z.object({
         .optional()
     )
   }).strict()
-}).strict();
+});
 
 export const createTicketBatchSchema = z.object({
   body: z.object({
@@ -228,7 +228,7 @@ export const createTicketBatchSchema = z.object({
       impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
     }).strict()).min(1).max(50)
   }).strict()
-}).strict();
+});
 
 export type CreateTicketBatchInput = z.infer<typeof createTicketBatchSchema>['body'];
 
@@ -241,3 +241,11 @@ export type UpdateTicketInput           = z.infer<typeof updateTicketSchema>["bo
 export type ChangeTicketStatusParams    = z.infer<typeof changeStatusSchema>["params"];
 export type ChangeTicketStatusInput     = z.infer<typeof changeStatusSchema>["body"];
 export type RegistroTiempoManualInput   = z.infer<typeof registroTiempoManualSchema>;
+
+export const rescheduleTicketsSchema = z.object({
+  body: z.object({
+    ticketIds: z.array(z.number().int().positive()).min(1),
+    nuevaFecha: z.string(),
+    motivo: z.string().min(5, "Debes justificar la reprogramación")
+  }).strict()
+});

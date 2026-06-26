@@ -36,13 +36,13 @@ export const listUsuariosSchema = z.object({
       )
     ).default([{ rol: "asc" }]),
   }).strict(),
-}).strict();
+});
 
 export const getUsuarioByIdSchema = z.object({
   params: z.object({
     id: z.coerce.number().int().positive(),
   }).strict(),
-}).strict();
+});
 
 export const createUsuarioSchema = z.object({
   body: z.object({
@@ -91,7 +91,7 @@ export const createUsuarioSchema = z.object({
       z.number().int().positive().nullable().optional()
     ),
   }).strict(),
-}).strict();
+});
 
 export const updateUsuarioSchema = z.object({
   params: z.object({
@@ -138,7 +138,7 @@ export const updateUsuarioSchema = z.object({
       z.number().int().positive().nullable().optional()
     ),
   }).strict()
-}).strict();
+});
 
 export const patchUsuarioSchema = z.object({
   params: z.object({
@@ -147,7 +147,7 @@ export const patchUsuarioSchema = z.object({
   body: z.object({
     estado: z.enum(estatusArray, { message: "El estado solo puede ser ACTIVO o INACTIVO" })
   }).strict()
-}).strict();
+});
 
 // --- INFERENCIAS ---
 export type ListUsuariosQuery = z.infer<typeof listUsuariosSchema>["query"];

@@ -181,7 +181,8 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
 
     backlog.forEach(t => {
       backlogData.estados[t.estado]++;
-      backlogData.clasificaciones[t.clasificacion] = (backlogData.clasificaciones[t.clasificacion] || 0) + 1;
+      const clasif = t.clasificacion || "SIN_CLASIFICACION";
+      backlogData.clasificaciones[clasif] = (backlogData.clasificaciones[clasif] || 0) + 1;
       const cat = t.categoria || "SIN_CATEGORIA";
       backlogData.categorias[cat] = (backlogData.categorias[cat] || 0) + 1;
     });
