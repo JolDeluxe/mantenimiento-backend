@@ -5,6 +5,7 @@ import { registrarError } from "../../utils/logger";
 import { ticketStandardInclude } from "./types"; 
 import { checkTicketExpiration } from "./expiration";
 import type { GetTicketByIdParams } from "./zod";
+import { computeTicketTemporalState } from "./helper";
 
 export const getTicket = async (req: Request, res: Response) => {
   try {
@@ -33,7 +34,7 @@ export const getTicket = async (req: Request, res: Response) => {
     if (rolesAdmin.includes(user.rol)) {
       tienePermiso = true;
     } else if (user.rol === Rol.TECNICO) {
-      tienePermiso = ticket.responsables.some((r: any) => r.id === user.id);
+      tienePermiso = ticket.responsables.some((r: { id: number }) => r.id === user.id);
     } else if (user.rol === Rol.CLIENTE_INTERNO) {
       tienePermiso = ticket.creadorId === user.id;
     }
@@ -42,49 +43,7 @@ export const getTicket = async (req: Request, res: Response) => {
       return res.status(403).json({ error: "No tienes permisos para ver el detalle de este ticket." });
     }
 
-    // --- INICIO LÓGICA DE TIEMPOS ESTRICTA (FAT BACKEND) ---
-    const toMXDateStr = (d: Date): string =>
-      d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-    const hoyMX = toMXDateStr(new Date());
-
-    const ESTADOS_ENTREGADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
-    const ESTADOS_ACTIVOS_VENCIBLES: EstadoTarea[] = [
-      EstadoTarea.PENDIENTE,
-      EstadoTarea.ASIGNADA,
-      EstadoTarea.EN_PROGRESO,
-      EstadoTarea.EN_PAUSA,
-      EstadoTarea.RECHAZADO,
-    ];
-
-    const isLate =
-      ESTADOS_ENTREGADOS.includes(ticket.estado) &&
-      !!ticket.finalizadoAt &&
-      !!ticket.fechaVencimiento &&
-      toMXDateStr(new Date(ticket.finalizadoAt)) > toMXDateStr(new Date(ticket.fechaVencimiento));
-
-    const isOverdue =
-      ESTADOS_ACTIVOS_VENCIBLES.includes(ticket.estado) &&
-      !!ticket.fechaVencimiento &&
-      toMXDateStr(new Date(ticket.fechaVencimiento)) < hoyMX;
-    // --- FIN LÓGICA DE TIEMPOS ---
-
-    // Patrón DTO: Intercepción y limpieza antes de serializar
-    const historialMapeado = ticket.historial.map(h => {
-      const notaString = h.nota || "";
-      const esTiempoManual = notaString.includes('||[META:TIEMPO_MANUAL]||');
-      return {
-        ...h,
-        esTiempoManual,
-        nota: notaString.replace(' ||[META:TIEMPO_MANUAL]||', '')
-      };
-    });
-
-    const ticketDTO = {
-      ...ticket,
-      historial: historialMapeado,
-      isLate,
-      isOverdue
-    };
+    const ticketDTO = computeTicketTemporalState(ticket);
 
     return res.json(ticketDTO);
 

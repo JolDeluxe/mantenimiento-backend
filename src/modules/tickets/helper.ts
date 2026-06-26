@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 import { ticketFilterSchema } from "./zod";
+import type { TicketWithDetails, TicketDTO } from "./types";
 
 type TicketFilterQuery = z.infer<typeof ticketFilterSchema>["query"];
 
@@ -134,7 +135,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
 };
 
 export const isValidTransition = (current: EstadoTarea, next: EstadoTarea, clasificacion?: ClasificacionTarea | null, categoria?: string | null): boolean => {
-  if ((clasificacion as any) === 'RUTINA' || categoria === 'RUTINA') {
+  if ((clasificacion as unknown as string) === 'RUTINA' || categoria === 'RUTINA') {
     if (next === EstadoTarea.CERRADO && ([EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.RECHAZADO] as EstadoTarea[]).includes(current)) {
       return true;
     }
@@ -156,4 +157,67 @@ export const isValidTransition = (current: EstadoTarea, next: EstadoTarea, clasi
 export const calcularMinutosEntreFechas = (inicio: Date, fin: Date): number => {
   const diffMs = fin.getTime() - inicio.getTime();
   return Math.max(1, Math.round(diffMs / 60000));
+};
+
+export const computeTicketTemporalState = (tarea: TicketWithDetails): TicketDTO => {
+  const toMXDateStr = (d: Date): string =>
+    d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const hoyMX = toMXDateStr(new Date());
+
+  const ESTADOS_ENTREGADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
+  const ESTADOS_ACTIVOS_VENCIBLES: EstadoTarea[] = [
+    EstadoTarea.PENDIENTE,
+    EstadoTarea.ASIGNADA,
+    EstadoTarea.EN_PROGRESO,
+    EstadoTarea.EN_PAUSA,
+    EstadoTarea.RECHAZADO,
+  ];
+
+  const isLate =
+    ESTADOS_ENTREGADOS.includes(tarea.estado) &&
+    !!tarea.finalizadoAt &&
+    !!tarea.fechaVencimiento &&
+    toMXDateStr(new Date(tarea.finalizadoAt)) > toMXDateStr(new Date(tarea.fechaVencimiento));
+
+  const isOverdue =
+    ESTADOS_ACTIVOS_VENCIBLES.includes(tarea.estado) &&
+    !!tarea.fechaVencimiento &&
+    toMXDateStr(new Date(tarea.fechaVencimiento)) < hoyMX;
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const startMX = new Date(toMXDateStr(new Date(tarea.createdAt)) + 'T00:00:00');
+  const endMX = new Date(hoyMX + 'T00:00:00');
+  const diasEnEspera = Math.max(0, Math.floor((endMX.getTime() - startMX.getTime()) / msPerDay));
+
+  const vencMX = tarea.fechaVencimiento ? toMXDateStr(new Date(tarea.fechaVencimiento)) : null;
+  const esAtrasadaActiva = 
+    !!vencMX &&
+    vencMX < hoyMX &&
+    ([EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA] as EstadoTarea[]).includes(tarea.estado);
+  const belongsToDate = 
+    !!vencMX && 
+    vencMX === hoyMX;
+  const perteneceAHoy =
+    ([EstadoTarea.RECHAZADO, EstadoTarea.RESUELTO, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA] as EstadoTarea[]).includes(tarea.estado) ||
+    belongsToDate ||
+    esAtrasadaActiva;
+
+  const historialMapeado = tarea.historial.map(h => {
+    const notaString = h.nota || "";
+    const esTiempoManual = notaString.includes('||[META:TIEMPO_MANUAL]||');
+    return {
+      ...h,
+      esTiempoManual,
+      nota: notaString.replace(' ||[META:TIEMPO_MANUAL]||', '')
+    };
+  });
+
+  return {
+    ...tarea,
+    historial: historialMapeado,
+    isLate,
+    isOverdue,
+    perteneceAHoy,
+    diasEnEspera
+  };
 };

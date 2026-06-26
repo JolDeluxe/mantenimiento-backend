@@ -86,3 +86,13 @@ export type TicketWithDetails = Omit<Prisma.TareaGetPayload<{
     include: typeof ticketStandardInclude
   }>["maquina"] | null;
 };
+
+export type TicketDTO = Omit<TicketWithDetails, "historial"> & {
+  isLate: boolean;
+  isOverdue: boolean;
+  perteneceAHoy: boolean;
+  diasEnEspera: number;
+  historial: (TicketWithDetails["historial"][number] & {
+    esTiempoManual: boolean;
+  })[];
+};

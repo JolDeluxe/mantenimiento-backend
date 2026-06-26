@@ -4,7 +4,7 @@ import { prisma } from "../../db";
 import { ticketStandardInclude } from "./types"; 
 import type { TicketFilterQuery } from "./zod";
 import { registrarError } from "../../utils/logger";
-import { getTicketFilters } from "./helper";
+import { getTicketFilters, computeTicketTemporalState } from "./helper";
 
 export const listarTickets = async (req: Request, res: Response) => {
   try {
@@ -76,48 +76,7 @@ export const listarTickets = async (req: Request, res: Response) => {
       resumenEstados[estado] = totalPaginado;
     }
 
-    const toMXDateStr = (d: Date): string =>
-      d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-    const hoyMX = toMXDateStr(new Date());
-
-    const ESTADOS_ENTREGADOS: EstadoTarea[] = [EstadoTarea.RESUELTO, EstadoTarea.CERRADO];
-    const ESTADOS_ACTIVOS_VENCIBLES: EstadoTarea[] = [
-      EstadoTarea.PENDIENTE,
-      EstadoTarea.ASIGNADA,
-      EstadoTarea.EN_PROGRESO,
-      EstadoTarea.EN_PAUSA,
-      EstadoTarea.RECHAZADO,
-    ];
-
-    const ticketsDTO = tickets.map(t => {
-      const historialMapeado = t.historial.map(h => {
-        const notaString = h.nota || "";
-        const esTiempoManual = notaString.includes('||[META:TIEMPO_MANUAL]||');
-        return {
-          ...h,
-          esTiempoManual,
-          nota: notaString.replace(' ||[META:TIEMPO_MANUAL]||', '')
-        };
-      });
-
-      const isLate =
-        ESTADOS_ENTREGADOS.includes(t.estado) &&
-        !!t.finalizadoAt &&
-        !!t.fechaVencimiento &&
-        toMXDateStr(new Date(t.finalizadoAt)) > toMXDateStr(new Date(t.fechaVencimiento));
-
-      const isOverdue =
-        ESTADOS_ACTIVOS_VENCIBLES.includes(t.estado) &&
-        !!t.fechaVencimiento &&
-        toMXDateStr(new Date(t.fechaVencimiento)) < hoyMX;
-
-      return {
-        ...t,
-        historial: historialMapeado,
-        isLate,
-        isOverdue,
-      };
-    });
+    const ticketsDTO = tickets.map(t => computeTicketTemporalState(t));
 
     return res.json({
       status: "success",

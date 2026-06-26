@@ -97,12 +97,12 @@ export const ticketFilterSchema = z.object({
         }).strict()
       )
     ).default([{ createdAt: "desc" }])
-  })
-});
+  }).strict()
+}).strict();
 
 export const getTicketByIdSchema = z.object({
-  params: z.object({ id: z.coerce.number().int().positive() })
-});
+  params: z.object({ id: z.coerce.number().int().positive() }).strict()
+}).strict();
 
 export const createTicketClientSchema = z.object({
   titulo: commonString.min(3),
@@ -149,7 +149,7 @@ export const createTicketAdminSchema = z.object({
 }).strict();
 
 export const updateTicketSchema = z.object({
-  params: z.object({ id: z.coerce.number().int().positive() }),
+  params: z.object({ id: z.coerce.number().int().positive() }).strict(),
   body: z.object({
     titulo: z.string().min(5).optional(),
     descripcion: z.string().optional(),
@@ -170,11 +170,11 @@ export const updateTicketSchema = z.object({
       z.boolean().default(false)
     ),
     impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional())
-  })
-});
+  }).strict()
+}).strict();
 
 export const changeStatusSchema = z.object({
-  params: z.object({ id: z.coerce.number().int().positive() }),
+  params: z.object({ id: z.coerce.number().int().positive() }).strict(),
   body: z.object({
     estado: z.nativeEnum(EstadoTarea),
     nota: z.string().optional(), 
@@ -192,8 +192,8 @@ export const changeStatusSchema = z.object({
         }, { message: "La fecha de vencimiento no puede estar en el pasado" })
         .optional()
     )
-  })
-});
+  }).strict()
+}).strict();
 
 export const createTicketBatchSchema = z.object({
   body: z.object({
@@ -226,9 +226,9 @@ export const createTicketBatchSchema = z.object({
         z.boolean().default(false)
       ),
       impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
-    })).min(1).max(50)
-  })
-});
+    }).strict()).min(1).max(50)
+  }).strict()
+}).strict();
 
 export type CreateTicketBatchInput = z.infer<typeof createTicketBatchSchema>['body'];
 
