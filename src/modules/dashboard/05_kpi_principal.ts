@@ -171,6 +171,20 @@ export const getKpiPrincipal = async (req: Request, res: Response) => {
                 .sort((a, b) => b.cantidad - a.cantidad).slice(0, 4);
         }
 
+        const hoyMX = toMXDateStr(new Date());
+        const ESTADOS_ACTIVOS_VENCIBLES: string[] = ['PENDIENTE', 'ASIGNADA', 'EN_PROGRESO', 'EN_PAUSA', 'RECHAZADO'];
+
+        const urgentesMapeadas = tareasUrgentesDB.map(t => {
+            const isOverdue =
+                ESTADOS_ACTIVOS_VENCIBLES.includes(t.estado) &&
+                !!t.fechaVencimiento &&
+                toMXDateStr(new Date(t.fechaVencimiento)) < hoyMX;
+            return {
+                ...t,
+                isOverdue
+            };
+        });
+
         return res.json({
             status: "success",
             data: {
@@ -189,7 +203,7 @@ export const getKpiPrincipal = async (req: Request, res: Response) => {
                     desviacionColor: desviacion === null ? 'neutral' : (desviacion <= 10 ? 'verde' : desviacion <= 30 ? 'ambar' : 'rojo'),
                 },
                 conteosPorEstado,
-                urgentes: tareasUrgentesDB,
+                urgentes: urgentesMapeadas,
                 ...dataEspecial
             }
         });

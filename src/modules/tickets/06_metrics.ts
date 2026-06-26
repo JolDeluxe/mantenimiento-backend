@@ -59,6 +59,19 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
     startOfWeek.setDate(now.getDate() - now.getDay()); 
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    // Inicio del día en zona horaria MX (evita falsos positivos en backlogAtrasado).
+    // Las tareas se guardan como T12:00:00.000Z; usando new Date() después del mediodía
+    // las tareas de HOY quedarían incluidas incorrectamente.
+    // CDT (verano, UTC-5): medianoche MX = 05:00 UTC | CST (invierno, UTC-6): = 06:00 UTC
+    const toMXDateStrLocal = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    const hoyMXStr = toMXDateStrLocal(now);
+    const mxParts = hoyMXStr.split('-').map(Number);
+    const [mxY, mxM, mxD] = [mxParts[0]!, mxParts[1]!, mxParts[2]!];
+    const candidatoCDT = new Date(Date.UTC(mxY, mxM - 1, mxD, 5, 0, 0, 0));
+    const inicioDiaHoyMX = toMXDateStrLocal(candidatoCDT) === hoyMXStr
+      ? candidatoCDT
+      : new Date(Date.UTC(mxY, mxM - 1, mxD, 6, 0, 0, 0));
+
     const activeStates = [
       EstadoTarea.PENDIENTE,
       EstadoTarea.ASIGNADA,
@@ -110,7 +123,7 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       prisma.tarea.count({ 
         where: { 
           ...globalWhere, 
-          fechaVencimiento: { lt: now },
+          fechaVencimiento: { lt: inicioDiaHoyMX },
           estado: { in: activeStates }
         } 
       }),

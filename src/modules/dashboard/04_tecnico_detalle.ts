@@ -252,6 +252,21 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
       take: 10
     });
 
+    const hoyMX = toMXDateStr(new Date());
+    const tareasPendientesMapeadas = tareasPendientesDetalle.map(t => {
+      const isOverdue =
+        !!t.fechaVencimiento &&
+        toMXDateStr(new Date(t.fechaVencimiento)) < hoyMX;
+      const perteneceAHoy =
+        !!t.fechaVencimiento &&
+        toMXDateStr(new Date(t.fechaVencimiento)) === hoyMX;
+      return {
+        ...t,
+        isOverdue,
+        perteneceAHoy
+      };
+    });
+
     return res.json({
       status: "success",
       data: {
@@ -276,7 +291,7 @@ export const getTecnicoDetalle = async (req: Request, res: Response) => {
           planeadoFuera_Tiempo
         },
         cargaActual: backlogData,
-        tareasPendientes: tareasPendientesDetalle,
+        tareasPendientes: tareasPendientesMapeadas,
         grafico,
         topTareas,
       },

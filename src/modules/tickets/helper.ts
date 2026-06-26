@@ -85,7 +85,6 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   if (huerfanos) {
     andConditions.push({ responsables: { none: {} } });
     where.estado = EstadoTarea.PENDIENTE;
-    where.tipo = "TICKET";
   }
 
   // Combinación inteligente de Vencidos y Rangos
@@ -93,9 +92,25 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   let hasVencimientoFilter = false;
 
   if (vencidos) {
-    filterVencimiento.lt = new Date();
+    // BUG FIX: No usar `new Date()` (datetime actual) porque causa falsos positivos.
+    // Las tareas se guardan como YYYY-MM-DDT12:00:00.000Z (mediodía UTC).
+    // Si comparamos con `new Date()` (ej. 19:00Z), las de HOY (12:00Z) quedan incluidas.
+    // Solución: comparar contra el INICIO del día en zona horaria MX.
+    //   - CDT (verano, UTC-5): medianoche MX = 05:00 UTC
+    //   - CST (invierno, UTC-6): medianoche MX = 06:00 UTC
+    const toMXDateStr = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    const hoyMXStr = toMXDateStr(new Date());
+    const parts = hoyMXStr.split('-').map(Number);
+    const [y, m, d] = [parts[0]!, parts[1]!, parts[2]!];
+    // Probar offset CDT (UTC-5, hora 5) primero; si el resultado MX coincide con hoy, úsalo.
+    // De lo contrario caer a CST (UTC-6, hora 6).
+    const candidateCDT = new Date(Date.UTC(y, m - 1, d, 5, 0, 0, 0));
+    const inicioDiaHoyMX = toMXDateStr(candidateCDT) === hoyMXStr
+      ? candidateCDT
+      : new Date(Date.UTC(y, m - 1, d, 6, 0, 0, 0));
+
+    filterVencimiento.lt = inicioDiaHoyMX;
     where.estado = { in: [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA] };
-    where.tipo = "TICKET";
     hasVencimientoFilter = true;
   }
 
