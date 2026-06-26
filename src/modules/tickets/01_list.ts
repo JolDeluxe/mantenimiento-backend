@@ -91,6 +91,41 @@ export const listarTickets = async (req: Request, res: Response) => {
 
     const ticketsDTO = ticketsPage.map((t) => computeTicketTemporalState(t));
 
+    const belongsToHoy = query.perteneceAHoy === true || String(query.perteneceAHoy) === "true";
+
+    if (belongsToHoy) {
+      const priorityWeight: Record<string, number> = {
+        CRITICA: 4,
+        ALTA: 3,
+        MEDIA: 2,
+        BAJA: 1,
+      };
+
+      ticketsDTO.sort((a, b) => {
+        // 1. RECHAZADOS (hasta arriba)
+        const aRechazado = a.estado === "RECHAZADO";
+        const bRechazado = b.estado === "RECHAZADO";
+        if (aRechazado && !bRechazado) return -1;
+        if (!aRechazado && bRechazado) return 1;
+
+        // 2. ATRASADAS (isOverdue === true)
+        const aOverdue = a.isOverdue === true;
+        const bOverdue = b.isOverdue === true;
+        if (aOverdue && !bOverdue) return -1;
+        if (!aOverdue && bOverdue) return 1;
+
+        // Ambos son atrasados o ambos son a tiempo -> ordenar por prioridad
+        const aWeight = priorityWeight[a.prioridad] || 0;
+        const bWeight = priorityWeight[b.prioridad] || 0;
+        if (aWeight !== bWeight) {
+          return bWeight - aWeight; // Mayor prioridad primero
+        }
+
+        // Si la prioridad es igual, ordenar por fecha de creación desc
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+    }
+
     return res.json({
       status: "success",
       pagination: {
