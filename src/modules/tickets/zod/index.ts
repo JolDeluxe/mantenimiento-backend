@@ -79,6 +79,7 @@ export const ticketFilterSchema = z.object({
     vencidos: z.preprocess((val) => val === "true", z.boolean().optional()),
     perteneceAHoy: z.preprocess((val) => val === "true", z.boolean().optional()),
     venceManana: z.preprocess((val) => val === "true", z.boolean().optional()),
+    scope: z.preprocess(preprocessEmpty, z.enum(["general", "mantenimientos", "actividades"]).optional()),
     
     sort: z.preprocess(
       (val) => {
@@ -147,7 +148,10 @@ export const createTicketAdminSchema = z.object({
     (val) => val === "true" || val === true,
     z.boolean().default(false)
   ),
-  impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional())
+  impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
+  horaInicioProgramada: z.preprocess(preprocessDate, z.coerce.date().optional()),
+  horaFinProgramada: z.preprocess(preprocessDate, z.coerce.date().optional()),
+  refacciones: z.preprocess(preprocessJsonObject, z.any().optional())
 }).strict();
 
 export const updateTicketSchema = z.object({
@@ -171,7 +175,10 @@ export const updateTicketSchema = z.object({
       (val) => val === "true" || val === true,
       z.boolean().default(false)
     ),
-    impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional())
+    impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
+    horaInicioProgramada: z.preprocess(preprocessDate, z.coerce.date().optional()),
+    horaFinProgramada: z.preprocess(preprocessDate, z.coerce.date().optional()),
+    refacciones: z.preprocess(preprocessJsonObject, z.any().optional())
   }).strict()
 });
 
@@ -193,7 +200,8 @@ export const changeStatusSchema = z.object({
           return valMX >= hoyMX;
         }, { message: "La fecha de vencimiento no puede estar en el pasado" })
         .optional()
-    )
+    ),
+    refacciones: z.preprocess(preprocessJsonObject, z.any().optional())
   }).strict()
 });
 
@@ -228,6 +236,8 @@ export const createTicketBatchSchema = z.object({
         z.boolean().default(false)
       ),
       impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
+      horaInicioProgramada: z.preprocess(preprocessDate, z.coerce.date().optional()),
+      horaFinProgramada: z.preprocess(preprocessDate, z.coerce.date().optional())
     }).strict()).min(1).max(50)
   }).strict()
 });

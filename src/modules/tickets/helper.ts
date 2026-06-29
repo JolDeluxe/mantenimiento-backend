@@ -29,7 +29,8 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     year, month, // Inyección de los parámetros Macro Históricos
     maquinaId,
     perteneceAHoy,
-    venceManana
+    venceManana,
+    scope
   } = query;
 
   const where: Prisma.TareaWhereInput = {};
@@ -67,7 +68,13 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   if (categoria) where.categoria = categoria;
   if (planta) where.planta = planta;
   if (area) where.area = area;
-  if (maquinaId) where.maquinaId = maquinaId;
+  if (maquinaId) {
+    where.maquinaId = maquinaId;
+  } else if (scope === "mantenimientos") {
+    where.maquinaId = { not: null };
+  } else if (scope === "actividades") {
+    where.maquinaId = null;
+  }
 
   // Filtro de Periodo Histórico (Año / Mes sobre la creación del ticket)
   if (year) {

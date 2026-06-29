@@ -70,6 +70,38 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
       }
     }
 
+    // --- MOTOR DE COLISIONES Y ESTIMACIÓN DE TIEMPO ---
+    let tiempoEstimado = data.tiempoEstimado || null;
+    if (data.horaInicioProgramada && data.horaFinProgramada) {
+      const inicio = new Date(data.horaInicioProgramada);
+      const fin = new Date(data.horaFinProgramada);
+      if (fin > inicio) {
+        tiempoEstimado = Math.floor((fin.getTime() - inicio.getTime()) / 60000);
+      }
+
+      if (tieneResponsables) {
+        const overlapping = await prisma.tarea.findFirst({
+          where: {
+            responsables: { some: { id: { in: data.responsables } } },
+            estado: { notIn: [EstadoTarea.RESUELTO, EstadoTarea.CERRADO, EstadoTarea.CANCELADA] },
+            OR: [
+              {
+                horaInicioProgramada: { lt: fin },
+                horaFinProgramada: { gt: inicio }
+              }
+            ]
+          },
+          select: { id: true, titulo: true }
+        });
+
+        if (overlapping) {
+          return res.status(409).json({
+            error: `Conflicto de Horario: Un técnico asignado ya tiene programada la tarea "${overlapping.titulo}" (ID: ${overlapping.id}) en ese intervalo.`
+          });
+        }
+      }
+    }
+
     const estadoInicial: EstadoTarea = tieneResponsables ? EstadoTarea.ASIGNADA : EstadoTarea.PENDIENTE;
     const responsablesConnect = tieneResponsables
       ? data.responsables!.map((id: number) => ({ id }))
@@ -90,13 +122,16 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
           tipo: data.tipo,
           estado: estadoInicial,
           fechaVencimiento,
-          tiempoEstimado: data.tiempoEstimado || null,
+          tiempoEstimado,
           creadorId: user.id,
           departamentoId: user.departamentoId,
           responsables: { connect: responsablesConnect },
           maquinaId: data.maquinaId ?? null,
           paroProduccion: data.paroProduccion,
           impactoProduccion: data.impactoProduccion ?? null,
+          horaInicioProgramada: data.horaInicioProgramada ? new Date(data.horaInicioProgramada) : null,
+          horaFinProgramada: data.horaFinProgramada ? new Date(data.horaFinProgramada) : null,
+          refacciones: data.refacciones || null,
         }
       });
 

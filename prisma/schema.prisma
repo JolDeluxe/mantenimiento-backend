@@ -150,6 +150,11 @@ model Tarea {
   fechaVencimientoOriginal DateTime?
   tiempoEstimado   Int? 
   
+  // --- PLANIFICACIÓN E INVENTARIO ---
+  horaInicioProgramada DateTime? 
+  horaFinProgramada    DateTime?
+  refacciones          Json?
+  
   fechaInicio      DateTime?   
   finalizadoAt     DateTime? 
   
