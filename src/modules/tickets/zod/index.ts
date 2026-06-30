@@ -15,7 +15,7 @@ const preprocessDate = (val: unknown) => (val === "" || val === "null" ? undefin
 
 const preprocessEmpty = (val: unknown) => (val === "" || val === "null" ? undefined : val);
 
-const preprocessNull = (val: unknown) => (val === "" || val === "null" || val === null ? null : val);
+const preprocessNull = (val: unknown) => (val === "" || val === "null" || val === null || val === 0 || val === "0" ? null : val);
 
 const preprocessJsonObject = (val: unknown) => {
   if (val === null || val === undefined || val === "" || val === "null") return undefined;
@@ -114,7 +114,7 @@ export const createTicketClientSchema = z.object({
   prioridad: z.nativeEnum(Prioridad).optional(),
   planta: commonString.min(1),
   area: commonString.min(1),
-  clasificacion: z.nativeEnum(ClasificacionTarea).optional(),
+  clasificacion: z.preprocess(preprocessNull, z.nativeEnum(ClasificacionTarea).nullable().optional()),
   imagenes: z.array(z.string().url()).optional(),
   maquinaId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
   paroProduccion: z.preprocess(
@@ -139,7 +139,7 @@ export const createTicketAdminSchema = z.object({
   imagenes: z.array(z.string().url()).optional(),
   prioridad: z.nativeEnum(Prioridad).default(Prioridad.MEDIA),
   tipo: z.nativeEnum(TipoTarea).default(TipoTarea.TICKET),
-  clasificacion: z.nativeEnum(ClasificacionTarea).optional(),
+  clasificacion: z.preprocess(preprocessNull, z.nativeEnum(ClasificacionTarea).nullable().optional()),
   planta: z.string().optional(),
   area: z.string().optional(),
   categoria: commonString.min(3, "La categoría es obligatoria"),
@@ -167,7 +167,7 @@ export const updateTicketSchema = z.object({
     fechaVencimiento: z.preprocess(preprocessDate, z.coerce.date().optional()),
     tiempoEstimado: z.coerce.number().int().nonnegative().optional(),
     tipo: z.nativeEnum(TipoTarea).optional(),
-    clasificacion: z.nativeEnum(ClasificacionTarea).optional(),  
+    clasificacion: z.preprocess(preprocessNull, z.nativeEnum(ClasificacionTarea).nullable().optional()),  
     imagenes: z.array(z.string().url()).optional(),
     imagenesEliminadas: z.preprocess(preprocessNumberArray, z.array(z.number()).optional()),
     maquinaId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
@@ -225,7 +225,7 @@ export const createTicketBatchSchema = z.object({
       prioridad: z.nativeEnum(Prioridad).optional().default(Prioridad.MEDIA),
       
       // La clasificación es opcional, el controlador decide.
-      clasificacion: z.nativeEnum(ClasificacionTarea).optional(),
+      clasificacion: z.preprocess(preprocessNull, z.nativeEnum(ClasificacionTarea).nullable().optional()),
       
       tiempoEstimado: z.coerce.number().int().nonnegative().optional().default(0),
       responsables: z.preprocess(preprocessNumberArray, z.array(z.number()).optional().default([])),
@@ -238,7 +238,7 @@ export const createTicketBatchSchema = z.object({
       impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
       horaInicioProgramada: z.preprocess(preprocessDate, z.coerce.date().optional()),
       horaFinProgramada: z.preprocess(preprocessDate, z.coerce.date().optional())
-    }).strict()).min(1).max(50)
+    })).min(1).max(50)
   }).strict()
 });
 

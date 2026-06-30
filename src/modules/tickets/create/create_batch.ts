@@ -41,10 +41,10 @@ export const createBatchTickets = async (req: Request, res: Response) => {
           const ubicMaquina = maquinasMap.get(tarea.maquinaId)!;
           finalPlanta = ubicMaquina.planta;
           finalArea   = ubicMaquina.area;
-          // Respetar clasificación enviada; si no hay, asumir PREVENTIVO (mantenimiento planificado)
+          // Respetar clasificación enviada; si no hay, guardar como null (hacer opcional)
           clasificacionFinal = tarea.clasificacion
             ? (tarea.clasificacion as ClasificacionTarea)
-            : ClasificacionTarea.PREVENTIVO;
+            : null;
         } else if (tarea.clasificacion) {
           // Sin máquina pero con clasificación explícita (ej: infraestructura general)
           clasificacionFinal = tarea.clasificacion as ClasificacionTarea;
@@ -68,6 +68,8 @@ export const createBatchTickets = async (req: Request, res: Response) => {
             tiempoEstimado: tarea.tiempoEstimado || null,
             estado: estadoInicial,
             fechaVencimiento: tarea.fechaVencimiento ?? null,
+            horaInicioProgramada: tarea.horaInicioProgramada ? new Date(tarea.horaInicioProgramada) : null,
+            horaFinProgramada: tarea.horaFinProgramada ? new Date(tarea.horaFinProgramada) : null,
             creadorId: user.id,
             departamentoId: tarea.departamentoId ?? user.departamentoId,
             responsables: { connect: responsablesConnect },

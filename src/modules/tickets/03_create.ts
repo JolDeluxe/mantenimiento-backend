@@ -46,9 +46,9 @@ export const createTicket = async (req: Request, res: Response) => {
       req.body.maquinaId = null;
     }
 
-    // 2. Clasificación por defecto: CORRECTIVO si viene vacía
+    // 2. Clasificación por defecto: permitir nulo si viene vacía, 'null' o indefinida
     if (!clasificacion || clasificacion === "" || clasificacion === "null") {
-      req.body.clasificacion = ClasificacionTarea.CORRECTIVO;
+      req.body.clasificacion = null;
     }
 
     if (isAdminOrJefe(user.rol)) {

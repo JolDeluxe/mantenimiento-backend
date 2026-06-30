@@ -4,7 +4,7 @@
 // se calcula tiempoEstimado en minutos bajo timezone America/Mexico_City.
 import type { Request, Response } from "express";
 import { prisma } from "../../../db";
-import { EstadoTarea, TipoEvento, Rol } from "@prisma/client";
+import { EstadoTarea, TipoEvento, Rol, ClasificacionTarea } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "../create/helper_upload";
 import { deleteImageByUrl } from "../../../utils/cloudinary";
@@ -136,6 +136,7 @@ export const updateTicketAdmin = async (req: Request, res: Response) => {
     let finalMaquinaId   = data.maquinaId !== undefined ? data.maquinaId : tareaActual.maquinaId;
     let finalPlanta      = data.planta !== undefined ? data.planta : tareaActual.planta;
     let finalArea        = data.area   !== undefined ? data.area   : tareaActual.area;
+    let finalClasificacion = data.clasificacion !== undefined ? data.clasificacion : tareaActual.clasificacion;
 
     if (categoriaFinal === "MAQUINARIA" && finalMaquinaId) {
       const maquinaDb = await prisma.maquina.findUnique({
@@ -148,8 +149,21 @@ export const updateTicketAdmin = async (req: Request, res: Response) => {
       }
       finalPlanta    = maquinaDb.planta;
       finalArea      = maquinaDb.area;
-    } else if (categoriaFinal !== "MAQUINARIA") {
-      finalMaquinaId = null;
+
+      // La clasificación es opcional; si se envía para tareas de maquinaria (mantenimiento), debe ser PREVENTIVO o CORRECTIVO
+      if (finalClasificacion && finalClasificacion !== ClasificacionTarea.PREVENTIVO && finalClasificacion !== ClasificacionTarea.CORRECTIVO) {
+        return res.status(400).json({
+          error: "Para tareas de maquinaria (mantenimiento), la clasificación debe ser PREVENTIVO o CORRECTIVO."
+        });
+      }
+    } else {
+      if (categoriaFinal !== "MAQUINARIA") {
+        finalMaquinaId = null;
+      }
+      // Si limpiaron la máquina o categoría no es maquinaria, y la clasificación no es preventivo/correctivo, pasar a null.
+      if (!finalMaquinaId && finalClasificacion && finalClasificacion !== ClasificacionTarea.PREVENTIVO && finalClasificacion !== ClasificacionTarea.CORRECTIVO) {
+        finalClasificacion = null;
+      }
     }
 
     // ─── Transacción ──────────────────────────────────────────────────────────
@@ -171,7 +185,7 @@ export const updateTicketAdmin = async (req: Request, res: Response) => {
           estado:               nuevoEstado,
           responsables:         idsResponsables ? { set: idsResponsables } : undefined,
           tipo:                 data.tipo         ?? undefined,
-          clasificacion:        data.clasificacion ?? undefined,
+          clasificacion:        finalClasificacion,
           horaInicioProgramada: data.horaInicioProgramada !== undefined
             ? (data.horaInicioProgramada ? new Date(data.horaInicioProgramada) : null)
             : undefined,

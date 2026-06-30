@@ -76,26 +76,28 @@ export const listarHoy = async (req: Request, res: Response) => {
       // 1. RECHAZADOS primero
       const aR = a.estado === "RECHAZADO";
       const bR = b.estado === "RECHAZADO";
-      if (aR && !bR) return -1;
-      if (!aR && bR) return  1;
+      if (aR !== bR) {
+        return bR ? 1 : -1;
+      }
 
-      // 2. AGENDA vs COLA
+      // 2. Luego ATRASADAS (isOverdue)
+      const aOverdue = a.isOverdue === true;
+      const bOverdue = b.isOverdue === true;
+      if (aOverdue !== bOverdue) {
+        return bOverdue ? 1 : -1;
+      }
+
+      // 3. Luego por HORA (si tiene horaInicioProgramada)
       const aHasTime = !!a.horaInicioProgramada;
       const bHasTime = !!b.horaInicioProgramada;
-      if (aHasTime && !bHasTime) return -1;
-      if (!aHasTime && bHasTime) return  1;
-
       if (aHasTime && bHasTime) {
         return new Date(a.horaInicioProgramada!).getTime() - new Date(b.horaInicioProgramada!).getTime();
       }
+      if (aHasTime !== bHasTime) {
+        return bHasTime ? 1 : -1;
+      }
 
-      // 3. COLA: atrasadas primero
-      const aOverdue = a.isOverdue === true;
-      const bOverdue = b.isOverdue === true;
-      if (aOverdue && !bOverdue) return -1;
-      if (!aOverdue && bOverdue) return  1;
-
-      // 4. COLA: prioridad DESC
+      // 4. Por PRIORIDAD
       const aW = PRIORITY_WEIGHT[a.prioridad] || 0;
       const bW = PRIORITY_WEIGHT[b.prioridad] || 0;
       if (aW !== bW) return bW - aW;

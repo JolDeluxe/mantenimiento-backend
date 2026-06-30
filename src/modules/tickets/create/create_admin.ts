@@ -51,9 +51,11 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
       finalPlanta = maquinaDb.planta;
       finalArea   = maquinaDb.area;
 
-      // Si no enviaron clasificación explícita, asumir PREVENTIVO (mantenimiento planificado)
-      if (!finalClasificacion) {
-        finalClasificacion = ClasificacionTarea.PREVENTIVO;
+      // La clasificación es opcional; si se envía para tareas de maquinaria (mantenimiento), debe ser PREVENTIVO o CORRECTIVO
+      if (finalClasificacion && finalClasificacion !== ClasificacionTarea.PREVENTIVO && finalClasificacion !== ClasificacionTarea.CORRECTIVO) {
+        return res.status(400).json({
+          error: "Para tareas de maquinaria (mantenimiento), la clasificación debe ser PREVENTIVO o CORRECTIVO."
+        });
       }
     }
 
