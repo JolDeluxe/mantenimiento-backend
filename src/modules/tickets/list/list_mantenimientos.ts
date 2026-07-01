@@ -6,7 +6,7 @@ import { prisma } from "../../../db";
 import { ticketStandardInclude } from "../types";
 import type { TicketFilterQuery } from "../zod";
 import { registrarError } from "../../../utils/logger";
-import { getTicketFilters, computeTicketTemporalState } from "../helper";
+import { getTicketFilters, withSearchFilter, computeTicketTemporalState, calcularMetricasDashboard, ordenarTicketsOperativamente } from "../helper";
 
 export const listarMantenimientos = async (req: Request, res: Response) => {
   try {
@@ -16,34 +16,19 @@ export const listarMantenimientos = async (req: Request, res: Response) => {
 
     const { page, limit, sort, estado } = query;
     const offset = (page - 1) * limit;
+    const usaOrdenOperativo = query.venceManana === true;
 
     const querySinEstado = { ...query };
     delete querySinEstado.estado;
     const searchWhere: Prisma.TareaWhereInput = getTicketFilters({ id: user.id, rol: user.rol }, querySinEstado);
     const tableWhere:  Prisma.TareaWhereInput = getTicketFilters({ id: user.id, rol: user.rol }, query);
 
-    if (query.q) {
-      const searchStr = query.q.trim();
-      const searchFilter = {
-        OR: [
-          { titulo: { contains: searchStr } },
-          { area:   { contains: searchStr } },
-          ...(!isNaN(Number(searchStr)) ? [{ id: Number(searchStr) }] : []),
-        ],
-      };
-      searchWhere.AND = [
-        ...(Array.isArray(searchWhere.AND) ? searchWhere.AND : searchWhere.AND ? [searchWhere.AND] : []),
-        searchFilter,
-      ];
-      tableWhere.AND = [
-        ...(Array.isArray(tableWhere.AND) ? tableWhere.AND : tableWhere.AND ? [tableWhere.AND] : []),
-        searchFilter,
-      ];
-    }
+    const searchWhereFinal = withSearchFilter(searchWhere, query.q);
+    const tableWhereFinal = withSearchFilter(tableWhere, query.q);
 
     if (!estado) {
-      tableWhere.AND = [
-        ...(Array.isArray(tableWhere.AND) ? tableWhere.AND : tableWhere.AND ? [tableWhere.AND] : []),
+      tableWhereFinal.AND = [
+        ...(Array.isArray(tableWhereFinal.AND) ? tableWhereFinal.AND : tableWhereFinal.AND ? [tableWhereFinal.AND] : []),
         { estado: { notIn: [EstadoTarea.CANCELADA] } },
       ];
     }
@@ -54,10 +39,12 @@ export const listarMantenimientos = async (req: Request, res: Response) => {
         : [{ createdAt: "desc" }];
 
     const [totalAbsoluto, totalPaginado, groupEstados, ticketsPage] = await Promise.all([
-      prisma.tarea.count({ where: searchWhere }),
-      prisma.tarea.count({ where: tableWhere }),
-      prisma.tarea.groupBy({ by: ["estado"], _count: { id: true }, where: searchWhere }),
-      prisma.tarea.findMany({ where: tableWhere, include: ticketStandardInclude, orderBy, skip: offset, take: limit }),
+      prisma.tarea.count({ where: searchWhereFinal }),
+      prisma.tarea.count({ where: tableWhereFinal }),
+      prisma.tarea.groupBy({ by: ["estado"], _count: { id: true }, where: searchWhereFinal }),
+      usaOrdenOperativo
+        ? prisma.tarea.findMany({ where: tableWhereFinal, include: ticketStandardInclude })
+        : prisma.tarea.findMany({ where: tableWhereFinal, include: ticketStandardInclude, orderBy, skip: offset, take: limit }),
     ]);
 
     const resumenEstados = groupEstados.reduce((acc, curr) => {
@@ -69,14 +56,24 @@ export const listarMantenimientos = async (req: Request, res: Response) => {
       resumenEstados[estado] = totalPaginado;
     }
 
+    const metricas = await calcularMetricasDashboard(
+      { id: user.id, rol: user.rol },
+      querySinEstado,
+      totalPaginado
+    );
+
     const ticketsDTO = ticketsPage.map((t) => computeTicketTemporalState(t));
+    const data = usaOrdenOperativo
+      ? ordenarTicketsOperativamente(ticketsDTO).slice(offset, offset + limit)
+      : ticketsDTO;
 
     return res.json({
       status: "success",
       pagination: { total: totalPaginado, page, limit, totalPages: Math.ceil(totalPaginado / limit) },
       totalAbsoluto,
       resumenEstados,
-      data: ticketsDTO,
+      metricas,
+      data,
     });
   } catch (error) {
     await registrarError("LIST_MANTENIMIENTOS", req.user?.id || null, error);

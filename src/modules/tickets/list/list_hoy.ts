@@ -1,23 +1,24 @@
 // list/list_hoy.ts
 // Listado del día. Fuerza perteneceAHoy=true.
-// Ordenamiento híbrido:
-//   1. RECHAZADOS (siempre arriba)
-//   2. AGENDA — Tareas con horaInicioProgramada, orden cronológico ASC
-//   3. COLA    — Sin hora: primero atrasadas, luego por prioridad DESC, luego createdAt DESC
+// Ordenamiento operativo por scope:
+//   TODAS: rechazadas -> atrasadas -> reportes -> correctivos -> criticidad -> prioridad/hora -> tipo -> creación.
+// Actividades usa una variante propia: rechazadas -> atrasadas -> prioridad/hora -> tipo -> creación.
+// Mantenimientos usa una variante propia: rechazadas -> atrasadas -> reportes/correctivos -> criticidad -> prioridad/hora.
 import type { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../../db";
 import { ticketStandardInclude } from "../types";
 import type { TicketFilterQuery } from "../zod";
 import { registrarError } from "../../../utils/logger";
-import { getTicketFilters, computeTicketTemporalState } from "../helper";
-
-const PRIORITY_WEIGHT: Record<string, number> = {
-  CRITICA: 4,
-  ALTA:    3,
-  MEDIA:   2,
-  BAJA:    1,
-};
+import {
+  getTicketFilters,
+  withSearchFilter,
+  computeTicketTemporalState,
+  calcularMetricasDashboard,
+  ordenarTodasHoyOperativamente,
+  ordenarActividadesHoyOperativamente,
+  ordenarMantenimientosHoyOperativamente,
+} from "../helper";
 
 export const listarHoy = async (req: Request, res: Response) => {
   try {
@@ -32,32 +33,16 @@ export const listarHoy = async (req: Request, res: Response) => {
     const searchWhere: Prisma.TareaWhereInput = getTicketFilters({ id: user.id, rol: user.rol }, querySinEstado);
     const tableWhere:  Prisma.TareaWhereInput = getTicketFilters({ id: user.id, rol: user.rol }, query);
 
-    if (query.q) {
-      const searchStr = query.q.trim();
-      const searchFilter = {
-        OR: [
-          { titulo: { contains: searchStr } },
-          { area:   { contains: searchStr } },
-          ...(!isNaN(Number(searchStr)) ? [{ id: Number(searchStr) }] : []),
-        ],
-      };
-      searchWhere.AND = [
-        ...(Array.isArray(searchWhere.AND) ? searchWhere.AND : searchWhere.AND ? [searchWhere.AND] : []),
-        searchFilter,
-      ];
-      tableWhere.AND = [
-        ...(Array.isArray(tableWhere.AND) ? tableWhere.AND : tableWhere.AND ? [tableWhere.AND] : []),
-        searchFilter,
-      ];
-    }
+    const searchWhereFinal = withSearchFilter(searchWhere, query.q);
+    const tableWhereFinal = withSearchFilter(tableWhere, query.q);
 
     // HOY: sin filtro de estado extra — getTicketFilters ya excluye terminales cuando perteneceAHoy=true
     const [totalAbsoluto, totalPaginado, groupEstados, ticketsPage] = await Promise.all([
-      prisma.tarea.count({ where: searchWhere }),
-      prisma.tarea.count({ where: tableWhere }),
-      prisma.tarea.groupBy({ by: ["estado"], _count: { id: true }, where: searchWhere }),
+      prisma.tarea.count({ where: searchWhereFinal }),
+      prisma.tarea.count({ where: tableWhereFinal }),
+      prisma.tarea.groupBy({ by: ["estado"], _count: { id: true }, where: searchWhereFinal }),
       // Sin paginación por offset aquí — el sort híbrido ocurre en memoria (volumen acotado a 1 día)
-      prisma.tarea.findMany({ where: tableWhere, include: ticketStandardInclude }),
+      prisma.tarea.findMany({ where: tableWhereFinal, include: ticketStandardInclude }),
     ]);
 
     const resumenEstados = groupEstados.reduce((acc, curr) => {
@@ -69,51 +54,28 @@ export const listarHoy = async (req: Request, res: Response) => {
       resumenEstados[estado] = totalPaginado;
     }
 
-    // --- SORT HÍBRIDO EN MEMORIA ---
+    const metricas = await calcularMetricasDashboard(
+      { id: user.id, rol: user.rol },
+      querySinEstado,
+      totalPaginado
+    );
+
     const ticketsDTO = ticketsPage.map((t) => computeTicketTemporalState(t));
-
-    ticketsDTO.sort((a, b) => {
-      // 1. RECHAZADOS primero
-      const aR = a.estado === "RECHAZADO";
-      const bR = b.estado === "RECHAZADO";
-      if (aR !== bR) {
-        return bR ? 1 : -1;
-      }
-
-      // 2. Luego ATRASADAS (isOverdue)
-      const aOverdue = a.isOverdue === true;
-      const bOverdue = b.isOverdue === true;
-      if (aOverdue !== bOverdue) {
-        return bOverdue ? 1 : -1;
-      }
-
-      // 3. Luego por HORA (si tiene horaInicioProgramada)
-      const aHasTime = !!a.horaInicioProgramada;
-      const bHasTime = !!b.horaInicioProgramada;
-      if (aHasTime && bHasTime) {
-        return new Date(a.horaInicioProgramada!).getTime() - new Date(b.horaInicioProgramada!).getTime();
-      }
-      if (aHasTime !== bHasTime) {
-        return bHasTime ? 1 : -1;
-      }
-
-      // 4. Por PRIORIDAD
-      const aW = PRIORITY_WEIGHT[a.prioridad] || 0;
-      const bW = PRIORITY_WEIGHT[b.prioridad] || 0;
-      if (aW !== bW) return bW - aW;
-
-      // 5. Creación DESC
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
+    const ticketsOrdenados = query.scope === "actividades"
+      ? ordenarActividadesHoyOperativamente(ticketsDTO)
+      : query.scope === "mantenimientos"
+        ? ordenarMantenimientosHoyOperativamente(ticketsDTO)
+        : ordenarTodasHoyOperativamente(ticketsDTO);
 
     // Paginación manual post-sort
-    const paginated = ticketsDTO.slice(offset, offset + limit);
+    const paginated = ticketsOrdenados.slice(offset, offset + limit);
 
     return res.json({
       status: "success",
       pagination: { total: totalPaginado, page, limit, totalPages: Math.ceil(totalPaginado / limit) },
       totalAbsoluto,
       resumenEstados,
+      metricas,
       data: paginated,
     });
   } catch (error) {

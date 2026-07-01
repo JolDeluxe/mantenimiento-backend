@@ -7,8 +7,50 @@ import {
 import { z } from "zod";
 import { ticketFilterSchema } from "./zod";
 import type { TicketWithDetails, TicketDTO } from "./types";
+import { prisma } from "../../db";
 
 type TicketFilterQuery = z.infer<typeof ticketFilterSchema>["query"];
+type TicketFilterUser = { id: number; rol: Rol };
+type TicketOrdenable = Pick<
+  TicketDTO,
+  "tipo" | "clasificacion" | "isOverdue" | "estado" | "horaInicioProgramada" | "prioridad" | "createdAt" | "maquina"
+>;
+
+export type DashboardMetricas = {
+  totalFiltrado: number;
+  totalResumen: number;
+  totalHoy: number;
+  totalManana: number;
+  totalAtrasadas: number;
+  totalRechazadas: number;
+  equipoCount: number;
+  misTareasCount: number;
+};
+
+const TIPO_OPERATIVO_WEIGHT: Record<string, number> = {
+  TICKET: 1,
+  PLANEADA: 2,
+  EXTRAORDINARIA: 3,
+};
+
+const CLASIFICACION_OPERATIVA_WEIGHT: Record<string, number> = {
+  CORRECTIVO: 1,
+  PREVENTIVO: 2,
+  AUTONOMO: 3,
+};
+
+const PRIORIDAD_OPERATIVA_WEIGHT: Record<string, number> = {
+  CRITICA: 4,
+  ALTA: 3,
+  MEDIA: 2,
+  BAJA: 1,
+};
+
+const CRITICIDAD_MAQUINA_WEIGHT: Record<string, number> = {
+  A: 1,
+  B: 2,
+  C: 3,
+};
 
 export const isAdminOrJefe = (rol: Rol): boolean => {
   const rolesAdmin: Rol[] = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO];
@@ -17,6 +59,24 @@ export const isAdminOrJefe = (rol: Rol): boolean => {
 
 export const isTecnico = (rol: Rol): boolean => {
   return rol === Rol.TECNICO;
+};
+
+export const getMXDayBounds = () => {
+  const toMXDateStr = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const hoyMXStr = toMXDateStr(new Date());
+  const parts = hoyMXStr.split('-').map(Number);
+  const [yMX, mMX, dMX] = [parts[0]!, parts[1]!, parts[2]!];
+  const candidateCDT = new Date(Date.UTC(yMX, mMX - 1, dMX, 5, 0, 0, 0));
+  const inicioDiaHoyMX = toMXDateStr(candidateCDT) === hoyMXStr
+    ? candidateCDT
+    : new Date(Date.UTC(yMX, mMX - 1, dMX, 6, 0, 0, 0));
+
+  return {
+    inicioDiaHoyMX,
+    finDiaHoyMX: new Date(inicioDiaHoyMX.getTime() + 24 * 60 * 60 * 1000 - 1),
+    inicioDiaMananaMX: new Date(inicioDiaHoyMX.getTime() + 24 * 60 * 60 * 1000),
+    finDiaMananaMX: new Date(inicioDiaHoyMX.getTime() + 48 * 60 * 60 * 1000 - 1),
+  };
 };
 
 export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFilterQuery): Prisma.TareaWhereInput => {
@@ -28,6 +88,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     huerfanos, vencidos,
     year, month, // Inyección de los parámetros Macro Históricos
     maquinaId,
+    criticidadMaquina,
     perteneceAHoy,
     venceManana,
     scope
@@ -36,21 +97,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   const where: Prisma.TareaWhereInput = {};
   const andConditions: Prisma.TareaWhereInput[] = [];
 
-  // Configuración del huso horario de Ciudad de México para filtros temporales
-  const toMXDateStr = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-  const hoyMXStr = toMXDateStr(new Date());
-  const parts = hoyMXStr.split('-').map(Number);
-  const [yMX, mMX, dMX] = [parts[0]!, parts[1]!, parts[2]!];
-  // Probar offset CDT (UTC-5, hora 5) primero; si el resultado MX coincide con hoy, úsalo.
-  // De lo contrario caer a CST (UTC-6, hora 6).
-  const candidateCDT = new Date(Date.UTC(yMX, mMX - 1, dMX, 5, 0, 0, 0));
-  const inicioDiaHoyMX = toMXDateStr(candidateCDT) === hoyMXStr
-    ? candidateCDT
-    : new Date(Date.UTC(yMX, mMX - 1, dMX, 6, 0, 0, 0));
-
-  const finDiaHoyMX = new Date(inicioDiaHoyMX.getTime() + 24 * 60 * 60 * 1000 - 1);
-  const inicioDiaMananaMX = new Date(inicioDiaHoyMX.getTime() + 24 * 60 * 60 * 1000);
-  const finDiaMananaMX = new Date(inicioDiaHoyMX.getTime() + 48 * 60 * 60 * 1000 - 1);
+  const { inicioDiaHoyMX, finDiaHoyMX, inicioDiaMananaMX, finDiaMananaMX } = getMXDayBounds();
 
   if (user.rol === Rol.TECNICO) {
     if (!maquinaId) {
@@ -74,6 +121,9 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     where.maquinaId = { not: null };
   } else if (scope === "actividades") {
     where.maquinaId = null;
+  }
+  if (criticidadMaquina) {
+    where.maquina = { is: { criticidad: criticidadMaquina } };
   }
 
   // Filtro de Periodo Histórico (Año / Mes sobre la creación del ticket)
@@ -158,7 +208,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
 
   if (vencidos) {
     filterVencimiento.lt = inicioDiaHoyMX;
-    where.estado = { in: [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA] };
+    where.estado = { in: [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA, EstadoTarea.RECHAZADO] };
     hasVencimientoFilter = true;
   }
 
@@ -195,6 +245,312 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   }
 
   return where;
+};
+
+export const withSearchFilter = (where: Prisma.TareaWhereInput, q?: string): Prisma.TareaWhereInput => {
+  const searchStr = q?.trim();
+  if (!searchStr) return where;
+
+  const searchFilter: Prisma.TareaWhereInput = {
+    OR: [
+      { titulo: { contains: searchStr } },
+      { area: { contains: searchStr } },
+      {
+        maquina: {
+          is: {
+            OR: [
+              { codigo: { contains: searchStr } },
+              { nombre: { contains: searchStr } },
+              { proceso: { contains: searchStr } },
+              { marca: { contains: searchStr } },
+              { modelo: { contains: searchStr } },
+              { numeroSerie: { contains: searchStr } },
+            ],
+          },
+        },
+      },
+      ...(!isNaN(Number(searchStr)) ? [{ id: Number(searchStr) }] : []),
+    ],
+  };
+
+  return {
+    ...where,
+    AND: [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      searchFilter,
+    ],
+  };
+};
+
+const limpiarFiltrosTemporales = (query: TicketFilterQuery): TicketFilterQuery => {
+  const baseQuery = { ...query };
+  delete baseQuery.estado;
+  delete baseQuery.perteneceAHoy;
+  delete baseQuery.venceManana;
+  delete baseQuery.vencidos;
+  delete baseQuery.vencimientoDesde;
+  delete baseQuery.vencimientoHasta;
+  return baseQuery;
+};
+
+const limpiarFiltroEstado = (query: TicketFilterQuery): TicketFilterQuery => {
+  const baseQuery = { ...query };
+  delete baseQuery.estado;
+  return baseQuery;
+};
+
+const buildMetricWhere = (
+  user: TicketFilterUser,
+  query: TicketFilterQuery,
+  overrides: Partial<TicketFilterQuery> = {}
+): Prisma.TareaWhereInput => {
+  const metricQuery = { ...limpiarFiltrosTemporales(query), ...overrides };
+  return withSearchFilter(getTicketFilters(user, metricQuery), metricQuery.q);
+};
+
+const buildContextWhere = (
+  user: TicketFilterUser,
+  query: TicketFilterQuery,
+  overrides: Partial<TicketFilterQuery> = {}
+): Prisma.TareaWhereInput => {
+  const contextQuery = { ...limpiarFiltroEstado(query), ...overrides };
+  return withSearchFilter(getTicketFilters(user, contextQuery), contextQuery.q);
+};
+
+export const calcularMetricasDashboard = async (
+  user: TicketFilterUser,
+  querySinFiltrosTemporales: TicketFilterQuery,
+  totalFiltrado: number
+): Promise<DashboardMetricas> => {
+  const { inicioDiaHoyMX } = getMXDayBounds();
+  const contextWhere = buildContextWhere(user, querySinFiltrosTemporales);
+  const badgeBaseWhere = buildMetricWhere(user, querySinFiltrosTemporales);
+  const rechazadasEnTiempoWhere: Prisma.TareaWhereInput = {
+    ...badgeBaseWhere,
+    estado: EstadoTarea.RECHAZADO,
+    OR: [
+      { fechaVencimiento: null },
+      { fechaVencimiento: { gte: inicioDiaHoyMX } },
+    ],
+  };
+
+  const [
+    totalResumen,
+    totalHoy,
+    totalManana,
+    totalAtrasadas,
+    totalRechazadas,
+    equipoCount,
+    misTareasCount,
+  ] = await Promise.all([
+    prisma.tarea.count({ where: contextWhere }),
+    prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { perteneceAHoy: true }) }),
+    prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { venceManana: true }) }),
+    prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { vencidos: true }) }),
+    prisma.tarea.count({ where: rechazadasEnTiempoWhere }),
+    prisma.tarea.count({ where: contextWhere }),
+    prisma.tarea.count({
+      where: {
+        ...contextWhere,
+        responsables: { some: { id: user.id } },
+      },
+    }),
+  ]);
+
+  return {
+    totalFiltrado,
+    totalResumen,
+    totalHoy,
+    totalManana,
+    totalAtrasadas,
+    totalRechazadas,
+    equipoCount,
+    misTareasCount,
+  };
+};
+
+const dateMs = (value: Date | string | null | undefined): number | null => {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? null : ms;
+};
+
+export const ordenarTicketsOperativamente = <T extends TicketOrdenable>(tickets: T[]): T[] => {
+  return [...tickets].sort((a, b) => {
+    // 1. Tipo: reportes -> planeadas -> extraordinarias
+    const aTipoW = TIPO_OPERATIVO_WEIGHT[a.tipo] || 99;
+    const bTipoW = TIPO_OPERATIVO_WEIGHT[b.tipo] || 99;
+    if (aTipoW !== bTipoW) return aTipoW - bTipoW;
+
+    // 2. Clasificación: correctivo -> preventivo -> autónomo
+    const aClasW = CLASIFICACION_OPERATIVA_WEIGHT[a.clasificacion || ""] || 99;
+    const bClasW = CLASIFICACION_OPERATIVA_WEIGHT[b.clasificacion || ""] || 99;
+    if (aClasW !== bClasW) return aClasW - bClasW;
+
+    // 3. Atrasadas primero
+    const aOverdue = a.isOverdue === true;
+    const bOverdue = b.isOverdue === true;
+    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+
+    // 4. Rechazadas vigentes primero; las vencidas ya fueron priorizadas por isOverdue
+    const aRejected = a.estado === EstadoTarea.RECHAZADO;
+    const bRejected = b.estado === EstadoTarea.RECHAZADO;
+    if (aRejected !== bRejected) return aRejected ? -1 : 1;
+
+    // 5. Agenda: hora programada ascendente; con hora antes que sin hora
+    const aStart = dateMs(a.horaInicioProgramada);
+    const bStart = dateMs(b.horaInicioProgramada);
+    if (aStart !== null && bStart !== null && aStart !== bStart) return aStart - bStart;
+    if ((aStart !== null) !== (bStart !== null)) return aStart !== null ? -1 : 1;
+
+    // 6. Prioridad: crítica -> alta -> media -> baja
+    const aPriorityW = PRIORIDAD_OPERATIVA_WEIGHT[a.prioridad] || 0;
+    const bPriorityW = PRIORIDAD_OPERATIVA_WEIGHT[b.prioridad] || 0;
+    if (aPriorityW !== bPriorityW) return bPriorityW - aPriorityW;
+
+    // 7. Creación descendente
+    const aCreated = dateMs(a.createdAt) || 0;
+    const bCreated = dateMs(b.createdAt) || 0;
+    return bCreated - aCreated;
+  });
+};
+
+export const ordenarTodasHoyOperativamente = <T extends TicketOrdenable>(tickets: T[]): T[] => {
+  return [...tickets].sort((a, b) => {
+    // 1. Rechazadas siempre arriba: requieren corrección o retrabajo.
+    const aRejected = a.estado === EstadoTarea.RECHAZADO;
+    const bRejected = b.estado === EstadoTarea.RECHAZADO;
+    if (aRejected !== bRejected) return aRejected ? -1 : 1;
+
+    // 2. Atrasadas después de rechazadas.
+    const aOverdue = a.isOverdue === true;
+    const bOverdue = b.isOverdue === true;
+    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+
+    // 3. Reportes visibles antes que planeadas/extraordinarias.
+    const aTicket = a.tipo === "TICKET";
+    const bTicket = b.tipo === "TICKET";
+    if (aTicket !== bTicket) return aTicket ? -1 : 1;
+
+    // 4. Correctivos antes que preventivos/autónomos.
+    const aClasW = CLASIFICACION_OPERATIVA_WEIGHT[a.clasificacion || ""] || 99;
+    const bClasW = CLASIFICACION_OPERATIVA_WEIGHT[b.clasificacion || ""] || 99;
+    if (aClasW !== bClasW) return aClasW - bClasW;
+
+    // 5. En tareas con maquinaria, criticidad A -> B -> C.
+    const aCritW = CRITICIDAD_MAQUINA_WEIGHT[a.maquina?.criticidad || ""] || 99;
+    const bCritW = CRITICIDAD_MAQUINA_WEIGHT[b.maquina?.criticidad || ""] || 99;
+    if (aCritW !== bCritW) return aCritW - bCritW;
+
+    // 6. Prioridad: crítica -> alta -> media -> baja.
+    const aPriorityW = PRIORIDAD_OPERATIVA_WEIGHT[a.prioridad] || 0;
+    const bPriorityW = PRIORIDAD_OPERATIVA_WEIGHT[b.prioridad] || 0;
+    if (aPriorityW !== bPriorityW) return bPriorityW - aPriorityW;
+
+    // 7. Hora programada ascendente; con hora antes que sin hora.
+    const aStart = dateMs(a.horaInicioProgramada);
+    const bStart = dateMs(b.horaInicioProgramada);
+    if (aStart !== null && bStart !== null && aStart !== bStart) return aStart - bStart;
+    if ((aStart !== null) !== (bStart !== null)) return aStart !== null ? -1 : 1;
+
+    // 8. Tipo restante: planeadas -> extraordinarias.
+    const aTipoW = TIPO_OPERATIVO_WEIGHT[a.tipo] || 99;
+    const bTipoW = TIPO_OPERATIVO_WEIGHT[b.tipo] || 99;
+    if (aTipoW !== bTipoW) return aTipoW - bTipoW;
+
+    // 9. Creación descendente.
+    const aCreated = dateMs(a.createdAt) || 0;
+    const bCreated = dateMs(b.createdAt) || 0;
+    return bCreated - aCreated;
+  });
+};
+
+export const ordenarActividadesHoyOperativamente = <T extends TicketOrdenable>(tickets: T[]): T[] => {
+  return [...tickets].sort((a, b) => {
+    // 1. Rechazadas siempre arriba: requieren corrección o retrabajo.
+    const aRejected = a.estado === EstadoTarea.RECHAZADO;
+    const bRejected = b.estado === EstadoTarea.RECHAZADO;
+    if (aRejected !== bRejected) return aRejected ? -1 : 1;
+
+    // 2. Atrasadas después de rechazadas.
+    const aOverdue = a.isOverdue === true;
+    const bOverdue = b.isOverdue === true;
+    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+
+    // 3. Reportes visibles antes que planeadas/extraordinarias.
+    const aTicket = a.tipo === "TICKET";
+    const bTicket = b.tipo === "TICKET";
+    if (aTicket !== bTicket) return aTicket ? -1 : 1;
+
+    // 4. Prioridad y hora programada.
+    const aPriorityW = PRIORIDAD_OPERATIVA_WEIGHT[a.prioridad] || 0;
+    const bPriorityW = PRIORIDAD_OPERATIVA_WEIGHT[b.prioridad] || 0;
+    if (aPriorityW !== bPriorityW) return bPriorityW - aPriorityW;
+
+    const aStart = dateMs(a.horaInicioProgramada);
+    const bStart = dateMs(b.horaInicioProgramada);
+    if (aStart !== null && bStart !== null && aStart !== bStart) return aStart - bStart;
+    if ((aStart !== null) !== (bStart !== null)) return aStart !== null ? -1 : 1;
+
+    // 5. Tipo restante: planeadas -> extraordinarias.
+    const aTipoW = TIPO_OPERATIVO_WEIGHT[a.tipo] || 99;
+    const bTipoW = TIPO_OPERATIVO_WEIGHT[b.tipo] || 99;
+    if (aTipoW !== bTipoW) return aTipoW - bTipoW;
+
+    // 6. Creación descendente.
+    const aCreated = dateMs(a.createdAt) || 0;
+    const bCreated = dateMs(b.createdAt) || 0;
+    return bCreated - aCreated;
+  });
+};
+
+export const ordenarMantenimientosHoyOperativamente = <T extends TicketOrdenable>(tickets: T[]): T[] => {
+  return [...tickets].sort((a, b) => {
+    // 1. Rechazadas siempre arriba: requieren corrección o retrabajo.
+    const aRejected = a.estado === EstadoTarea.RECHAZADO;
+    const bRejected = b.estado === EstadoTarea.RECHAZADO;
+    if (aRejected !== bRejected) return aRejected ? -1 : 1;
+
+    // 2. Atrasadas después de rechazadas.
+    const aOverdue = a.isOverdue === true;
+    const bOverdue = b.isOverdue === true;
+    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+
+    // 3. Reportes primero.
+    const aTicket = a.tipo === "TICKET";
+    const bTicket = b.tipo === "TICKET";
+    if (aTicket !== bTicket) return aTicket ? -1 : 1;
+
+    // 4. Correctivos antes que preventivos/autónomos.
+    const aClasW = CLASIFICACION_OPERATIVA_WEIGHT[a.clasificacion || ""] || 99;
+    const bClasW = CLASIFICACION_OPERATIVA_WEIGHT[b.clasificacion || ""] || 99;
+    if (aClasW !== bClasW) return aClasW - bClasW;
+
+    // 5. Criticidad de maquinaria: A -> B -> C.
+    const aCritW = CRITICIDAD_MAQUINA_WEIGHT[a.maquina?.criticidad || ""] || 99;
+    const bCritW = CRITICIDAD_MAQUINA_WEIGHT[b.maquina?.criticidad || ""] || 99;
+    if (aCritW !== bCritW) return aCritW - bCritW;
+
+    // 6. Prioridad y hora programada.
+    const aPriorityW = PRIORIDAD_OPERATIVA_WEIGHT[a.prioridad] || 0;
+    const bPriorityW = PRIORIDAD_OPERATIVA_WEIGHT[b.prioridad] || 0;
+    if (aPriorityW !== bPriorityW) return bPriorityW - aPriorityW;
+
+    const aStart = dateMs(a.horaInicioProgramada);
+    const bStart = dateMs(b.horaInicioProgramada);
+    if (aStart !== null && bStart !== null && aStart !== bStart) return aStart - bStart;
+    if ((aStart !== null) !== (bStart !== null)) return aStart !== null ? -1 : 1;
+
+    // 7. Tipo restante: planeadas -> extraordinarias.
+    const aTipoW = TIPO_OPERATIVO_WEIGHT[a.tipo] || 99;
+    const bTipoW = TIPO_OPERATIVO_WEIGHT[b.tipo] || 99;
+    if (aTipoW !== bTipoW) return aTipoW - bTipoW;
+
+    // 8. Creación descendente.
+    const aCreated = dateMs(a.createdAt) || 0;
+    const bCreated = dateMs(b.createdAt) || 0;
+    return bCreated - aCreated;
+  });
 };
 
 export const isValidTransition = (current: EstadoTarea, next: EstadoTarea, clasificacion?: ClasificacionTarea | null, categoria?: string | null): boolean => {

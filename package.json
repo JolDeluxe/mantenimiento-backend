@@ -45,6 +45,7 @@
     "typecheck": "tsc --noEmit",
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
-    "seed": "bun prisma/seed.ts"
+    "seed": "bun prisma/seed.ts",
+    "reset:calidad-dev": "bun scripts/reset-calidad-dev.ts --confirm"
   }
 }

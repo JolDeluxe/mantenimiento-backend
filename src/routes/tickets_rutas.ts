@@ -10,7 +10,8 @@ import {
   updateTicketSchema, 
   changeStatusSchema,
   createTicketBatchSchema,
-  rescheduleTicketsSchema
+  rescheduleTicketsSchema,
+  approveTicketsBatchSchema
 } from "../modules/tickets/zod"; 
 
 import { listarTickets } from "../modules/tickets/01_list";
@@ -21,6 +22,7 @@ import { changeTicketStatus } from "../modules/tickets/05_status";
 import { obtenerMetricasTickets } from "../modules/tickets/06_metrics";
 import { rescheduleTickets } from "../modules/tickets/06_reschedule";
 import { createBatchTickets } from "../modules/tickets/create/create_batch";
+import { approveTicketsBatch } from "../modules/tickets/07_approve_batch";
 
 const router = Router();
 router.use(authenticate);
@@ -97,6 +99,14 @@ router.patch(
     authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO]),
     validate(rescheduleTicketsSchema),
     rescheduleTickets
+);
+
+// PATCH /api/tickets/approve-batch
+router.patch(
+    "/approve-batch",
+    authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO]),
+    validate(approveTicketsBatchSchema),
+    approveTicketsBatch
 );
 
 export default router;

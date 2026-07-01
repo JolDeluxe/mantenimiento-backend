@@ -61,6 +61,7 @@ export const ticketFilterSchema = z.object({
     planta: z.preprocess(preprocessEmpty, z.string().optional()),
     area: z.preprocess(preprocessEmpty, z.string().optional()),
     maquinaId: z.preprocess(preprocessEmpty, z.coerce.number().optional()),
+    criticidadMaquina: z.preprocess(preprocessEmpty, z.enum(["A", "B", "C"]).optional()),
     
     // Inyección de parámetros Macro Históricos
     year: z.preprocess(preprocessEmpty, z.coerce.number().int().positive().optional()),
@@ -259,5 +260,12 @@ export const rescheduleTicketsSchema = z.object({
     ticketIds: z.array(z.number().int().positive()).min(1),
     nuevaFecha: z.string(),
     motivo: z.string().min(5, "Debes justificar la reprogramación")
+  }).strict()
+});
+
+export const approveTicketsBatchSchema = z.object({
+  body: z.object({
+    ticketIds: z.array(z.number().int().positive()).min(1),
+    nota: z.string().optional()
   }).strict()
 });
