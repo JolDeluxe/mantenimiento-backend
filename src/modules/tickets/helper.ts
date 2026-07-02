@@ -46,6 +46,12 @@ const PRIORIDAD_OPERATIVA_WEIGHT: Record<string, number> = {
   BAJA: 1,
 };
 
+const ESTADO_LISTADO_WEIGHT: Partial<Record<EstadoTarea, number>> = {
+  [EstadoTarea.RESUELTO]: 2,
+  [EstadoTarea.CERRADO]: 3,
+  [EstadoTarea.CANCELADA]: 4,
+};
+
 const CRITICIDAD_MAQUINA_WEIGHT: Record<string, number> = {
   A: 1,
   B: 2,
@@ -81,7 +87,7 @@ export const getMXDayBounds = () => {
 
 export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFilterQuery): Prisma.TareaWhereInput => {
   const { 
-    q, estado, prioridad, tipo, clasificacion, categoria, responsableId, planta, area, 
+    q, estado, prioridad, tipo, tipoIn, clasificacion, categoria, responsableId, planta, area, 
     fechaInicio, fechaFin, 
     vencimientoDesde, vencimientoHasta,
     finalizadoDesde, finalizadoHasta,
@@ -111,6 +117,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
 
   if (prioridad) where.prioridad = prioridad;
   if (tipo) where.tipo = tipo;
+  else if (tipoIn?.length) where.tipo = { in: tipoIn };
   if (clasificacion) where.clasificacion = clasificacion;
   if (categoria) where.categoria = categoria;
   if (planta) where.planta = planta;
@@ -377,38 +384,43 @@ const dateMs = (value: Date | string | null | undefined): number | null => {
 
 export const ordenarTicketsOperativamente = <T extends TicketOrdenable>(tickets: T[]): T[] => {
   return [...tickets].sort((a, b) => {
-    // 1. Tipo: reportes -> planeadas -> extraordinarias
+    // 1. Estados terminales al fondo: RESUELTO antes de CERRADO.
+    const aEstadoW = ESTADO_LISTADO_WEIGHT[a.estado] ?? 1;
+    const bEstadoW = ESTADO_LISTADO_WEIGHT[b.estado] ?? 1;
+    if (aEstadoW !== bEstadoW) return aEstadoW - bEstadoW;
+
+    // 2. Tipo: reportes -> planeadas -> extraordinarias
     const aTipoW = TIPO_OPERATIVO_WEIGHT[a.tipo] || 99;
     const bTipoW = TIPO_OPERATIVO_WEIGHT[b.tipo] || 99;
     if (aTipoW !== bTipoW) return aTipoW - bTipoW;
 
-    // 2. Clasificación: correctivo -> preventivo -> autónomo
+    // 3. Clasificación: correctivo -> preventivo -> autónomo
     const aClasW = CLASIFICACION_OPERATIVA_WEIGHT[a.clasificacion || ""] || 99;
     const bClasW = CLASIFICACION_OPERATIVA_WEIGHT[b.clasificacion || ""] || 99;
     if (aClasW !== bClasW) return aClasW - bClasW;
 
-    // 3. Atrasadas primero
+    // 4. Atrasadas primero
     const aOverdue = a.isOverdue === true;
     const bOverdue = b.isOverdue === true;
     if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
 
-    // 4. Rechazadas vigentes primero; las vencidas ya fueron priorizadas por isOverdue
+    // 5. Rechazadas vigentes primero; las vencidas ya fueron priorizadas por isOverdue
     const aRejected = a.estado === EstadoTarea.RECHAZADO;
     const bRejected = b.estado === EstadoTarea.RECHAZADO;
     if (aRejected !== bRejected) return aRejected ? -1 : 1;
 
-    // 5. Agenda: hora programada ascendente; con hora antes que sin hora
+    // 6. Agenda: hora programada ascendente; con hora antes que sin hora
     const aStart = dateMs(a.horaInicioProgramada);
     const bStart = dateMs(b.horaInicioProgramada);
     if (aStart !== null && bStart !== null && aStart !== bStart) return aStart - bStart;
     if ((aStart !== null) !== (bStart !== null)) return aStart !== null ? -1 : 1;
 
-    // 6. Prioridad: crítica -> alta -> media -> baja
+    // 7. Prioridad: crítica -> alta -> media -> baja
     const aPriorityW = PRIORIDAD_OPERATIVA_WEIGHT[a.prioridad] || 0;
     const bPriorityW = PRIORIDAD_OPERATIVA_WEIGHT[b.prioridad] || 0;
     if (aPriorityW !== bPriorityW) return bPriorityW - aPriorityW;
 
-    // 7. Creación descendente
+    // 8. Creación descendente
     const aCreated = dateMs(a.createdAt) || 0;
     const bCreated = dateMs(b.createdAt) || 0;
     return bCreated - aCreated;

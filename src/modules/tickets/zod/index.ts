@@ -11,6 +11,20 @@ const preprocessNumberArray = (val: unknown) => {
   return val;
 };
 
+const preprocessStringArray = (val: unknown) => {
+  if (val === undefined || val === null || val === "" || val === "null") return undefined;
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return val.split(",").map((item) => item.trim()).filter(Boolean);
+    }
+  }
+  return val;
+};
+
 const preprocessDate = (val: unknown) => (val === "" || val === "null" ? undefined : val);
 
 const preprocessEmpty = (val: unknown) => (val === "" || val === "null" ? undefined : val);
@@ -55,6 +69,7 @@ export const ticketFilterSchema = z.object({
     estado: z.preprocess(preprocessEmpty, z.nativeEnum(EstadoTarea).optional()),
     prioridad: z.preprocess(preprocessEmpty, z.nativeEnum(Prioridad).optional()),
     tipo: z.preprocess(preprocessEmpty, z.nativeEnum(TipoTarea).optional()),
+    tipoIn: z.preprocess(preprocessStringArray, z.array(z.nativeEnum(TipoTarea)).optional()),
     clasificacion: z.preprocess(preprocessEmpty, z.nativeEnum(ClasificacionTarea).optional()),
     categoria: z.preprocess(preprocessEmpty, z.string().optional()),
     responsableId: z.preprocess(preprocessEmpty, z.coerce.number().optional()),
