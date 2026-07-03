@@ -6,6 +6,7 @@ import { EstadoTarea, TipoEvento, TipoTarea, ClasificacionTarea, Prioridad } fro
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "./helper_upload";
 import { notificarAsignacionTarea } from "../../notificaciones/services";
+import { calcularMinutosProgramadosMX } from "../helper";
 
 export const createTicketAdmin = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -77,9 +78,8 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
     if (data.horaInicioProgramada && data.horaFinProgramada) {
       const inicio = new Date(data.horaInicioProgramada);
       const fin = new Date(data.horaFinProgramada);
-      if (fin > inicio) {
-        tiempoEstimado = Math.floor((fin.getTime() - inicio.getTime()) / 60000);
-      }
+      const minutosProgramados = calcularMinutosProgramadosMX(inicio, fin);
+      if (minutosProgramados !== null) tiempoEstimado = minutosProgramados;
 
       if (tieneResponsables) {
         const overlapping = await prisma.tarea.findFirst({

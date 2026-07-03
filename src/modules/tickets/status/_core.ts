@@ -55,18 +55,39 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
     let fechaCierreReal        = ahora;
     let esCierreManualAtrasado = false;
     let minutosManualesDirectos = 0;
+    let inicioTiempoManual: Date | null = null;
+    let finTiempoManual: Date | null = null;
+    let intervaloManualSincronizado = false;
 
     if (esEstadoResolucion && registroTiempoManual) {
-      if (registroTiempoManual.finManual) {
-        fechaCierreReal = new Date(registroTiempoManual.finManual);
-        fechaCierreReal.setHours(23, 59, 59, 999);
-        if (fechaCierreReal > ahora) fechaCierreReal = ahora;
+      const inicioManual = registroTiempoManual.inicioManual ? new Date(registroTiempoManual.inicioManual) : null;
+      let finManual = registroTiempoManual.finManual ? new Date(registroTiempoManual.finManual) : null;
+      const duracionManual = Number(registroTiempoManual.duracionManualMinutos || 0);
+
+      if (inicioManual && finManual && finManual > inicioManual) {
+        inicioTiempoManual = inicioManual;
+        finTiempoManual = finManual;
+        minutosManualesDirectos = Math.max(1, Math.round((finManual.getTime() - inicioManual.getTime()) / 60000));
+        fechaCierreReal = finManual;
         esCierreManualAtrasado = true;
-      }
-      if (registroTiempoManual.duracionManualMinutos) {
-        minutosManualesDirectos = Number(registroTiempoManual.duracionManualMinutos);
+      } else if (finManual) {
+        if (finManual > ahora) finManual = ahora;
+        fechaCierreReal = finManual;
+        finTiempoManual = finManual;
+        esCierreManualAtrasado = true;
+
+        if (duracionManual > 0) {
+          minutosManualesDirectos = duracionManual;
+          inicioTiempoManual = new Date(finManual.getTime() - duracionManual * 60000);
+        }
+      } else if (duracionManual > 0) {
+        minutosManualesDirectos = duracionManual;
+        finTiempoManual = ahora;
+        inicioTiempoManual = new Date(ahora.getTime() - duracionManual * 60000);
       }
     }
+
+    const hayTiempoManual = minutosManualesDirectos > 0 && !!inicioTiempoManual && !!finTiempoManual;
 
     // ─── Construcción de datosActualizacion ───────────────────────────────────
     const datosActualizacion: Record<string, unknown> = { estado: nuevoEstado, updatedAt: ahora };
@@ -87,52 +108,59 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
         orderBy: { inicio: "desc" }
       });
       if (intervaloAbierto) {
-        const finValidado = esCierreManualAtrasado && fechaCierreReal > intervaloAbierto.inicio
+        if (hayTiempoManual) {
+          await prisma.intervaloTiempo.update({
+            where: { id: intervaloAbierto.id },
+            data: {
+              inicio: inicioTiempoManual!,
+              fin: finTiempoManual!,
+              duracion: minutosManualesDirectos
+            }
+          });
+          intervaloManualSincronizado = true;
+        } else {
+          const finValidado = esCierreManualAtrasado && fechaCierreReal > intervaloAbierto.inicio
           ? fechaCierreReal
           : esCierreManualAtrasado ? intervaloAbierto.inicio : ahora;
 
-        const duracionMin = minutosManualesDirectos > 0
-          ? 0
-          : Math.floor((finValidado.getTime() - intervaloAbierto.inicio.getTime()) / 60000);
+          const duracionMin = Math.floor((finValidado.getTime() - intervaloAbierto.inicio.getTime()) / 60000);
 
-        await prisma.intervaloTiempo.update({
-          where: { id: intervaloAbierto.id },
-          data: { fin: finValidado, duracion: duracionMin }
-        });
-        await prisma.tarea.update({
-          where: { id: ticketId },
-          data: { duracionReal: { increment: duracionMin } }
-        });
+          await prisma.intervaloTiempo.update({
+            where: { id: intervaloAbierto.id },
+            data: { fin: finValidado, duracion: duracionMin }
+          });
+          await prisma.tarea.update({
+            where: { id: ticketId },
+            data: { duracionReal: { increment: duracionMin } }
+          });
+        }
       }
     }
 
     // ─── Tiempo manual directo ─────────────────────────────────────────────────
-    if (minutosManualesDirectos > 0) {
-      const inicioIntervaloManual = new Date(ahora.getTime() - minutosManualesDirectos * 60000);
+    if (hayTiempoManual && !intervaloManualSincronizado) {
       await prisma.intervaloTiempo.create({
         data: {
           tareaId:   ticketId,
           usuarioId: user.id,
           estado:    EstadoTarea.EN_PROGRESO,
-          inicio:    inicioIntervaloManual,
-          fin:       ahora,
+          inicio:    inicioTiempoManual!,
+          fin:       finTiempoManual!,
           duracion:  minutosManualesDirectos
         }
       });
-      await prisma.tarea.update({
-        where: { id: ticketId },
-        data: { duracionReal: minutosManualesDirectos }
-      });
     }
 
-    if (esEstadoResolucion && !ticket.fechaInicio) {
-      datosActualizacion.fechaInicio = minutosManualesDirectos > 0
-        ? new Date(ahora.getTime() - minutosManualesDirectos * 60000)
-        : ahora;
+    if (hayTiempoManual) {
+      datosActualizacion.fechaInicio = inicioTiempoManual;
+      datosActualizacion.finalizadoAt = finTiempoManual;
+      datosActualizacion.duracionReal = minutosManualesDirectos;
+    } else if (esEstadoResolucion && !ticket.fechaInicio) {
+      datosActualizacion.fechaInicio = ahora;
     }
 
     if (nuevoEstado === EstadoTarea.RESUELTO || nuevoEstado === EstadoTarea.CERRADO) {
-      if (!ticket.finalizadoAt) datosActualizacion.finalizadoAt = esCierreManualAtrasado ? fechaCierreReal : ahora;
+      if (!hayTiempoManual && !ticket.finalizadoAt) datosActualizacion.finalizadoAt = esCierreManualAtrasado ? fechaCierreReal : ahora;
     }
 
     if (nuevoEstado === EstadoTarea.RECHAZADO) {

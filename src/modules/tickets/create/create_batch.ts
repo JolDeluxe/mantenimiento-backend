@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../../../db";
 import { EstadoTarea, TipoEvento, ClasificacionTarea } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
+import { calcularMinutosProgramadosMX } from "../helper";
 
 export const createBatchTickets = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -55,6 +56,14 @@ export const createBatchTickets = async (req: Request, res: Response) => {
           ? tarea.responsables.map((id: number) => ({ id }))
           : [];
 
+        const horaInicioProgramada = tarea.horaInicioProgramada ? new Date(tarea.horaInicioProgramada) : null;
+        const horaFinProgramada = tarea.horaFinProgramada ? new Date(tarea.horaFinProgramada) : null;
+        let tiempoEstimado = tarea.tiempoEstimado || null;
+        if (horaInicioProgramada && horaFinProgramada) {
+          const minutosProgramados = calcularMinutosProgramadosMX(horaInicioProgramada, horaFinProgramada);
+          if (minutosProgramados !== null) tiempoEstimado = minutosProgramados;
+        }
+
         const nuevoTicket = await tx.tarea.create({
           data: {
             titulo: tarea.titulo,
@@ -65,11 +74,11 @@ export const createBatchTickets = async (req: Request, res: Response) => {
             tipo: tarea.tipo,
             clasificacion: clasificacionFinal,
             prioridad: tarea.prioridad,
-            tiempoEstimado: tarea.tiempoEstimado || null,
+            tiempoEstimado,
             estado: estadoInicial,
             fechaVencimiento: tarea.fechaVencimiento ?? null,
-            horaInicioProgramada: tarea.horaInicioProgramada ? new Date(tarea.horaInicioProgramada) : null,
-            horaFinProgramada: tarea.horaFinProgramada ? new Date(tarea.horaFinProgramada) : null,
+            horaInicioProgramada,
+            horaFinProgramada,
             creadorId: user.id,
             departamentoId: tarea.departamentoId ?? user.departamentoId,
             responsables: { connect: responsablesConnect },

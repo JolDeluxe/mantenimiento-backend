@@ -85,6 +85,30 @@ export const getMXDayBounds = () => {
   };
 };
 
+const toMXDateForDuration = (iso: string | Date): Date => {
+  const raw = typeof iso === "string" ? new Date(iso) : iso;
+  const mxStr = raw.toLocaleString("en-CA", {
+    timeZone: "America/Mexico_City",
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+  return new Date(mxStr.replace(", ", "T"));
+};
+
+export const calcularMinutosProgramadosMX = (inicio: Date, fin: Date): number | null => {
+  if (fin <= inicio) return null;
+  const mxInicio = toMXDateForDuration(inicio);
+  const mxFin = toMXDateForDuration(fin);
+  const diffMs = mxFin.getTime() - mxInicio.getTime();
+  if (diffMs <= 0) return null;
+  return Math.max(1, Math.floor(diffMs / 60000));
+};
+
 export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFilterQuery): Prisma.TareaWhereInput => {
   const { 
     q, estado, prioridad, tipo, tipoIn, clasificacion, categoria, responsableId, planta, area, 
