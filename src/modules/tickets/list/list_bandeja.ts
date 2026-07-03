@@ -15,7 +15,7 @@ export const listarBandeja = async (req: Request, res: Response) => {
 
     const { page, limit, sort, estado } = query;
     const offset = (page - 1) * limit;
-    const usaOrdenOperativo = !estado || query.venceManana === true;
+    const usaOrdenOperativo = query.venceManana === true;
 
     const querySinEstado = { ...query };
     delete querySinEstado.estado;
@@ -41,9 +41,7 @@ export const listarBandeja = async (req: Request, res: Response) => {
       prisma.tarea.count({ where: searchWhereFinal }),
       prisma.tarea.count({ where: tableWhereFinal }),
       prisma.tarea.groupBy({ by: ["estado"], _count: { id: true }, where: searchWhereFinal }),
-      usaOrdenOperativo
-        ? prisma.tarea.findMany({ where: tableWhereFinal, include: ticketStandardInclude })
-        : prisma.tarea.findMany({ where: tableWhereFinal, include: ticketStandardInclude, orderBy, skip: offset, take: limit }),
+      prisma.tarea.findMany({ where: tableWhereFinal, include: ticketStandardInclude, orderBy, skip: offset, take: limit }),
     ]);
 
     const resumenEstados = groupEstados.reduce((acc, curr) => {
@@ -63,7 +61,7 @@ export const listarBandeja = async (req: Request, res: Response) => {
 
     const ticketsDTO = ticketsPage.map((t) => computeTicketTemporalState(t));
     const data = usaOrdenOperativo
-      ? ordenarTicketsOperativamente(ticketsDTO).slice(offset, offset + limit)
+      ? ordenarTicketsOperativamente(ticketsDTO)
       : ticketsDTO;
 
     return res.json({

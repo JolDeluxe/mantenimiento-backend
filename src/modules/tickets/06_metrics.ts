@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { Rol, EstadoTarea, ClasificacionTarea, Prisma } from "@prisma/client";
 import { registrarError } from "../../utils/logger";
-import { getTicketFilters, isAdminOrJefe } from "./helper";
+import { getTicketFilters, isAdminOrJefe, limpiarFiltrosTemporales } from "./helper";
 import type { TicketFilterQuery } from "./zod";
 
 export const obtenerMetricasTickets = async (req: Request, res: Response) => {
@@ -25,6 +25,7 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
 
     const globalWhere: Prisma.TareaWhereInput = {
       ...getTicketFilters({ id: user.id, rol: user.rol }, {
+        ...limpiarFiltrosTemporales(query),
         page: 1,
         limit: 100,
         sort: [{ createdAt: 'desc' }]

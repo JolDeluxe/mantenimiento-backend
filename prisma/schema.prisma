@@ -194,6 +194,10 @@ model Tarea {
   @@index([creadorId, createdAt])   
   @@index([maquinaId])
   @@index([maquinaId, estado])
+  @@index([maquinaId, tipo, createdAt])
+  @@index([tipo, estado, createdAt])
+  @@index([clasificacion, createdAt])
+  @@index([fechaVencimiento, estado, createdAt])
 }
 
 model Maquina {

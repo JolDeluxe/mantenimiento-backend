@@ -33,7 +33,6 @@ export const getWorkload = async (req: Request, res: Response) => {
       whereUsuario.departamentoId = user.departamentoId;
     }
 
-    // Usamos la relación exacta expuesta por tu schema: tareasAsignadas
     const usuarios = await prisma.usuario.findMany({
       where: whereUsuario,
       select: {
@@ -42,13 +41,30 @@ export const getWorkload = async (req: Request, res: Response) => {
         imagen: true,
         cargo: true,
         rol: true,
-        tareasAsignadas: {
-          where: { estado: { in: ESTADOS_ACTIVOS } },
-          select: { id: true, estado: true },
-        },
       },
       orderBy: { nombre: "asc" },
     });
+
+    const usuarioIds = usuarios.map((u) => u.id);
+    const workloadRows = usuarioIds.length > 0
+      ? await prisma.$queryRaw<Array<{ usuarioId: number; estado: EstadoTarea; total: bigint }>>(Prisma.sql`
+          SELECT r.B AS usuarioId, t.estado AS estado, COUNT(*) AS total
+          FROM _responsables r
+          INNER JOIN Tarea t ON t.id = r.A
+          WHERE r.B IN (${Prisma.join(usuarioIds)})
+            AND t.estado IN (${Prisma.join(ESTADOS_ACTIVOS)})
+          GROUP BY r.B, t.estado
+        `)
+      : [];
+
+    const workloadByUser = new Map<number, { asignadas: number; enProgreso: number; enPausa: number }>();
+    for (const row of workloadRows) {
+      const workload = workloadByUser.get(row.usuarioId) ?? { asignadas: 0, enProgreso: 0, enPausa: 0 };
+      if (row.estado === EstadoTarea.ASIGNADA) workload.asignadas = Number(row.total);
+      if (row.estado === EstadoTarea.EN_PROGRESO) workload.enProgreso = Number(row.total);
+      if (row.estado === EstadoTarea.EN_PAUSA) workload.enPausa = Number(row.total);
+      workloadByUser.set(row.usuarioId, workload);
+    }
 
     const data = usuarios.map((u) => ({
       id: u.id,
@@ -56,11 +72,7 @@ export const getWorkload = async (req: Request, res: Response) => {
       imagen: u.imagen,
       cargo: u.cargo,
       rol: u.rol,
-      workload: {
-        asignadas: u.tareasAsignadas.filter((t: { estado: EstadoTarea }) => t.estado === EstadoTarea.ASIGNADA).length,
-        enProgreso: u.tareasAsignadas.filter((t: { estado: EstadoTarea }) => t.estado === EstadoTarea.EN_PROGRESO).length,
-        enPausa: u.tareasAsignadas.filter((t: { estado: EstadoTarea }) => t.estado === EstadoTarea.EN_PAUSA).length,
-      },
+      workload: workloadByUser.get(u.id) ?? { asignadas: 0, enProgreso: 0, enPausa: 0 },
     }));
 
     return res.json({ status: "success", data });

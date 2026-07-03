@@ -289,7 +289,7 @@ export const withSearchFilter = (where: Prisma.TareaWhereInput, q?: string): Pri
   };
 };
 
-const limpiarFiltrosTemporales = (query: TicketFilterQuery): TicketFilterQuery => {
+export const limpiarFiltrosTemporales = (query: TicketFilterQuery): TicketFilterQuery => {
   const baseQuery = { ...query };
   delete baseQuery.estado;
   delete baseQuery.perteneceAHoy;
@@ -347,7 +347,6 @@ export const calcularMetricasDashboard = async (
     totalManana,
     totalAtrasadas,
     totalRechazadas,
-    equipoCount,
     misTareasCount,
   ] = await Promise.all([
     prisma.tarea.count({ where: contextWhere }),
@@ -355,7 +354,6 @@ export const calcularMetricasDashboard = async (
     prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { venceManana: true }) }),
     prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { vencidos: true }) }),
     prisma.tarea.count({ where: rechazadasEnTiempoWhere }),
-    prisma.tarea.count({ where: contextWhere }),
     prisma.tarea.count({
       where: {
         ...contextWhere,
@@ -371,7 +369,7 @@ export const calcularMetricasDashboard = async (
     totalManana,
     totalAtrasadas,
     totalRechazadas,
-    equipoCount,
+    equipoCount: totalResumen,
     misTareasCount,
   };
 };
