@@ -100,6 +100,13 @@ export const createBatchTickets = async (req: Request, res: Response) => {
           }
         });
 
+        if (tarea.maquinaId && tarea.paroProduccion) {
+          await tx.maquina.update({
+            where: { id: tarea.maquinaId },
+            data: { estado: "PARO_PRODUCCION" }
+          });
+        }
+
         ticketsCreados.push({ id: nuevoTicket.id, titulo: nuevoTicket.titulo });
       }
 

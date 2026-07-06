@@ -40,6 +40,11 @@ const preprocessJsonObject = (val: unknown) => {
   return undefined;
 };
 
+const preprocessBoolean = (val: unknown) => {
+  if (val === undefined || val === null || val === "" || val === "null") return undefined;
+  return val === true || val === "true" || val === "1" || val === 1;
+};
+
 const registroTiempoManualSchema = z.object({
   inicioManual: z.preprocess(
     preprocessEmpty,
@@ -188,8 +193,11 @@ export const updateTicketSchema = z.object({
     imagenesEliminadas: z.preprocess(preprocessNumberArray, z.array(z.number()).optional()),
     maquinaId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
     paroProduccion: z.preprocess(
-      (val) => val === "true" || val === true,
-      z.boolean().default(false)
+      (val) => {
+        if (val === undefined || val === null) return undefined;
+        return val === "true" || val === true;
+      },
+      z.boolean().optional()
     ),
     impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
     horaInicioProgramada: z.preprocess(preprocessDate, z.coerce.date().optional()),
@@ -205,6 +213,7 @@ export const changeStatusSchema = z.object({
     nota: z.string().optional(), 
     imagenes: z.array(z.string().url()).optional(),
     registroTiempoManual: z.preprocess(preprocessJsonObject, registroTiempoManualSchema.optional()),
+    maquinaOperativaAlResolver: z.preprocess(preprocessBoolean, z.boolean().optional()),
     fechaVencimiento: z.preprocess(
       preprocessDate,
       z.coerce.date()

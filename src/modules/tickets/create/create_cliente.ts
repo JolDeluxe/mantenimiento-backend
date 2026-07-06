@@ -105,6 +105,13 @@ export const createTicketCliente = async (req: Request, res: Response) => {
         });
       }
 
+      if (!esAutonomo && data.maquinaId && data.paroProduccion) {
+        await tx.maquina.update({
+          where: { id: data.maquinaId },
+          data: { estado: "PARO_PRODUCCION" }
+        });
+      }
+
       return nuevaTarea;
     });
 

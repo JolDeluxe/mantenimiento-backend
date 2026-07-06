@@ -12,6 +12,14 @@ import { deleteImageByUrl } from "../../../utils/cloudinary";
 import { notificarModificacionTarea } from "../../notificaciones/services";
 import type { UpdateTicketParams, UpdateTicketInput } from "../zod";
 
+const ESTADOS_ACTIVOS_PARO: EstadoTarea[] = [
+  EstadoTarea.PENDIENTE,
+  EstadoTarea.ASIGNADA,
+  EstadoTarea.EN_PROGRESO,
+  EstadoTarea.EN_PAUSA,
+  EstadoTarea.RECHAZADO
+];
+
 export const updateTicketCliente = async (req: Request, res: Response) => {
   const user = req.user!;
   const { id: ticketId } = req.params as unknown as UpdateTicketParams;
@@ -130,6 +138,30 @@ export const updateTicketCliente = async (req: Request, res: Response) => {
               historialId: historial.id
             }))
           });
+        }
+      }
+
+      if (finalMaquinaId && ESTADOS_ACTIVOS_PARO.includes(tareaActualizada.estado)) {
+        if (tareaActualizada.paroProduccion) {
+          await tx.maquina.update({
+            where: { id: finalMaquinaId },
+            data: { estado: "PARO_PRODUCCION" }
+          });
+        } else if (tareaActual.paroProduccion) {
+          const otrosParosActivos = await tx.tarea.count({
+            where: {
+              maquinaId: finalMaquinaId,
+              paroProduccion: true,
+              estado: { in: ESTADOS_ACTIVOS_PARO },
+              NOT: { id: ticketId }
+            }
+          });
+          if (otrosParosActivos === 0) {
+            await tx.maquina.update({
+              where: { id: finalMaquinaId },
+              data: { estado: "OPERATIVA" }
+            });
+          }
         }
       }
 

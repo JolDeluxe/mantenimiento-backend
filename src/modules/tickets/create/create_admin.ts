@@ -160,6 +160,13 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
         });
       }
 
+      if (data.maquinaId && data.paroProduccion) {
+        await tx.maquina.update({
+          where: { id: data.maquinaId },
+          data: { estado: "PARO_PRODUCCION" }
+        });
+      }
+
       return nuevaTarea;
     });
 

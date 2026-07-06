@@ -23,6 +23,7 @@ export interface CambioEstadoOptions {
   fechaVencimiento:      Date | undefined;
   refacciones:           unknown;
   registroTiempoManual:  { inicioManual?: Date; finManual?: Date; duracionManualMinutos?: number } | undefined;
+  maquinaOperativaAlResolver?: boolean;
   user:                  { id: number; rol: Rol; email: string; nombre: string };
   req:                   Request;
   res:                   Response;
@@ -34,7 +35,7 @@ export interface CambioEstadoOptions {
 export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<Response> => {
   const {
     ticketId, ticket, imagenesFinales, fechaVencimiento, refacciones,
-    registroTiempoManual, user, req, res,
+    registroTiempoManual, maquinaOperativaAlResolver, user, req, res,
     autoCloseInspeccion, manejarIntervalos,
   } = opts;
 
@@ -175,10 +176,14 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
         data: datosActualizacion
       });
 
-      // INTERLOCK: paroProduccion → EN_REPARACION
-      if ((nuevoEstado === EstadoTarea.EN_PROGRESO || nuevoEstado === EstadoTarea.RECHAZADO)
-          && ticket.maquinaId && ticket.paroProduccion) {
+      // INTERLOCK: paro reportado → atención técnica
+      if (nuevoEstado === EstadoTarea.EN_PROGRESO && ticket.maquinaId && ticket.paroProduccion) {
         await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "EN_REPARACION" } });
+      }
+
+      // INTERLOCK: rechazo de paro → vuelve a estado de paro reportado
+      if (nuevoEstado === EstadoTarea.RECHAZADO && ticket.maquinaId && ticket.paroProduccion) {
+        await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "PARO_PRODUCCION" } });
       }
 
       // INTERLOCK: resolución → fechaUltimoServicio + posible OPERATIVA
@@ -193,8 +198,16 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
             NOT: { id: ticketId }
           }
         });
-        if (otrosParosActivos === 0) {
+
+        const puedeMarcarOperativa =
+          !ticket.paroProduccion ||
+          nuevoEstado === EstadoTarea.CERRADO ||
+          maquinaOperativaAlResolver === true;
+
+        if (otrosParosActivos === 0 && puedeMarcarOperativa) {
           await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "OPERATIVA" } });
+        } else if (ticket.paroProduccion && nuevoEstado === EstadoTarea.RESUELTO && maquinaOperativaAlResolver !== true) {
+          await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "PARO_PRODUCCION" } });
         }
       }
 

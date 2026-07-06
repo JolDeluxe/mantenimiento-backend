@@ -24,7 +24,7 @@ export const changeStatusTecnico = async (req: Request, res: Response) => {
     const urlsImagenes = await processTicketImages(files);
     if (urlsImagenes.length > 0) data.imagenes = urlsImagenes;
 
-    let { estado: nuevoEstado, nota, imagenes: imagenesFinales = [], fechaVencimiento, refacciones } = data;
+    let { estado: nuevoEstado, nota, imagenes: imagenesFinales = [], fechaVencimiento, refacciones, maquinaOperativaAlResolver } = data;
     let { registroTiempoManual } = data;
 
     if (typeof registroTiempoManual === "string") {
@@ -69,6 +69,7 @@ export const changeStatusTecnico = async (req: Request, res: Response) => {
       fechaVencimiento,
       refacciones,
       registroTiempoManual,
+      maquinaOperativaAlResolver,
       user,
       req,
       res,

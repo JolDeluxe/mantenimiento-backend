@@ -11,6 +11,14 @@ import { deleteImageByUrl } from "../../../utils/cloudinary";
 import { notificarAsignacionTarea, notificarModificacionTarea } from "../../notificaciones/services";
 import type { UpdateTicketParams, UpdateTicketInput } from "../zod";
 
+const ESTADOS_ACTIVOS_PARO: EstadoTarea[] = [
+  EstadoTarea.PENDIENTE,
+  EstadoTarea.ASIGNADA,
+  EstadoTarea.EN_PROGRESO,
+  EstadoTarea.EN_PAUSA,
+  EstadoTarea.RECHAZADO
+];
+
 // ─── Utilidad timezone Mexico_City ───────────────────────────────────────────
 // Convierte un Date UTC a un Date equivalente en hora local MX para cálculos
 // de duración correctos (evita problemas de DST al comparar getTime()).
@@ -233,6 +241,30 @@ export const updateTicketAdmin = async (req: Request, res: Response) => {
               historialId: historial.id
             }))
           });
+        }
+      }
+
+      if (finalMaquinaId && ESTADOS_ACTIVOS_PARO.includes(tareaActualizada.estado)) {
+        if (tareaActualizada.paroProduccion) {
+          await tx.maquina.update({
+            where: { id: finalMaquinaId },
+            data: { estado: "PARO_PRODUCCION" }
+          });
+        } else if (tareaActual.paroProduccion) {
+          const otrosParosActivos = await tx.tarea.count({
+            where: {
+              maquinaId: finalMaquinaId,
+              paroProduccion: true,
+              estado: { in: ESTADOS_ACTIVOS_PARO },
+              NOT: { id: ticketId }
+            }
+          });
+          if (otrosParosActivos === 0) {
+            await tx.maquina.update({
+              where: { id: finalMaquinaId },
+              data: { estado: "OPERATIVA" }
+            });
+          }
         }
       }
 
