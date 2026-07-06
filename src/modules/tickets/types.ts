@@ -6,6 +6,9 @@ export const ticketStandardInclude = {
       id: true, 
       nombre: true, 
       username: true, 
+      email: true,
+      telefono: true,
+      cargo: true,
       imagen: true,
       rol: true,
       departamento: {
@@ -71,9 +74,14 @@ export const ticketStandardInclude = {
       id: true,
       codigo: true,
       nombre: true,
+      descripcion: true,
       proceso: true,
       criticidad: true,
-      estado: true
+      estado: true,
+      planta: true,
+      area: true,
+      ubicacionDetalle: true,
+      fechaUltimoServicio: true
     }
   }
 } satisfies Prisma.TareaInclude;
