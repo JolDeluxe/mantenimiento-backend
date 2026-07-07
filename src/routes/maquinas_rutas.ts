@@ -24,6 +24,8 @@ import {
 import { createMaquina } from "../modules/maquinas/02_create";
 import { updateMaquina } from "../modules/maquinas/03_update";
 import { patchMaquinaEstado } from "../modules/maquinas/04_patch";
+import { listarReglasPorMaquina } from "../modules/recurrencias/01_list";
+import { maquinaIdSchema } from "../modules/recurrencias/zod";
 
 const router = Router();
 
@@ -40,6 +42,9 @@ router.get("/codigo/:codigo/prefill", validate(getMaquinaPrefillSchema), getMaqu
 
 // GET /api/maquinas/:id/kpis
 router.get("/:id/kpis", validate(kpisMaquinaSchema), getMaquinaKPIs);
+
+// GET /api/maquinas/:id/recurrencias
+router.get("/:id/recurrencias", validate(maquinaIdSchema), listarReglasPorMaquina);
 
 // GET /api/maquinas/:id
 router.get("/:id", validate(getMaquinaByIdSchema), getMaquinaById);
