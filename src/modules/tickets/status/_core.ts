@@ -24,6 +24,7 @@ export interface CambioEstadoOptions {
   refacciones:           unknown;
   registroTiempoManual:  { inicioManual?: Date; finManual?: Date; duracionManualMinutos?: number } | undefined;
   maquinaOperativaAlResolver?: boolean;
+  cierreAdministrativo?: boolean;
   user:                  { id: number; rol: Rol; email: string; nombre: string };
   req:                   Request;
   res:                   Response;
@@ -35,7 +36,7 @@ export interface CambioEstadoOptions {
 export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<Response> => {
   const {
     ticketId, ticket, imagenesFinales, fechaVencimiento, refacciones,
-    registroTiempoManual, maquinaOperativaAlResolver, user, req, res,
+    registroTiempoManual, maquinaOperativaAlResolver, cierreAdministrativo = false, user, req, res,
     autoCloseInspeccion, manejarIntervalos,
   } = opts;
 
@@ -43,6 +44,10 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
   let nota        = opts.nota;
 
   try {
+    if (cierreAdministrativo) {
+      nuevoEstado = EstadoTarea.CERRADO;
+    }
+
     // ─── Auto-cierre INSPECCION ───────────────────────────────────────────────
     if (autoCloseInspeccion && nuevoEstado === EstadoTarea.RESUELTO && (ticket.clasificacion as unknown as string) === "INSPECCION") {
       nuevoEstado = EstadoTarea.CERRADO;
@@ -60,7 +65,7 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
     let finTiempoManual: Date | null = null;
     let intervaloManualSincronizado = false;
 
-    if (esEstadoResolucion && registroTiempoManual) {
+    if (esEstadoResolucion && !cierreAdministrativo && registroTiempoManual) {
       const inicioManual = registroTiempoManual.inicioManual ? new Date(registroTiempoManual.inicioManual) : null;
       let finManual = registroTiempoManual.finManual ? new Date(registroTiempoManual.finManual) : null;
       const duracionManual = Number(registroTiempoManual.duracionManualMinutos || 0);
@@ -93,9 +98,10 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
     // ─── Construcción de datosActualizacion ───────────────────────────────────
     const datosActualizacion: Record<string, unknown> = { estado: nuevoEstado, updatedAt: ahora };
     if (refacciones !== undefined) datosActualizacion.refacciones = refacciones;
+    if (cierreAdministrativo) datosActualizacion.finalizadoAt = ahora;
 
     // ─── Intervalo ENTRADA a EN_PROGRESO ──────────────────────────────────────
-    if (manejarIntervalos && nuevoEstado === EstadoTarea.EN_PROGRESO && ticket.estado !== EstadoTarea.EN_PROGRESO) {
+    if (!cierreAdministrativo && manejarIntervalos && nuevoEstado === EstadoTarea.EN_PROGRESO && ticket.estado !== EstadoTarea.EN_PROGRESO) {
       if (!ticket.fechaInicio) datosActualizacion.fechaInicio = ahora;
       await prisma.intervaloTiempo.create({
         data: { tareaId: ticketId, usuarioId: user.id, inicio: ahora, estado: EstadoTarea.EN_PROGRESO }
@@ -103,7 +109,7 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
     }
 
     // ─── Intervalo SALIDA de EN_PROGRESO ──────────────────────────────────────
-    if (manejarIntervalos && ticket.estado === EstadoTarea.EN_PROGRESO && nuevoEstado !== EstadoTarea.EN_PROGRESO) {
+    if (!cierreAdministrativo && manejarIntervalos && ticket.estado === EstadoTarea.EN_PROGRESO && nuevoEstado !== EstadoTarea.EN_PROGRESO) {
       const intervaloAbierto = await prisma.intervaloTiempo.findFirst({
         where: { tareaId: ticketId, fin: null },
         orderBy: { inicio: "desc" }
@@ -139,7 +145,7 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
     }
 
     // ─── Tiempo manual directo ─────────────────────────────────────────────────
-    if (hayTiempoManual && !intervaloManualSincronizado) {
+    if (!cierreAdministrativo && hayTiempoManual && !intervaloManualSincronizado) {
       await prisma.intervaloTiempo.create({
         data: {
           tareaId:   ticketId,
@@ -152,15 +158,15 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
       });
     }
 
-    if (hayTiempoManual) {
+    if (!cierreAdministrativo && hayTiempoManual) {
       datosActualizacion.fechaInicio = inicioTiempoManual;
       datosActualizacion.finalizadoAt = finTiempoManual;
       datosActualizacion.duracionReal = minutosManualesDirectos;
-    } else if (esEstadoResolucion && !ticket.fechaInicio) {
+    } else if (!cierreAdministrativo && esEstadoResolucion && !ticket.fechaInicio) {
       datosActualizacion.fechaInicio = ahora;
     }
 
-    if (nuevoEstado === EstadoTarea.RESUELTO || nuevoEstado === EstadoTarea.CERRADO) {
+    if (!cierreAdministrativo && (nuevoEstado === EstadoTarea.RESUELTO || nuevoEstado === EstadoTarea.CERRADO)) {
       if (!hayTiempoManual && !ticket.finalizadoAt) datosActualizacion.finalizadoAt = esCierreManualAtrasado ? fechaCierreReal : ahora;
     }
 
@@ -232,6 +238,7 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
       if (nuevoEstado === EstadoTarea.CERRADO && ((ticket.clasificacion as unknown as string) === "RUTINA" || ticket.categoria === "RUTINA")) {
         notaHistorial += " [RUTINA]";
       }
+      if (cierreAdministrativo) notaHistorial += " ||[META:CIERRE_ADMINISTRATIVO]||";
       if (minutosManualesDirectos > 0) notaHistorial += " ||[META:TIEMPO_MANUAL]||";
 
       const historial = await tx.historialTarea.create({

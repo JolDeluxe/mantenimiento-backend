@@ -37,12 +37,61 @@ export const listarBandeja = async (req: Request, res: Response) => {
         ? sort.map((s) => s as Prisma.TareaOrderByWithRelationInput)
         : [{ createdAt: "desc" }];
 
-    const [totalAbsoluto, totalPaginado, groupEstados, ticketsPage] = await Promise.all([
+    let countActive = 0;
+    if (!estado) {
+      countActive = await prisma.tarea.count({ where: { ...tableWhereFinal, NOT: { estado: EstadoTarea.CERRADO } } });
+    }
+
+    const [totalAbsoluto, totalPaginado, groupEstados] = await Promise.all([
       prisma.tarea.count({ where: searchWhereFinal }),
       prisma.tarea.count({ where: tableWhereFinal }),
       prisma.tarea.groupBy({ by: ["estado"], _count: { id: true }, where: searchWhereFinal }),
-      prisma.tarea.findMany({ where: tableWhereFinal, include: ticketStandardInclude, orderBy, skip: offset, take: limit }),
     ]);
+
+    let ticketsPage: any[] = [];
+
+    if (!estado) {
+      const skipActive = offset;
+      const takeActive = Math.min(limit, Math.max(0, countActive - offset));
+
+      const activeTicketsPromise = takeActive > 0
+        ? prisma.tarea.findMany({
+            where: { ...tableWhereFinal, NOT: { estado: EstadoTarea.CERRADO } },
+            include: ticketStandardInclude,
+            orderBy,
+            skip: skipActive,
+            take: takeActive,
+          })
+        : Promise.resolve([]);
+
+      const skipClosed = Math.max(0, offset - countActive);
+      const takeClosed = limit - takeActive;
+
+      const closedTicketsPromise = takeClosed > 0
+        ? prisma.tarea.findMany({
+            where: { ...tableWhereFinal, estado: EstadoTarea.CERRADO },
+            include: ticketStandardInclude,
+            orderBy,
+            skip: skipClosed,
+            take: takeClosed,
+          })
+        : Promise.resolve([]);
+
+      const [activeTickets, closedTickets] = await Promise.all([
+        activeTicketsPromise,
+        closedTicketsPromise,
+      ]);
+
+      ticketsPage = [...activeTickets, ...closedTickets];
+    } else {
+      ticketsPage = await prisma.tarea.findMany({
+        where: tableWhereFinal,
+        include: ticketStandardInclude,
+        orderBy,
+        skip: offset,
+        take: limit,
+      });
+    }
 
     const resumenEstados = groupEstados.reduce((acc, curr) => {
       acc[curr.estado] = curr._count.id;

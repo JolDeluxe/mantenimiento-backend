@@ -4,6 +4,7 @@
 // Maneja INSPECCION auto-close e intervalos (admin puede registrar trabajo directamente).
 import type { Request, Response } from "express";
 import { prisma } from "../../../db";
+import { EstadoTarea } from "@prisma/client";
 import { registrarError } from "../../../utils/logger";
 import { processTicketImages } from "../create/helper_upload";
 import { isValidTransition } from "../helper";
@@ -21,7 +22,7 @@ export const changeStatusAdmin = async (req: Request, res: Response) => {
     const urlsImagenes = await processTicketImages(files);
     if (urlsImagenes.length > 0) data.imagenes = urlsImagenes;
 
-    let { estado: nuevoEstado, nota, imagenes: imagenesFinales = [], fechaVencimiento, refacciones, maquinaOperativaAlResolver } = data;
+    let { estado: nuevoEstado, nota, imagenes: imagenesFinales = [], fechaVencimiento, refacciones, maquinaOperativaAlResolver, cierreAdministrativo } = data;
     let { registroTiempoManual } = data;
 
     if (typeof registroTiempoManual === "string") {
@@ -38,8 +39,29 @@ export const changeStatusAdmin = async (req: Request, res: Response) => {
     });
     if (!ticket) return res.status(404).json({ error: "Ticket no encontrado" });
 
+    const esResponsable = ticket.responsables.some(r => r.id === user.id);
+    const estadosOperacionTecnica: EstadoTarea[] = [EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA, EstadoTarea.RESUELTO];
+    const esOperacionTecnica = estadosOperacionTecnica.includes(nuevoEstado);
+
+    if (cierreAdministrativo) {
+      if (nuevoEstado !== EstadoTarea.CERRADO) {
+        return res.status(400).json({ error: "El cierre administrativo solo puede mover la tarea a CERRADO." });
+      }
+      if (!nota?.trim()) {
+        return res.status(400).json({ error: "La nota es obligatoria para el cierre administrativo." });
+      }
+    }
+
+    if (!esResponsable && esOperacionTecnica) {
+      return res.status(403).json({ error: "Solo el técnico responsable puede operar esta tarea." });
+    }
+
+    if (!esResponsable && nuevoEstado === EstadoTarea.CERRADO && ticket.estado !== EstadoTarea.RESUELTO && !cierreAdministrativo) {
+      return res.status(403).json({ error: "Usa cierre administrativo para cerrar una tarea sin operarla como técnico." });
+    }
+
     // Validar transición — el mapa de estados es intocable
-    if (!isValidTransition(ticket.estado, nuevoEstado, ticket.clasificacion, ticket.categoria)) {
+    if (!cierreAdministrativo && !isValidTransition(ticket.estado, nuevoEstado, ticket.clasificacion, ticket.categoria)) {
       return res.status(400).json({ error: `Transición no permitida: ${ticket.estado} → ${nuevoEstado}` });
     }
 
@@ -53,6 +75,7 @@ export const changeStatusAdmin = async (req: Request, res: Response) => {
       refacciones,
       registroTiempoManual,
       maquinaOperativaAlResolver,
+      cierreAdministrativo,
       user,
       req,
       res,

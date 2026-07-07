@@ -214,6 +214,10 @@ export const changeStatusSchema = z.object({
     imagenes: z.array(z.string().url()).optional(),
     registroTiempoManual: z.preprocess(preprocessJsonObject, registroTiempoManualSchema.optional()),
     maquinaOperativaAlResolver: z.preprocess(preprocessBoolean, z.boolean().optional()),
+    cierreAdministrativo: z.preprocess(
+      (val) => val === "true" || val === true,
+      z.boolean().default(false)
+    ),
     fechaVencimiento: z.preprocess(
       preprocessDate,
       z.coerce.date()
