@@ -1,8 +1,19 @@
 import cron from "node-cron";
 import { prisma } from "../db";
 import { autoCloseResolvedTickets, enviarAdvertenciasFinTurno, ejecutarAutoPausaFinTurno } from "../modules/tickets/automations";
+import { procesarRecurrenciasProgramadas } from "../modules/recurrencias/automations";
 
 export const iniciarTareasProgramadas = () => {
+  // CRON 0: Mantenimientos recurrentes automáticos (Frecuencias del módulo de preventivos)
+  // Ejecuta todos los días a las 02:00 AM (hora del servidor)
+  cron.schedule("0 2 * * *", async () => {
+    try {
+      await procesarRecurrenciasProgramadas();
+    } catch (error) {
+      console.error("[CRON ERROR] Falló la automatización de recurrencias:", error);
+    }
+  });
+
   // CRON 1: Cierre automático de tickets resueltos inactivos
   // Ejecuta todos los días a la 01:00 AM (hora del servidor)
   cron.schedule("0 1 * * *", async () => {
@@ -62,5 +73,5 @@ export const iniciarTareasProgramadas = () => {
     await ejecutarAutoPausaFinTurno();
   });
   
-  console.log("[SYSTEM] Tareas programadas (CRON) inicializadas: Tickets (01:00 AM) | Bitácora (03:00 AM) | Turno (17:45/14:15/22:00).");
+  console.log("[SYSTEM] Tareas programadas (CRON) inicializadas: Recurrentes (02:00 AM) | Tickets (01:00 AM) | Bitácora (03:00 AM) | Turno (17:45/14:15/22:00).");
 };
