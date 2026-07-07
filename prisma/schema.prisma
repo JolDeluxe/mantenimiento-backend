@@ -26,30 +26,30 @@ enum Prioridad {
   BAJA
   MEDIA
   ALTA
-  CRITICA 
+  CRITICA
 }
 
 enum EstadoTarea {
-  PENDIENTE   
-  ASIGNADA    
-  EN_PROGRESO 
-  EN_PAUSA    
-  RECHAZADO   
-  RESUELTO    
-  CERRADO     
-  CANCELADA   
+  PENDIENTE
+  ASIGNADA
+  EN_PROGRESO
+  EN_PAUSA
+  RECHAZADO
+  RESUELTO
+  CERRADO
+  CANCELADA
 }
 
 enum TipoEvento {
-  CREACION       
-  CAMBIO_ESTADO  
-  ASIGNACION     
+  CREACION
+  CAMBIO_ESTADO
+  ASIGNACION
 }
 
 enum TipoTarea {
-  TICKET  
-  PLANEADA 
-  EXTRAORDINARIA 
+  TICKET
+  PLANEADA
+  EXTRAORDINARIA
 }
 
 enum ClasificacionTarea {
@@ -76,33 +76,33 @@ enum TipoNotificacion {
 // --- MODELOS ---
 
 model Departamento {
-  id        Int       @id @default(autoincrement())
-  nombre    String    @unique
-  
-  planta    String   
-  tipo      String   
-  
-  estado    Estatus  @default(ACTIVO)
-  usuarios  Usuario[]
-  tareas    Tarea[]
-  maquinas  Maquina[]
+  id     Int    @id @default(autoincrement())
+  nombre String @unique
+
+  planta String
+  tipo   String
+
+  estado   Estatus   @default(ACTIVO)
+  usuarios Usuario[]
+  tareas   Tarea[]
+  maquinas Maquina[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Usuario {
-  id             Int       @id @default(autoincrement())
-  username       String    @unique
-  email          String?   @unique
-  password       String    
-  nombre         String
-  telefono       String?
-  cargo          String?   
-  imagen         String?
-  
-  rol            Rol       @default(CLIENTE_INTERNO)
-  estado         Estatus   @default(ACTIVO)
+  id       Int     @id @default(autoincrement())
+  username String  @unique
+  email    String? @unique
+  password String
+  nombre   String
+  telefono String?
+  cargo    String?
+  imagen   String?
+
+  rol    Rol     @default(CLIENTE_INTERNO)
+  estado Estatus @default(ACTIVO)
 
   mustChangePassword Boolean @default(false)
 
@@ -110,126 +110,138 @@ model Usuario {
   // Restricción explícita: si se borra el depto, el usuario queda sin depto (null)
   departamento   Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
-  tareasCreadas   Tarea[]   @relation("Creador")
-  tareasAsignadas Tarea[]   @relation("Responsables")
+  tareasCreadas   Tarea[] @relation("Creador")
+  tareasAsignadas Tarea[] @relation("Responsables")
 
   historialEventos HistorialTarea[]
   bitacoras        Bitacora[]
-  
-  intervalosTiempo IntervaloTiempo[]
-  refreshTokens    RefreshToken[]
-  resetTokens PasswordResetToken[]
+
+  intervalosTiempo  IntervaloTiempo[]
+  refreshTokens     RefreshToken[]
+  resetTokens       PasswordResetToken[]
   pushSubscriptions PushSubscription[]
   notificacionesLog NotificacionLog[]
-  notificaciones   Notificacion[]
+  notificaciones    Notificacion[]
+  reglasResponsable ReglaRecurrencia[]   @relation("TecnicoResponsable")
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Tarea {
-  id               Int                @id @default(autoincrement())
-  
+  id Int @id @default(autoincrement())
+
   // --- CLASIFICACIÓN DEL TRABAJO ---
-  tipo             TipoTarea          @default(TICKET)  
-  clasificacion    ClasificacionTarea?
-  
-  titulo           String             @db.VarChar(255) 
-  categoria        String?            
-  descripcion      String             @db.Text 
-  prioridad        Prioridad          @default(MEDIA)
-  
+  tipo          TipoTarea           @default(TICKET)
+  clasificacion ClasificacionTarea?
+
+  titulo      String    @db.VarChar(255)
+  categoria   String?
+  descripcion String    @db.Text
+  prioridad   Prioridad @default(MEDIA)
+
   // --- UBICACIÓN ---
-  planta           String             @default("KAPPA")
-  area             String?       
+  planta String  @default("KAPPA")
+  area   String?
 
   // --- ESTADO Y FLUJO ---
-  estado           EstadoTarea        @default(PENDIENTE)
-  
-  fechaVencimiento DateTime?          
+  estado EstadoTarea @default(PENDIENTE)
+
+  fechaVencimiento         DateTime?
   fechaVencimientoOriginal DateTime?
-  tiempoEstimado   Int? 
-  
+  tiempoEstimado           Int?
+
   // --- PLANIFICACIÓN E INVENTARIO ---
-  horaInicioProgramada DateTime? 
+  horaInicioProgramada DateTime?
   horaFinProgramada    DateTime?
   refacciones          Json?
-  
-  fechaInicio      DateTime?   
-  finalizadoAt     DateTime? 
-  
-  duracionReal     Int?               @default(0)
+
+  fechaInicio  DateTime?
+  finalizadoAt DateTime?
+
+  duracionReal Int? @default(0)
 
   // --- INDUSTRIAL/MAQUINARIA ---
   maquinaId         Int?
-  maquina           Maquina?           @relation(fields: [maquinaId], references: [id], onDelete: SetNull)
-  paroProduccion    Boolean            @default(false)
+  maquina           Maquina? @relation(fields: [maquinaId], references: [id], onDelete: SetNull)
+  paroProduccion    Boolean  @default(false)
   impactoProduccion Int?
 
   // --- RELACIONES ---
-  creadorId        Int
-  creador          Usuario            @relation("Creador", fields: [creadorId], references: [id], onDelete: Restrict)
+  creadorId Int
+  creador   Usuario @relation("Creador", fields: [creadorId], references: [id], onDelete: Restrict)
 
-  departamentoId   Int?      
-  departamento     Departamento?      @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
+  departamentoId Int?
+  departamento   Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
-  responsables     Usuario[]          @relation("Responsables") 
-  
-  historial        HistorialTarea[] 
-  imagenes         Imagen[]
-  intervalos       IntervaloTiempo[]
-  notificaciones   Notificacion[]
+  responsables Usuario[] @relation("Responsables")
 
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  historial      HistorialTarea[]
+  imagenes       Imagen[]
+  intervalos     IntervaloTiempo[]
+  notificaciones Notificacion[]
 
+  // --- RECURRENCIA (nullable — solo tickets generados por ReglaRecurrencia) ---
+  // fechaCicloLogica: fecha ancla pura del ciclo (no ajustada por fines de semana/feriados)
+  // fechaVencimiento: fecha física/ajustada de ejecución real (ya existe arriba)
+  reglaRecurrenciaId Int?
+  fechaCicloLogica   DateTime?
+  reglaRecurrencia   ReglaRecurrencia? @relation(fields: [reglaRecurrenciaId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Anti-duplicados de ciclos: un ticket por regla + fecha lógica de ciclo
+  @@unique([reglaRecurrenciaId, fechaCicloLogica])
   // --- ÍNDICES DE RENDIMIENTO ---
-  @@index([creadorId])         
-  @@index([departamentoId])    
-  @@index([estado])            
-  @@index([createdAt])         
-  @@index([titulo])            
-  @@index([tipo])              
-  @@index([departamentoId, estado]) 
-  @@index([creadorId, createdAt])   
+  @@index([creadorId])
+  @@index([departamentoId])
+  @@index([estado])
+  @@index([createdAt])
+  @@index([titulo])
+  @@index([tipo])
+  @@index([departamentoId, estado])
+  @@index([creadorId, createdAt])
   @@index([maquinaId])
   @@index([maquinaId, estado])
   @@index([maquinaId, tipo, createdAt])
   @@index([tipo, estado, createdAt])
   @@index([clasificacion, createdAt])
   @@index([fechaVencimiento, estado, createdAt])
+  @@index([reglaRecurrenciaId, fechaCicloLogica])
 }
 
 model Maquina {
-  id                  Int               @id @default(autoincrement())
-  
-  codigo              String            @unique @db.VarChar(50) // Formato MBC0000 (ERP Magnus)
-  nombre              String            @db.VarChar(255)        // Nombre descriptivo (ERP Magnus)
-  proceso             String            @db.VarChar(150)        // Proceso/Tipo (ERP Magnus)
-  descripcion         String?           @db.Text                // Observaciones (ERP Magnus)
-  imagen              String?           @db.VarChar(255)
+  id Int @id @default(autoincrement())
 
-  criticidad          String?           @default("C") @db.VarChar(10)       // Clasificación ABC (Editable localmente)
-  estado              String            @default("OPERATIVA") @db.VarChar(50)  // Estado operativo (Operativa, En Reparación, Inactiva, Baja, Baja_ERP)
+  codigo      String  @unique @db.VarChar(50) // Formato MBC0000 (ERP Magnus)
+  nombre      String  @db.VarChar(255) // Nombre descriptivo (ERP Magnus)
+  proceso     String  @db.VarChar(150) // Proceso/Tipo (ERP Magnus)
+  descripcion String? @db.Text // Observaciones (ERP Magnus)
+  imagen      String? @db.VarChar(255)
 
-  marca               String?           @db.VarChar(100)        // Fabricante (ERP Magnus)
-  modelo              String?           @db.VarChar(100)        // Modelo (ERP Magnus)
-  numeroSerie         String?           @unique @db.VarChar(100) // S/N (ERP Magnus)
+  criticidad String? @default("C") @db.VarChar(10) // Clasificación ABC (Editable localmente)
+  estado     String  @default("OPERATIVA") @db.VarChar(50) // Estado operativo (Operativa, En Reparación, Inactiva, Baja, Baja_ERP)
 
-  planta              String            @db.VarChar(100)        // Planta/Piso derivada (ERP Magnus)
-  area                String            @db.VarChar(100)        // Área/Línea derivada (ERP Magnus)
-  ubicacionDetalle    String?           @db.VarChar(255)        // Ubicación cruda (ERP Magnus)
+  marca       String? @db.VarChar(100) // Fabricante (ERP Magnus)
+  modelo      String? @db.VarChar(100) // Modelo (ERP Magnus)
+  numeroSerie String? @unique @db.VarChar(100) // S/N (ERP Magnus)
 
-  fechaInstalacion    DateTime?                                 // Instalación (ERP Magnus)
-  fechaUltimoServicio DateTime?                                 // Último Servicio (Calculado localmente)
+  planta           String  @db.VarChar(100) // Planta/Piso derivada (ERP Magnus)
+  area             String  @db.VarChar(100) // Área/Línea derivada (ERP Magnus)
+  ubicacionDetalle String? @db.VarChar(255) // Ubicación cruda (ERP Magnus)
 
-  departamentoId      Int?                                      // Departamento derivado (ERP Magnus)
-  departamento        Departamento?     @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
-  
-  tareas              Tarea[]
+  fechaInstalacion    DateTime? // Instalación (ERP Magnus)
+  fechaUltimoServicio DateTime? // Último Servicio (Calculado localmente)
 
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  departamentoId Int? // Departamento derivado (ERP Magnus)
+  departamento   Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
+
+  tareas            Tarea[]
+  reglasRecurrencia ReglaRecurrencia[] // Reglas de mantenimiento preventivo recurrente
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([codigo])
   @@index([estado])
@@ -240,100 +252,100 @@ model Maquina {
 }
 
 model HistorialTarea {
-  id             Int          @id @default(autoincrement())
-  
-  tareaId        Int
-  tarea          Tarea        @relation(fields: [tareaId], references: [id], onDelete: Cascade)
-  
-  usuarioId      Int
-  usuario        Usuario      @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
-  
-  tipo           TipoEvento
-  estadoAnterior EstadoTarea? 
-  estadoNuevo    EstadoTarea? 
+  id Int @id @default(autoincrement())
 
-  nota           String?      @db.Text 
-  
-  imagenes       Imagen[]  
-  
-  createdAt      DateTime     @default(now())
+  tareaId Int
+  tarea   Tarea @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  tipo           TipoEvento
+  estadoAnterior EstadoTarea?
+  estadoNuevo    EstadoTarea?
+
+  nota String? @db.Text
+
+  imagenes Imagen[]
+
+  createdAt DateTime @default(now())
 }
 
 model Imagen {
-  id          Int             @id @default(autoincrement())
-  url         String   
-  tipo        String?         
-  
-  tareaId     Int
-  tarea       Tarea           @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+  id   Int     @id @default(autoincrement())
+  url  String
+  tipo String?
+
+  tareaId Int
+  tarea   Tarea @relation(fields: [tareaId], references: [id], onDelete: Cascade)
 
   historialId Int?
   historial   HistorialTarea? @relation(fields: [historialId], references: [id], onDelete: SetNull)
 
-  createdAt   DateTime        @default(now())
+  createdAt DateTime @default(now())
 }
 
 model Bitacora {
-  id        Int      @id @default(autoincrement())
-  accion    String   
-  detalles  String?  @db.Text
-  
-  usuarioId Int?     
+  id       Int     @id @default(autoincrement())
+  accion   String
+  detalles String? @db.Text
+
+  usuarioId Int?
   usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 }
 
 model Notificacion {
-  id           Int              @id @default(autoincrement())
-  usuarioId    Int
-  usuario      Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  tipo         TipoNotificacion
-  titulo       String           @db.VarChar(255)
-  cuerpo       String           @db.Text
-  
-  // Relación
-  tareaId      Int?
-  tarea        Tarea?           @relation(fields: [tareaId], references: [id], onDelete: SetNull)
+  id        Int              @id @default(autoincrement())
+  usuarioId Int
+  usuario   Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tipo      TipoNotificacion
+  titulo    String           @db.VarChar(255)
+  cuerpo    String           @db.Text
 
-  leida        Boolean          @default(false)
-  accionada    Boolean          @default(false)
-  createdAt    DateTime         @default(now())
+  // Relación
+  tareaId Int?
+  tarea   Tarea? @relation(fields: [tareaId], references: [id], onDelete: SetNull)
+
+  leida     Boolean  @default(false)
+  accionada Boolean  @default(false)
+  createdAt DateTime @default(now())
 
   // Índices optimizados
   @@index([usuarioId])
-  @@index([usuarioId, leida]) 
+  @@index([usuarioId, leida])
   @@index([tareaId])
   @@index([createdAt])
 }
 
 model IntervaloTiempo {
-  id        Int         @id @default(autoincrement())
-  
-  tareaId   Int
-  tarea     Tarea       @relation(fields: [tareaId], references: [id], onDelete: Cascade)
-  
-  usuarioId Int       
-  usuario   Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
-  
-  estado    EstadoTarea 
-  
-  inicio    DateTime    @default(now())
-  fin       DateTime?
-  
-  duracion  Int? 
+  id Int @id @default(autoincrement())
+
+  tareaId Int
+  tarea   Tarea @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  estado EstadoTarea
+
+  inicio DateTime  @default(now())
+  fin    DateTime?
+
+  duracion Int?
 }
 
 model RefreshToken {
-  id          String   @id @default(uuid())
+  id          String @id @default(uuid())
   hashedToken String
-  
-  usuarioId   Int
-  usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  
-  revoked     Boolean  @default(false)
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 model PasswordResetToken {
@@ -346,37 +358,86 @@ model PasswordResetToken {
 }
 
 model PushSubscription {
-  id           Int      @id @default(autoincrement())
-  endpoint     String   @unique @db.VarChar(500) 
-  p256dh       String   @db.Text 
-  auth         String   @db.Text 
-  
-  usuarioId    Int
-  usuario      Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  
-  createdAt    DateTime @default(now())
+  id       Int    @id @default(autoincrement())
+  endpoint String @unique @db.VarChar(500)
+  p256dh   String @db.Text
+  auth     String @db.Text
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 
   lastSuccess  DateTime?
-  failureCount Int      @default(0)
+  failureCount Int       @default(0)
 
   @@index([usuarioId])
 }
 
 model NotificacionLog {
-  id                   String   @id @default(uuid())
-  
-  usuarioId            Int
-  usuario              Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
-  
-  titulo               String
-  cuerpo               String   @db.Text
-  
+  id String @id @default(uuid())
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  titulo String
+  cuerpo String @db.Text
+
   dispositivosObjetivo Int
-  enviadosExito        Int 
-  fallidos             Int 
-  
-  createdAt            DateTime @default(now())
+  enviadosExito        Int
+  fallidos             Int
+
+  createdAt DateTime @default(now())
 
   @@index([usuarioId])
   @@index([createdAt])
+}
+
+// --- RECURRENCIA DE MANTENIMIENTOS PREVENTIVOS ---
+
+enum FrecuenciaRecurrencia {
+  SEMANAL // Cada 7 días
+  QUINCENAL // Cada 14 días
+  MENSUAL // Mismo día del mes siguiente (con ajuste de desbordamiento)
+  PERSONALIZADA_DIAS // Cada N días definidos en intervaloDias
+}
+
+model ReglaRecurrencia {
+  id Int @id @default(autoincrement())
+
+  // --- MÁQUINA OBJETIVO ---
+  maquinaId Int
+  maquina   Maquina @relation(fields: [maquinaId], references: [id], onDelete: Cascade)
+
+  // --- DATOS DE LA TAREA QUE SE GENERA ---
+  titulo         String    @db.VarChar(255) // Título que tendrá cada ticket generado
+  descripcion    String?   @db.Text
+  categoria      String    @default("MAQUINARIA") @db.VarChar(100)
+  prioridad      Prioridad @default(MEDIA)
+  tiempoEstimado Int? // Minutos estimados (opcional)
+
+  // --- FRECUENCIA ---
+  frecuencia    FrecuenciaRecurrencia
+  intervaloDias Int? // Obligatorio solo si frecuencia = PERSONALIZADA_DIAS
+
+  // --- TÉCNICO RESPONSABLE ---
+  tecnicoResponsableId Int
+  tecnicoResponsable   Usuario @relation("TecnicoResponsable", fields: [tecnicoResponsableId], references: [id], onDelete: Restrict)
+
+  // --- CONTROL DE CICLOS ---
+  // proximaFechaEjecucion: fecha LÓGICA pura del próximo ciclo (sin ajuste de fin de semana/feriado)
+  // El cron busca reglas donde proximaFechaEjecucion <= hoy
+  proximaFechaEjecucion DateTime
+
+  activo Boolean @default(true) // Permite pausar la regla sin borrarla
+
+  // --- RELACIÓN CON TICKETS GENERADOS ---
+  tareas Tarea[] // Todos los tickets creados por esta regla
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([maquinaId])
+  @@index([tecnicoResponsableId])
+  @@index([proximaFechaEjecucion, activo]) // Cron query: reglas activas vencidas hoy
 }
