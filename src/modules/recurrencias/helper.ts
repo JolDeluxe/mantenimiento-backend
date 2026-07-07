@@ -190,3 +190,12 @@ function retrocederUnCiclo(
       return addDaysUTC(fecha, -30);
   }
 }
+
+/** Formatea una fecha UTC como string seguro YYYY-MM-DD */
+export function formatearFechaUTC(fecha: Date): string {
+  const y = fecha.getUTCFullYear();
+  const m = String(fecha.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(fecha.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+

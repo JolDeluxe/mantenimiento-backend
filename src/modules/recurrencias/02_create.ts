@@ -112,7 +112,7 @@ export async function materializarCicloInterno(params: {
         prioridad:         regla.prioridad,
         planta:            maquinaPlanta,
         area:              maquinaArea,
-        estado:            EstadoTarea.PENDIENTE,
+        estado:            EstadoTarea.ASIGNADA,
         maquinaId:         regla.maquinaId,
         creadorId:         creadorId,
         tiempoEstimado:    regla.tiempoEstimado ?? null,

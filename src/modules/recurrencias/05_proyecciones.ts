@@ -3,7 +3,7 @@
 // GET /api/recurrencias/:id/proyeccion?year=2026
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { generarProyeccionesPorAno, ajustarPorFinDeSemana } from "./helper";
+import { generarProyeccionesPorAno, ajustarPorFinDeSemana, formatearFechaUTC } from "./helper";
 import type { ProyeccionCiclo } from "./types";
 
 /**
@@ -63,6 +63,7 @@ export const getProyeccionesGlobal = async (req: Request, res: Response) => {
 
       for (const ciclo of ciclos) {
         const key = `${regla.id}|${ciclo.toISOString()}`;
+        const fechaVencimientoSugerida = ajustarPorFinDeSemana(ciclo);
         proyecciones.push({
           reglaId:          regla.id,
           maquinaId:        regla.maquinaId,
@@ -75,7 +76,9 @@ export const getProyeccionesGlobal = async (req: Request, res: Response) => {
           prioridad:        regla.prioridad,
           frecuencia:       regla.frecuencia,
           fechaCicloLogica: ciclo,
-          fechaVencimientoSugerida: ajustarPorFinDeSemana(ciclo),
+          fechaCicloLogicaFormateada: formatearFechaUTC(ciclo),
+          fechaVencimientoSugerida: fechaVencimientoSugerida,
+          fechaVencimientoSugeridaFormateada: formatearFechaUTC(fechaVencimientoSugerida),
           pendienteMaterializar: !materializados.has(key),
         });
       }
@@ -149,6 +152,7 @@ export const getProyeccionRegla = async (req: Request, res: Response) => {
     const proyecciones = ciclos.map((ciclo) => {
       const key     = `${regla.id}|${ciclo.toISOString()}`;
       const ticket  = materializados.get(key);
+      const fechaVencimientoSugerida = ajustarPorFinDeSemana(ciclo);
       return {
         reglaId:          regla.id,
         maquinaId:        regla.maquinaId,
@@ -161,7 +165,9 @@ export const getProyeccionRegla = async (req: Request, res: Response) => {
         prioridad:        regla.prioridad,
         frecuencia:       regla.frecuencia,
         fechaCicloLogica: ciclo,
-        fechaVencimientoSugerida: ajustarPorFinDeSemana(ciclo),
+        fechaCicloLogicaFormateada: formatearFechaUTC(ciclo),
+        fechaVencimientoSugerida: fechaVencimientoSugerida,
+        fechaVencimientoSugeridaFormateada: formatearFechaUTC(fechaVencimientoSugerida),
         pendienteMaterializar: ticket == null,
         ticketId:    ticket?.id   ?? null,
         ticketEstado: ticket?.estado ?? null,

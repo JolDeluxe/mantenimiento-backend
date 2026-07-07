@@ -22,8 +22,10 @@ export interface ProyeccionCiclo {
   frecuencia:       string;
   /** Fecha lógica pura del ciclo (sin ajuste de fin de semana) */
   fechaCicloLogica: Date;
+  fechaCicloLogicaFormateada: string; // Formato YYYY-MM-DD para frontend
   /** Fecha física sugerida para ejecución (ajustada por fin de semana) */
   fechaVencimientoSugerida: Date;
+  fechaVencimientoSugeridaFormateada: string; // Formato YYYY-MM-DD para frontend
   /** true = aún no existe ticket para esta regla + fechaCicloLogica */
   pendienteMaterializar: boolean;
 }
