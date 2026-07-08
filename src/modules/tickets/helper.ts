@@ -654,10 +654,18 @@ export const computeTicketTemporalState = (tarea: TicketWithDetails): TicketDTO 
   const historialMapeado = tarea.historial.map(h => {
     const notaString = h.nota || "";
     const esTiempoManual = notaString.includes('||[META:TIEMPO_MANUAL]||');
+    const esCierreAdmin = notaString.includes('||[META:CIERRE_ADMINISTRATIVO]||');
+
+    let cleanNota = notaString.replace(/\s*\|\|\[META:[^\]]+\]\|\|/g, '').trim();
+    if (esCierreAdmin) {
+      cleanNota = cleanNota ? `${cleanNota} (Cerrado manualmente por administrador)` : "(Cerrado manualmente por administrador)";
+    }
+
     return {
       ...h,
       esTiempoManual,
-      nota: notaString.replace(' ||[META:TIEMPO_MANUAL]||', '')
+      esCierreAdmin,
+      nota: cleanNota
     };
   });
 
