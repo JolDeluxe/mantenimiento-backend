@@ -10,7 +10,7 @@ type MesesMatriz = Record<string, Array<{
   fechaTerminacion: string | null;
   estado: string;
   estadoTicket: string | null;
-  estadoMensual: "REALIZADO_EN_MES" | "REALIZADO_FUERA_DEL_MES" | "PENDIENTE_DEL_MES" | "PROGRAMADO_POR_RECURRENCIA";
+  estadoMensual: "REALIZADO_EN_MES" | "REALIZADO_FUERA_DEL_MES" | "PENDIENTE_DEL_MES" | "PROGRAMADO_POR_RECURRENCIA" | "SIN_MANTENIMIENTO_REGISTRADO";
   ticketId: number | null;
   origen: "ticket" | "proyeccion";
   pendienteMaterializar: boolean;
@@ -23,6 +23,14 @@ const crearMesesVacios = (): MesesMatriz =>
   Object.fromEntries(Array.from({ length: 12 }, (_, index) => [String(index + 1), []])) as MesesMatriz;
 
 const keyCiclo = (reglaId: number, fecha: Date) => `${reglaId}|${fecha.toISOString()}`;
+
+const estadoMensualProyectado = (ciclo: Date, referencia: Date) => {
+  const cicloKey = `${ciclo.getUTCFullYear()}-${ciclo.getUTCMonth()}`;
+  const refKey = `${referencia.getUTCFullYear()}-${referencia.getUTCMonth()}`;
+  if (cicloKey === refKey) return "PENDIENTE_DEL_MES" as const;
+  if (ciclo < referencia) return "SIN_MANTENIMIENTO_REGISTRADO" as const;
+  return "PROGRAMADO_POR_RECURRENCIA" as const;
+};
 
 const estadoMensualTicket = (ticket: { estado: string; finalizadoAt: Date | null; fechaCicloLogica: Date | null }) => {
   if (ESTADOS_TERMINADOS.has(ticket.estado) && ticket.finalizadoAt) {
@@ -37,6 +45,8 @@ export const getMatrizRecurrencias = async (req: Request, res: Response) => {
   try {
     const year = Number(req.query.year) || new Date().getFullYear();
     const incluirBaja = String(req.query.incluirBaja) === "true";
+    const hoy = new Date();
+    const referenciaMesActual = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 1));
     const inicioAno = new Date(Date.UTC(year, 0, 1));
     const finAno = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
 
@@ -120,17 +130,19 @@ export const getMatrizRecurrencias = async (req: Request, res: Response) => {
         const ticket = ticketsPorCiclo.get(key);
         const mes = String(ciclo.getUTCMonth() + 1);
         ciclosAgregados.add(key);
+        const estadoProyectado = estadoMensualProyectado(ciclo, referenciaMesActual);
+        const esPendienteMesActual = estadoProyectado === "PENDIENTE_DEL_MES";
 
         meses[mes]!.push({
           fechaInicio: formatearFechaUTC(ciclo),
           fechaFin: ticket?.finalizadoAt ? formatearFechaUTC(ticket.finalizadoAt) : ticket?.fechaVencimiento ? formatearFechaUTC(ticket.fechaVencimiento) : null,
           fechaTerminacion: ticket?.finalizadoAt ? formatearFechaUTC(ticket.finalizadoAt) : null,
-          estado: ticket ? estadoMensualTicket(ticket) : "PROGRAMADO_POR_RECURRENCIA",
+          estado: ticket ? estadoMensualTicket(ticket) : estadoProyectado,
           estadoTicket: ticket?.estado ?? null,
-          estadoMensual: ticket ? estadoMensualTicket(ticket) : "PROGRAMADO_POR_RECURRENCIA",
+          estadoMensual: ticket ? estadoMensualTicket(ticket) : estadoProyectado,
           ticketId: ticket?.id ?? null,
           origen: ticket ? "ticket" : "proyeccion",
-          pendienteMaterializar: ticket == null,
+          pendienteMaterializar: ticket == null && esPendienteMesActual,
         });
       }
 
@@ -184,22 +196,29 @@ export const getMatrizRecurrencias = async (req: Request, res: Response) => {
       };
     });
 
-    const maquinasActivasSinRegla = await prisma.maquina.findMany({
-      where: {
-        estado: { notIn: ESTADOS_MAQUINA_OCULTOS },
-        reglasRecurrencia: { none: { activo: true } },
-      },
-      select: { id: true, codigo: true, nombre: true, proceso: true, planta: true, area: true, estado: true },
-      orderBy: [{ codigo: "asc" }],
-      take: 100,
-    });
+    const whereMaquinasActivasSinRegla = {
+      estado: { notIn: ESTADOS_MAQUINA_OCULTOS },
+      reglasRecurrencia: { none: { activo: true } },
+    } as const;
+
+    const [totalMaquinasActivasSinRegla, maquinasActivasSinRegla] = await prisma.$transaction([
+      prisma.maquina.count({
+        where: whereMaquinasActivasSinRegla,
+      }),
+      prisma.maquina.findMany({
+        where: whereMaquinasActivasSinRegla,
+        select: { id: true, codigo: true, nombre: true, proceso: true, planta: true, area: true, estado: true },
+        orderBy: [{ codigo: "asc" }],
+        take: 100,
+      }),
+    ]);
 
     return res.json({
       success: true,
       year,
       total: rows.length,
       cobertura: {
-        maquinasActivasSinRegla: maquinasActivasSinRegla.length,
+        maquinasActivasSinRegla: totalMaquinasActivasSinRegla,
         observacion: "Máquina activa sin regla preventiva mensual",
         maquinas: maquinasActivasSinRegla,
       },
