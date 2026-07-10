@@ -4,7 +4,9 @@ import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { Prisma, ClasificacionTarea, TipoTarea, EstadoTarea } from "@prisma/client";
 import type { CreateReglaInput } from "./zod";
-import { normalizarFechaLogica, ajustarPorFinDeSemana } from "./helper";
+import { normalizarFechaLogica, finDeMesUTC } from "./helper";
+
+const ESTADOS_MAQUINA_NO_OPERATIVOS = new Set(["BAJA", "BAJA_ERP", "DESUSO", "INACTIVA"]);
 
 export const createRegla = async (req: Request, res: Response) => {
   try {
@@ -18,8 +20,8 @@ export const createRegla = async (req: Request, res: Response) => {
     if (!maquina) {
       return res.status(400).json({ error: "La máquina especificada no existe" });
     }
-    if (maquina.estado === "BAJA" || maquina.estado === "BAJA_ERP") {
-      return res.status(400).json({ error: "No se pueden crear reglas para una máquina dada de baja" });
+    if (ESTADOS_MAQUINA_NO_OPERATIVOS.has(maquina.estado)) {
+      return res.status(400).json({ error: "No se pueden crear reglas para una máquina no operativa" });
     }
 
     // --- 2. Validar que el técnico existe y está activo ---
@@ -98,8 +100,7 @@ export async function materializarCicloInterno(params: {
 }) {
   const { regla, fechaCicloLogica, maquinaPlanta, maquinaArea, creadorId } = params;
 
-  // Ajuste físico para fechaVencimiento (solo para presentación / agenda del técnico)
-  const fechaVencimientoFisica = ajustarPorFinDeSemana(fechaCicloLogica);
+  const fechaVencimientoMensual = finDeMesUTC(fechaCicloLogica);
 
   try {
     const ticket = await prisma.tarea.create({
@@ -116,7 +117,7 @@ export async function materializarCicloInterno(params: {
         maquinaId:         regla.maquinaId,
         creadorId:         creadorId,
         tiempoEstimado:    regla.tiempoEstimado ?? null,
-        fechaVencimiento:  fechaVencimientoFisica,
+        fechaVencimiento:  fechaVencimientoMensual,
         // --- CAMPOS DE RECURRENCIA ---
         reglaRecurrenciaId: regla.id,
         fechaCicloLogica:   fechaCicloLogica,

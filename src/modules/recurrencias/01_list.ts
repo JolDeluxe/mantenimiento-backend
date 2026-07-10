@@ -5,6 +5,8 @@ import type { Request, Response } from "express";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db";
 
+const ESTADOS_MAQUINA_OCULTOS = ["BAJA", "BAJA_ERP", "DESUSO", "INACTIVA"];
+
 const REGLA_SELECT = {
   id: true,
   maquinaId: true,
@@ -36,6 +38,7 @@ export const listarReglasGlobal = async (req: Request, res: Response) => {
       q,
       maquinaId,
       tecnicoId,
+      incluirBaja = false,
       page = 1,
       limit = 20,
     } = req.query as {
@@ -43,6 +46,7 @@ export const listarReglasGlobal = async (req: Request, res: Response) => {
       q?: string;
       maquinaId?: number;
       tecnicoId?: number;
+      incluirBaja?: boolean;
       page?: number;
       limit?: number;
     };
@@ -55,6 +59,7 @@ export const listarReglasGlobal = async (req: Request, res: Response) => {
       ...(activo !== undefined && { activo }),
       ...(maquinaId !== undefined && { maquinaId }),
       ...(tecnicoId !== undefined && { tecnicoResponsableId: tecnicoId }),
+      ...(!incluirBaja && { maquina: { estado: { notIn: ESTADOS_MAQUINA_OCULTOS } } }),
       ...(q?.trim() && {
         OR: [
           { titulo: { contains: q.trim() } },

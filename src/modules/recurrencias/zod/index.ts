@@ -91,6 +91,7 @@ export const recurrenciasListQuerySchema = z.object({
     q: z.preprocess(preprocessEmpty, z.string().trim().optional()),
     maquinaId: z.preprocess(preprocessEmpty, z.coerce.number().int().positive().optional()),
     tecnicoId: z.preprocess(preprocessEmpty, z.coerce.number().int().positive().optional()),
+    incluirBaja: z.preprocess(preprocessBoolean, z.boolean().optional().default(false)),
     page: z.preprocess(preprocessEmpty, z.coerce.number().int().min(1).default(1)),
     limit: z.preprocess(preprocessEmpty, z.coerce.number().int().min(1).max(100).default(20)),
   }),
@@ -115,6 +116,7 @@ export const proyeccionReglaQuerySchema = z.object({
 export const matrizQuerySchema = z.object({
   query: z.object({
     year: z.coerce.number().int().min(2020).max(2100).default(new Date().getFullYear()),
+    incluirBaja: z.preprocess(preprocessBoolean, z.boolean().optional().default(false)),
   }),
 });
 

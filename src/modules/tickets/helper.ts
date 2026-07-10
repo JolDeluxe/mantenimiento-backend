@@ -2,7 +2,8 @@ import {
   EstadoTarea, 
   Rol, 
   Prisma,
-  ClasificacionTarea
+  ClasificacionTarea,
+  TipoTarea
 } from "@prisma/client";
 import { z } from "zod";
 import { ticketFilterSchema } from "./zod";
@@ -128,6 +129,9 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   const andConditions: Prisma.TareaWhereInput[] = [];
 
   const { inicioDiaHoyMX, finDiaHoyMX, inicioDiaMananaMX, finDiaMananaMX } = getMXDayBounds();
+  const hoyPeriodo = new Date();
+  const inicioMesActualUTC = new Date(Date.UTC(hoyPeriodo.getUTCFullYear(), hoyPeriodo.getUTCMonth(), 1));
+  const finMesActualUTC = new Date(Date.UTC(hoyPeriodo.getUTCFullYear(), hoyPeriodo.getUTCMonth() + 1, 0, 23, 59, 59, 999));
 
   if (user.rol === Rol.TECNICO) {
     if (!maquinaId) {
@@ -201,7 +205,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
       }
     });
 
-    // Pertenece a Hoy: vence hoy o antes (atrasada) o está rechazada
+    // Pertenece a Hoy: vence hoy/antes, está rechazada, o es preventivo recurrente del mes actual.
     andConditions.push({
       OR: [
         {
@@ -211,6 +215,15 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
         },
         {
           estado: EstadoTarea.RECHAZADO
+        },
+        {
+          reglaRecurrenciaId: { not: null },
+          tipo: TipoTarea.PLANEADA,
+          clasificacion: ClasificacionTarea.PREVENTIVO,
+          fechaCicloLogica: {
+            gte: inicioMesActualUTC,
+            lte: finMesActualUTC,
+          },
         }
       ]
     });

@@ -10,6 +10,8 @@ import { prisma } from "../../db";
 import { normalizarFechaLogica } from "./helper";
 import { materializarCicloInterno } from "./02_create";
 
+const ESTADOS_MAQUINA_NO_OPERATIVOS = new Set(["BAJA", "BAJA_ERP", "DESUSO", "INACTIVA"]);
+
 export const materializeRegla = async (req: Request, res: Response) => {
   try {
     const id             = Number(req.params.id);
@@ -27,8 +29,8 @@ export const materializeRegla = async (req: Request, res: Response) => {
     if (!regla) return res.status(404).json({ error: "Regla no encontrada" });
     if (!regla.activo) return res.status(400).json({ error: "La regla está inactiva y no puede generar tickets" });
 
-    if (regla.maquina.estado === "BAJA" || regla.maquina.estado === "BAJA_ERP") {
-      return res.status(400).json({ error: "La máquina está dada de baja" });
+    if (ESTADOS_MAQUINA_NO_OPERATIVOS.has(regla.maquina.estado)) {
+      return res.status(400).json({ error: "La máquina no está operativa" });
     }
 
     // --- 2. Resolver la fecha lógica del ciclo ---

@@ -21,6 +21,23 @@ export function normalizarFechaLogica(fecha: Date | string): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
+export function inicioMesUTC(fecha: Date | string): Date {
+  const d = new Date(fecha);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+}
+
+export function finDeMesUTC(fecha: Date | string): Date {
+  const d = new Date(fecha);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+}
+
+export function mismoPeriodoMes(fechaA: Date | string | null | undefined, fechaB: Date | string | null | undefined): boolean {
+  if (!fechaA || !fechaB) return false;
+  const a = new Date(fechaA);
+  const b = new Date(fechaB);
+  return a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth();
+}
+
 // ---------------------------------------------------------------------------
 // 2. CÁLCULO DE SIGUIENTE FECHA LÓGICA (sin drift)
 // ---------------------------------------------------------------------------
@@ -198,4 +215,3 @@ export function formatearFechaUTC(fecha: Date): string {
   const d = String(fecha.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
-
