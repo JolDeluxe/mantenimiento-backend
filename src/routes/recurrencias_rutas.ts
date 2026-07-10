@@ -9,18 +9,20 @@ import {
   createReglaSchema,
   updateReglaSchema,
   reglaIdSchema,
-  maquinaIdSchema,
+  recurrenciasListQuerySchema,
   proyeccionesQuerySchema,
   proyeccionReglaQuerySchema,
+  matrizQuerySchema,
   materializeSchema,
 } from "../modules/recurrencias/zod";
 
-import { listarReglasPorMaquina, getReglaById } from "../modules/recurrencias/01_list";
+import { listarReglasGlobal, getReglaById } from "../modules/recurrencias/01_list";
 import { createRegla }      from "../modules/recurrencias/02_create";
 import { updateRegla }      from "../modules/recurrencias/03_update";
 import { deleteRegla }      from "../modules/recurrencias/04_delete";
 import { getProyeccionesGlobal, getProyeccionRegla } from "../modules/recurrencias/05_proyecciones";
 import { materializeRegla } from "../modules/recurrencias/06_materialize";
+import { getMatrizRecurrencias } from "../modules/recurrencias/07_matriz";
 
 const router = Router();
 
@@ -33,6 +35,21 @@ const rolesGestion = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO];
 // ---------------------------------------------------------------------------
 // RUTAS MONTADAS en /api/recurrencias
 // ---------------------------------------------------------------------------
+
+// GET /api/recurrencias?activo=true&q=&maquinaId=&tecnicoId=&page=&limit=
+router.get(
+  "/",
+  validate(recurrenciasListQuerySchema),
+  listarReglasGlobal,
+);
+
+// GET /api/recurrencias/matriz?year=2026
+// IMPORTANTE: debe ir ANTES de /:id para no confundir "matriz" como ID
+router.get(
+  "/matriz",
+  validate(matrizQuerySchema),
+  getMatrizRecurrencias,
+);
 
 // GET /api/recurrencias/proyecciones?year=2026
 // IMPORTANTE: esta ruta debe ir ANTES de /:id para no confundir "proyecciones" como ID

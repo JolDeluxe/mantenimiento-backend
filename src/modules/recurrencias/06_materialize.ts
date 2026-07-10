@@ -15,6 +15,7 @@ export const materializeRegla = async (req: Request, res: Response) => {
     const id             = Number(req.params.id);
     const creadorId      = req.user!.id;
     const fechaBodyRaw   = req.body?.fechaCicloLogica;
+    const confirmarFuturo = req.body?.confirmarFuturo === true;
 
     // --- 1. Obtener la regla con datos de máquina ---
     const regla = await prisma.reglaRecurrencia.findUnique({
@@ -35,6 +36,14 @@ export const materializeRegla = async (req: Request, res: Response) => {
     const fechaCicloLogica = normalizarFechaLogica(
       fechaBodyRaw ? new Date(fechaBodyRaw) : regla.proximaFechaEjecucion
     );
+
+    const hoyLogico = normalizarFechaLogica(new Date());
+    if (fechaCicloLogica > hoyLogico && !confirmarFuturo) {
+      return res.status(400).json({
+        error: "No se permite materializar ciclos futuros sin confirmación explícita",
+        requiereConfirmacion: true,
+      });
+    }
 
     // --- 3. Verificar idempotencia ANTES de intentar crear (optimización) ---
     const ticketExistente = await prisma.tarea.findFirst({

@@ -1,6 +1,8 @@
 // src/modules/recurrencias/01_list.ts
+// GET /api/recurrencias
 // GET /api/maquinas/:id/recurrencias
 import type { Request, Response } from "express";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db";
 
 const REGLA_SELECT = {
@@ -19,12 +21,74 @@ const REGLA_SELECT = {
   createdAt: true,
   updatedAt: true,
   maquina: {
-    select: { id: true, codigo: true, nombre: true, planta: true, area: true },
+    select: { id: true, codigo: true, nombre: true, proceso: true, planta: true, area: true, estado: true },
   },
   tecnicoResponsable: {
     select: { id: true, nombre: true, username: true, email: true },
   },
 } as const;
+
+/** GET /api/recurrencias — Lista global de reglas recurrentes */
+export const listarReglasGlobal = async (req: Request, res: Response) => {
+  try {
+    const {
+      activo,
+      q,
+      maquinaId,
+      tecnicoId,
+      page = 1,
+      limit = 20,
+    } = req.query as {
+      activo?: boolean;
+      q?: string;
+      maquinaId?: number;
+      tecnicoId?: number;
+      page?: number;
+      limit?: number;
+    };
+
+    const safePage = Math.max(Number(page) || 1, 1);
+    const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+    const skip = (safePage - 1) * safeLimit;
+
+    const where: Prisma.ReglaRecurrenciaWhereInput = {
+      ...(activo !== undefined && { activo }),
+      ...(maquinaId !== undefined && { maquinaId }),
+      ...(tecnicoId !== undefined && { tecnicoResponsableId: tecnicoId }),
+      ...(q?.trim() && {
+        OR: [
+          { titulo: { contains: q.trim() } },
+          { descripcion: { contains: q.trim() } },
+          { maquina: { codigo: { contains: q.trim() } } },
+          { maquina: { nombre: { contains: q.trim() } } },
+          { tecnicoResponsable: { nombre: { contains: q.trim() } } },
+        ],
+      }),
+    };
+
+    const [reglas, total] = await prisma.$transaction([
+      prisma.reglaRecurrencia.findMany({
+        where,
+        select: REGLA_SELECT,
+        orderBy: [{ activo: "desc" }, { proximaFechaEjecucion: "asc" }, { id: "asc" }],
+        skip,
+        take: safeLimit,
+      }),
+      prisma.reglaRecurrencia.count({ where }),
+    ]);
+
+    return res.json({
+      success: true,
+      data: reglas,
+      total,
+      page: safePage,
+      limit: safeLimit,
+    });
+  } catch (error) {
+    console.error("[recurrencias] listarReglasGlobal error:", error);
+    return res.status(500).json({ error: "Error interno del servidor" });
+  }
+};
 
 /** GET /api/maquinas/:id/recurrencias — Lista todas las reglas de una máquina */
 export const listarReglasPorMaquina = async (req: Request, res: Response) => {

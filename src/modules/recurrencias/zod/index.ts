@@ -4,6 +4,12 @@ import { FrecuenciaRecurrencia, Prioridad } from "@prisma/client";
 
 const preprocessEmpty = (val: unknown) => (val === "" || val === "null" ? undefined : val);
 const preprocessNull  = (val: unknown) => (val === "" || val === "null" || val === null ? null : val);
+const preprocessBoolean = (val: unknown) => {
+  if (val === "" || val === "null" || val === "undefined" || val === undefined) return undefined;
+  if (val === true || val === "true") return true;
+  if (val === false || val === "false") return false;
+  return val;
+};
 
 // ---------------------------------------------------------------------------
 // CREATE
@@ -77,6 +83,20 @@ export const maquinaIdSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// LISTADO GLOBAL
+// ---------------------------------------------------------------------------
+export const recurrenciasListQuerySchema = z.object({
+  query: z.object({
+    activo: z.preprocess(preprocessBoolean, z.boolean().optional()),
+    q: z.preprocess(preprocessEmpty, z.string().trim().optional()),
+    maquinaId: z.preprocess(preprocessEmpty, z.coerce.number().int().positive().optional()),
+    tecnicoId: z.preprocess(preprocessEmpty, z.coerce.number().int().positive().optional()),
+    page: z.preprocess(preprocessEmpty, z.coerce.number().int().min(1).default(1)),
+    limit: z.preprocess(preprocessEmpty, z.coerce.number().int().min(1).max(100).default(20)),
+  }),
+});
+
+// ---------------------------------------------------------------------------
 // PROYECCIONES
 // ---------------------------------------------------------------------------
 export const proyeccionesQuerySchema = z.object({
@@ -92,6 +112,12 @@ export const proyeccionReglaQuerySchema = z.object({
   }),
 });
 
+export const matrizQuerySchema = z.object({
+  query: z.object({
+    year: z.coerce.number().int().min(2020).max(2100).default(new Date().getFullYear()),
+  }),
+});
+
 // ---------------------------------------------------------------------------
 // MATERIALIZE
 // ---------------------------------------------------------------------------
@@ -100,6 +126,8 @@ export const materializeSchema = z.object({
   body: z.object({
     /** La fecha lógica del ciclo a materializar. Si se omite, se usa proximaFechaEjecucion de la regla. */
     fechaCicloLogica: z.preprocess(preprocessNull, z.coerce.date().nullable().optional()),
+    /** Primera versión: futuros bloqueados salvo confirmación explícita. */
+    confirmarFuturo: z.preprocess(preprocessBoolean, z.boolean().optional().default(false)),
   }),
 });
 
@@ -108,5 +136,7 @@ export const materializeSchema = z.object({
 // ---------------------------------------------------------------------------
 export type CreateReglaInput = z.infer<typeof createReglaSchema>["body"];
 export type UpdateReglaInput = z.infer<typeof updateReglaSchema>["body"];
+export type RecurrenciasListQuery = z.infer<typeof recurrenciasListQuerySchema>["query"];
 export type ProyeccionesQuery = z.infer<typeof proyeccionesQuerySchema>["query"];
+export type MatrizQuery = z.infer<typeof matrizQuerySchema>["query"];
 export type MaterializeInput  = z.infer<typeof materializeSchema>["body"];
