@@ -7,6 +7,15 @@ import readline from "readline";
 
 const CSV_FILE_PATH = "C:/Users/MBCPROEW10028/Downloads/Maquinaria.csv";
 
+const args = process.argv.slice(2);
+const shouldApply = args.includes("--apply");
+const explicitFileArg = args.find((arg) => arg.startsWith("--file="));
+const filePath = explicitFileArg ? explicitFileArg.replace("--file=", "").trim() : CSV_FILE_PATH;
+const previewLimitArg = args.find((arg) => arg.startsWith("--preview-limit="));
+const previewLimit = Number(previewLimitArg?.replace("--preview-limit=", "") || 30);
+
+const modeLabel = shouldApply ? "APLICAR CAMBIOS" : "PREVIEW SIN ESCRIBIR";
+
 // --- HELPERS DE LIMPIEZA ---
 function cleanCell(val: string | undefined | null): string {
   if (val === undefined || val === null) return "";
@@ -125,15 +134,16 @@ async function runETL() {
   console.log(styleText("blue", "\n=================================================="));
   console.log(styleText("blue", " ⚙️  ETL: INGESTA DE MAQUINARIA DESDE ERP MAGNUS"));
   console.log(styleText("blue", "=================================================="));
+  console.log(`Modo: ${shouldApply ? styleText("red", modeLabel) : styleText("yellow", modeLabel)}`);
 
-  if (!fs.existsSync(CSV_FILE_PATH)) {
-    console.error(styleText("red", `\n❌ ERROR: No se encontró el archivo en: ${CSV_FILE_PATH}`));
+  if (!fs.existsSync(filePath)) {
+    console.error(styleText("red", `\n❌ ERROR: No se encontró el archivo en: ${filePath}`));
     process.exit(1);
   }
 
-  console.log(`\n📂 Archivo origen: ${styleText("cyan", CSV_FILE_PATH)}`);
+  console.log(`\n📂 Archivo origen: ${styleText("cyan", filePath)}`);
   console.log("⏳ Detectando delimitador del archivo CSV...");
-  const delimiter = await detectDelimiter(CSV_FILE_PATH);
+  const delimiter = await detectDelimiter(filePath);
   console.log(`📡 Delimitador detectado: [${styleText("yellow", delimiter === "\t" ? "\\t" : delimiter)}]`);
 
   // 1. Snapshot Inicial de Códigos de Máquinas (Evitar N+1)
@@ -170,10 +180,13 @@ async function runETL() {
   let countTotalFilas = 0;
 
   const csvCodesSet = new Set<string>();
+  const previewNuevas: string[] = [];
+  const previewActualizadas: string[] = [];
+  const previewBajaErp: string[] = [];
 
   // 4. Iniciar Procesamiento por Flujos / Streams (RAM Segura)
   console.log("🔄 Procesando líneas del archivo...");
-  const fileStream = fs.createReadStream(CSV_FILE_PATH);
+  const fileStream = fs.createReadStream(filePath);
   const rl = readline.createInterface({
     input: fileStream,
     crlfDelay: Infinity
@@ -253,34 +266,42 @@ async function runETL() {
         // Si la ubicación viene marcada como BAJA, se le asigna el estado BAJA.
         const nuevoEstado = isBaja ? "BAJA" : (existing.estado === "BAJA_ERP" || existing.estado === "BAJA" ? "OPERATIVA" : undefined);
 
-        await prisma.maquina.update({
-          where: { id: existing.id },
-          data: {
-            nombre: nombre.slice(0, 255),
-            proceso: proceso.slice(0, 150),
-            planta,
-            area,
-            ubicacionDetalle: ubicacionRaw,
-            departamentoId,
-            ...(nuevoEstado ? { estado: nuevoEstado } : {})
-          }
-        });
+        if (shouldApply) {
+          await prisma.maquina.update({
+            where: { id: existing.id },
+            data: {
+              nombre: nombre.slice(0, 255),
+              proceso: proceso.slice(0, 150),
+              planta,
+              area,
+              ubicacionDetalle: ubicacionRaw,
+              departamentoId,
+              ...(nuevoEstado ? { estado: nuevoEstado } : {})
+            }
+          });
+        } else if (previewActualizadas.length < previewLimit) {
+          previewActualizadas.push(`${codeUpper} — ${nombre}`);
+        }
         countActualizadas++;
       } else {
         // --- LEY 1: ALTA (Cajones Azules e Inicialización) ---
-        await prisma.maquina.create({
-          data: {
-            codigo: codeUpper,
-            nombre: nombre.slice(0, 255),
-            proceso: proceso.slice(0, 150),
-            planta,
-            area,
-            ubicacionDetalle: ubicacionRaw,
-            criticidad: "C",       // Cajón Azul por defecto
-            estado: estadoFinal,
-            departamentoId
-          }
-        });
+        if (shouldApply) {
+          await prisma.maquina.create({
+            data: {
+              codigo: codeUpper,
+              nombre: nombre.slice(0, 255),
+              proceso: proceso.slice(0, 150),
+              planta,
+              area,
+              ubicacionDetalle: ubicacionRaw,
+              criticidad: "C",       // Cajón Azul por defecto
+              estado: estadoFinal,
+              departamentoId
+            }
+          });
+        } else if (previewNuevas.length < previewLimit) {
+          previewNuevas.push(`${codeUpper} — ${nombre}`);
+        }
         countNuevas++;
       }
 
@@ -304,10 +325,14 @@ async function runETL() {
   for (const [codeUpper, dbMaquina] of existingMap.entries()) {
     if (!csvCodesSet.has(codeUpper)) {
       if (dbMaquina.estado !== "BAJA_ERP") {
-        await prisma.maquina.update({
-          where: { id: dbMaquina.id },
-          data: { estado: "BAJA_ERP" }
-        });
+        if (shouldApply) {
+          await prisma.maquina.update({
+            where: { id: dbMaquina.id },
+            data: { estado: "BAJA_ERP" }
+          });
+        } else if (previewBajaErp.length < previewLimit) {
+          previewBajaErp.push(codeUpper);
+        }
         countBajaErp++;
       }
     }
@@ -322,6 +347,16 @@ async function runETL() {
   console.log(`✏️  Actualizadas (Cajón Gris):  ${styleText("yellow", String(countActualizadas))}`);
   console.log(`⚠️  Dadas de baja (BAJA_ERP):   ${styleText("red", String(countBajaErp))}`);
   console.log(`🚫 Filas ignoradas (Invalid):  ${styleText("magenta", String(countIgnoradas))}`);
+  if (!shouldApply) {
+    console.log(styleText("yellow", "\nPREVIEW: no se escribió nada en base de datos."));
+    console.log(styleText("cyan", "\nMáquinas nuevas detectadas:"));
+    console.log(previewNuevas.length ? previewNuevas.map((item) => `  - ${item}`).join("\n") : "  - Ninguna");
+    console.log(styleText("cyan", "\nMáquinas a actualizar (muestra):"));
+    console.log(previewActualizadas.length ? previewActualizadas.map((item) => `  - ${item}`).join("\n") : "  - Ninguna");
+    console.log(styleText("cyan", "\nMáquinas que pasarían a BAJA_ERP (muestra):"));
+    console.log(previewBajaErp.length ? previewBajaErp.map((item) => `  - ${item}`).join("\n") : "  - Ninguna");
+    console.log(styleText("yellow", "\nPara aplicar cambios reales: bun src/test/test_ingesta_csv.ts --apply"));
+  }
   console.log(styleText("blue", "==================================================\n"));
 }
 
