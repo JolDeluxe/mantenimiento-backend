@@ -2,7 +2,7 @@
 
 Esta carpeta queda solo para scripts manuales seguros.
 
-## Ingesta maquinaria ERP
+## Ingesta maquinaria CSV oficial
 
 Preview sin escribir:
 

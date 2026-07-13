@@ -19,12 +19,12 @@ export interface MaquinariaCsvIngestResult {
   totalFilas: number;
   nuevas: number;
   actualizadas: number;
-  bajaErp: number;
+  bajas: number;
   ignoradas: number;
   preview: {
     nuevas: string[];
     actualizadas: string[];
-    bajaErp: string[];
+    bajas: string[];
   };
 }
 
@@ -151,7 +151,7 @@ export async function procesarIngestaMaquinariaCsv(options: MaquinariaCsvIngestO
   }
 
   logger.log(styleText("blue", "\n=================================================="));
-  logger.log(styleText("blue", " ETL: INGESTA DE MAQUINARIA DESDE ERP MAGNUS"));
+  logger.log(styleText("blue", " ETL: INGESTA DE MAQUINARIA DESDE CSV OFICIAL"));
   logger.log(styleText("blue", "=================================================="));
   logger.log(`Modo: ${apply ? styleText("red", "APLICAR CAMBIOS") : styleText("yellow", "PREVIEW SIN ESCRIBIR")}`);
 
@@ -180,12 +180,12 @@ export async function procesarIngestaMaquinariaCsv(options: MaquinariaCsvIngestO
 
   let countNuevas = 0;
   let countActualizadas = 0;
-  let countBajaErp = 0;
+  let countBajas = 0;
   let countIgnoradas = 0;
   let countTotalFilas = 0;
   const csvCodesSet = new Set<string>();
   const parsedRows: ParsedMachineRow[] = [];
-  const preview = { nuevas: [] as string[], actualizadas: [] as string[], bajaErp: [] as string[] };
+  const preview = { nuevas: [] as string[], actualizadas: [] as string[], bajas: [] as string[] };
 
   const fileStream = fs.createReadStream(filePath);
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
@@ -303,16 +303,16 @@ export async function procesarIngestaMaquinariaCsv(options: MaquinariaCsvIngestO
   }
 
   for (const [codeUpper, dbMaquina] of existingMap.entries()) {
-    if (!csvCodesSet.has(codeUpper) && dbMaquina.estado !== "BAJA_ERP") {
+    if (!csvCodesSet.has(codeUpper) && dbMaquina.estado !== "BAJA") {
       if (apply) {
         await prisma.maquina.update({
           where: { id: dbMaquina.id },
-          data: { estado: "BAJA_ERP" },
+          data: { estado: "BAJA" },
         });
       } else {
-        pushPreview(preview.bajaErp, codeUpper, previewLimit);
+        pushPreview(preview.bajas, codeUpper, previewLimit);
       }
-      countBajaErp++;
+      countBajas++;
     }
   }
 
@@ -322,7 +322,7 @@ export async function procesarIngestaMaquinariaCsv(options: MaquinariaCsvIngestO
     totalFilas: countTotalFilas,
     nuevas: countNuevas,
     actualizadas: countActualizadas,
-    bajaErp: countBajaErp,
+    bajas: countBajas,
     ignoradas: countIgnoradas,
     preview,
   };
@@ -333,13 +333,13 @@ export async function procesarIngestaMaquinariaCsv(options: MaquinariaCsvIngestO
   logger.log(`Total líneas CSV: ${styleText("cyan", String(result.totalFilas))}`);
   logger.log(`Nuevas:           ${styleText("green", String(result.nuevas))}`);
   logger.log(`Actualizadas:     ${styleText("yellow", String(result.actualizadas))}`);
-  logger.log(`BAJA_ERP:         ${styleText("red", String(result.bajaErp))}`);
+  logger.log(`BAJA:             ${styleText("red", String(result.bajas))}`);
   logger.log(`Ignoradas:        ${styleText("magenta", String(result.ignoradas))}`);
 
   if (!apply) {
     logger.log(styleText("yellow", "\nPREVIEW: no se escribió nada en base de datos."));
     logger.log(`Nuevas muestra:\n${preview.nuevas.length ? preview.nuevas.map((item) => `  - ${item}`).join("\n") : "  - Ninguna"}`);
-    logger.log(`BAJA_ERP muestra:\n${preview.bajaErp.length ? preview.bajaErp.map((item) => `  - ${item}`).join("\n") : "  - Ninguna"}`);
+    logger.log(`BAJA muestra:\n${preview.bajas.length ? preview.bajas.map((item) => `  - ${item}`).join("\n") : "  - Ninguna"}`);
   }
 
   logger.log(styleText("blue", "==================================================\n"));
