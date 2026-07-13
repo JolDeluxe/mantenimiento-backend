@@ -2,6 +2,8 @@ import cron from "node-cron";
 import { prisma } from "../db";
 import { autoCloseResolvedTickets, enviarAdvertenciasFinTurno, ejecutarAutoPausaFinTurno } from "../modules/tickets/automations";
 import { procesarRecurrenciasProgramadas } from "../modules/recurrencias/automations";
+import { procesarIngestaMaquinariaCsv } from "./maquinaria-csv-ingest";
+import { env } from "../env";
 
 export const iniciarTareasProgramadas = () => {
   // CRON 0: Mantenimientos recurrentes automáticos (Frecuencias del módulo de preventivos)
@@ -28,9 +30,26 @@ export const iniciarTareasProgramadas = () => {
     }
   });
 
-  // CRON 2: Limpieza de bitácora antigua
+  // CRON 2: Ingesta diaria de maquinaria ERP
   // Ejecuta todos los días a las 03:00 AM (hora del servidor)
   cron.schedule("0 3 * * *", async () => {
+    if (!env.MAQUINARIA_CSV_FILE_PATH) {
+      console.warn("[CRON] Ingesta maquinaria omitida: MAQUINARIA_CSV_FILE_PATH no está configurado.");
+      return;
+    }
+
+    console.log("[CRON] Iniciando ingesta diaria de maquinaria ERP...");
+    try {
+      await procesarIngestaMaquinariaCsv({ apply: true });
+      console.log("[CRON] Ingesta diaria de maquinaria ERP finalizada.");
+    } catch (error) {
+      console.error("[CRON ERROR] Falló la ingesta diaria de maquinaria ERP:", error);
+    }
+  });
+
+  // CRON 3: Limpieza de bitácora antigua
+  // Ejecuta todos los días a las 03:30 AM (hora del servidor)
+  cron.schedule("30 3 * * *", async () => {
     console.log("[CRON] Iniciando limpieza de bitácora antigua...");
     
     const diasRetencion = 180; 
@@ -56,7 +75,7 @@ export const iniciarTareasProgramadas = () => {
     }
   });
 
-  // CRON 3: Advertencia de fin de turno a las 17:45 (Lunes a Viernes) y 14:15 (Sábados)
+  // CRON 4: Advertencia de fin de turno a las 17:45 (Lunes a Viernes) y 14:15 (Sábados)
   cron.schedule("45 17 * * 1-5", async () => {
     console.log("[CRON] Ejecutando advertencia de fin de turno de Lunes a Viernes (17:45)...");
     await enviarAdvertenciasFinTurno();
@@ -67,11 +86,11 @@ export const iniciarTareasProgramadas = () => {
     await enviarAdvertenciasFinTurno();
   });
 
-  // CRON 4: Auto-Pausa y recorte de tiempo a las 22:00 (Lunes a Sábado) - Tiempo de colchón
+  // CRON 5: Auto-Pausa y recorte de tiempo a las 22:00 (Lunes a Sábado) - Tiempo de colchón
   cron.schedule("0 22 * * 1-6", async () => {
     console.log("[CRON] Ejecutando Auto-Pausa implacable con colchón (22:00)...");
     await ejecutarAutoPausaFinTurno();
   });
   
-  console.log("[SYSTEM] Tareas programadas (CRON) inicializadas: Recurrentes (02:00 AM) | Tickets (01:00 AM) | Bitácora (03:00 AM) | Turno (17:45/14:15/22:00).");
+  console.log("[SYSTEM] Tareas programadas (CRON) inicializadas: Tickets (01:00 AM) | Recurrentes (02:00 AM) | Maquinaria ERP (03:00 AM) | Bitácora (03:30 AM) | Turno (17:45/14:15/22:00).");
 };

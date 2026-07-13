@@ -28,6 +28,9 @@ export const env = createEnv({
     VAPID_PUBLIC_KEY: z.string().min(1),
     VAPID_PRIVATE_KEY: z.string().min(1),
     VAPID_MAILTO: z.string().email().or(z.string().startsWith("mailto:")),
+
+    // --- INGESTA ERP MAQUINARIA ---
+    MAQUINARIA_CSV_FILE_PATH: z.string().optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,
