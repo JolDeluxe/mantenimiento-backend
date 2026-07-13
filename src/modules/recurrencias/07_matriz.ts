@@ -3,17 +3,36 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { formatearFechaUTC, generarProyeccionesPorAno, mismoPeriodoMes } from "./helper";
+import { keyAjuste, obtenerAjustesActivosPorRegla, resolverOcurrenciaDesdeAjuste } from "./ajustes-helper";
+
+type EstadoMensual =
+  | "REALIZADO_EN_MES"
+  | "REALIZADO_FUERA_DEL_MES"
+  | "PENDIENTE_DEL_MES"
+  | "PROGRAMADO_POR_RECURRENCIA"
+  | "SIN_MANTENIMIENTO_REGISTRADO"
+  | "OMITIDO";
 
 type MesesMatriz = Record<string, Array<{
   fechaInicio: string;
+  fechaOriginal: string;
+  fechaProgramada: string;
+  fechaProgramadaPreventiva: string | null;
   fechaFin: string | null;
   fechaTerminacion: string | null;
-  estado: string;
+  estado: EstadoMensual;
   estadoTicket: string | null;
-  estadoMensual: "REALIZADO_EN_MES" | "REALIZADO_FUERA_DEL_MES" | "PENDIENTE_DEL_MES" | "PROGRAMADO_POR_RECURRENCIA" | "SIN_MANTENIMIENTO_REGISTRADO";
+  estadoMensual: EstadoMensual;
+  label: string;
   ticketId: number | null;
   origen: "ticket" | "proyeccion";
   pendienteMaterializar: boolean;
+  omitida: boolean;
+  movida: boolean;
+  ajusteTipo: "MOVER" | "OMITIR" | null;
+  ajusteMotivo: string | null;
+  movidaDesde: string | null;
+  movidaA: string | null;
 }>>;
 
 const ESTADOS_MAQUINA_OCULTOS = ["BAJA", "BAJA_ERP", "DESUSO", "INACTIVA"];
@@ -99,12 +118,15 @@ export const getMatrizRecurrencias = async (req: Request, res: Response) => {
             id: true,
             estado: true,
             fechaCicloLogica: true,
+            fechaProgramadaPreventiva: true,
             fechaVencimiento: true,
             finalizadoAt: true,
             reglaRecurrenciaId: true,
           },
         })
       : [];
+
+    const ajustesPorCiclo = await obtenerAjustesActivosPorRegla(reglaIds, inicioAno, finAno);
 
     const ticketsPorCiclo = new Map(
       ticketsReales
@@ -128,21 +150,45 @@ export const getMatrizRecurrencias = async (req: Request, res: Response) => {
       for (const ciclo of ciclos) {
         const key = keyCiclo(regla.id, ciclo);
         const ticket = ticketsPorCiclo.get(key);
+        const ocurrencia = resolverOcurrenciaDesdeAjuste(ciclo, ajustesPorCiclo.get(keyAjuste(regla.id, ciclo)) ?? null);
         const mes = String(ciclo.getUTCMonth() + 1);
         ciclosAgregados.add(key);
         const estadoProyectado = estadoMensualProyectado(ciclo, referenciaMesActual);
         const esPendienteMesActual = estadoProyectado === "PENDIENTE_DEL_MES";
+        const fechaProgramadaTicket = ticket?.fechaProgramadaPreventiva ?? null;
+        const fechaProgramada = ticket ? fechaProgramadaTicket ?? ciclo : ocurrencia.fechaProgramada;
+        const omitida = !ticket && ocurrencia.omitida;
+        const estadoMensual: EstadoMensual = omitida
+          ? "OMITIDO"
+          : ticket
+            ? estadoMensualTicket(ticket)
+            : estadoProyectado;
+        const movida = ocurrencia.movida || Boolean(fechaProgramadaTicket);
 
         meses[mes]!.push({
           fechaInicio: formatearFechaUTC(ciclo),
+          fechaOriginal: formatearFechaUTC(ciclo),
+          fechaProgramada: formatearFechaUTC(fechaProgramada),
+          fechaProgramadaPreventiva: fechaProgramadaTicket
+            ? formatearFechaUTC(fechaProgramadaTicket)
+            : ocurrencia.fechaProgramadaPreventiva
+              ? formatearFechaUTC(ocurrencia.fechaProgramadaPreventiva)
+              : null,
           fechaFin: ticket?.finalizadoAt ? formatearFechaUTC(ticket.finalizadoAt) : ticket?.fechaVencimiento ? formatearFechaUTC(ticket.fechaVencimiento) : null,
           fechaTerminacion: ticket?.finalizadoAt ? formatearFechaUTC(ticket.finalizadoAt) : null,
-          estado: ticket ? estadoMensualTicket(ticket) : estadoProyectado,
+          estado: estadoMensual,
           estadoTicket: ticket?.estado ?? null,
-          estadoMensual: ticket ? estadoMensualTicket(ticket) : estadoProyectado,
+          estadoMensual,
+          label: omitida ? "Omitido este mes" : movida ? "Movido este mes" : ticket ? "Mantenimiento generado" : "Programado",
           ticketId: ticket?.id ?? null,
           origen: ticket ? "ticket" : "proyeccion",
-          pendienteMaterializar: ticket == null && esPendienteMesActual,
+          pendienteMaterializar: ticket == null && esPendienteMesActual && !omitida,
+          omitida,
+          movida,
+          ajusteTipo: ocurrencia.estadoAjuste,
+          ajusteMotivo: ocurrencia.motivo,
+          movidaDesde: ocurrencia.movidaDesde ?? (fechaProgramadaTicket ? formatearFechaUTC(ciclo) : null),
+          movidaA: ocurrencia.movidaA ?? (fechaProgramadaTicket ? formatearFechaUTC(fechaProgramadaTicket) : null),
         });
       }
 
@@ -154,19 +200,29 @@ export const getMatrizRecurrencias = async (req: Request, res: Response) => {
         const mes = String(ticket.fechaCicloLogica.getUTCMonth() + 1);
         meses[mes]!.push({
           fechaInicio: formatearFechaUTC(ticket.fechaCicloLogica),
+          fechaOriginal: formatearFechaUTC(ticket.fechaCicloLogica),
+          fechaProgramada: formatearFechaUTC(ticket.fechaProgramadaPreventiva ?? ticket.fechaCicloLogica),
+          fechaProgramadaPreventiva: ticket.fechaProgramadaPreventiva ? formatearFechaUTC(ticket.fechaProgramadaPreventiva) : null,
           fechaFin: ticket.finalizadoAt ? formatearFechaUTC(ticket.finalizadoAt) : ticket.fechaVencimiento ? formatearFechaUTC(ticket.fechaVencimiento) : null,
           fechaTerminacion: ticket.finalizadoAt ? formatearFechaUTC(ticket.finalizadoAt) : null,
           estado: estadoMensualTicket(ticket),
           estadoTicket: ticket.estado,
           estadoMensual: estadoMensualTicket(ticket),
+          label: ticket.fechaProgramadaPreventiva ? "Movido este mes" : "Mantenimiento generado",
           ticketId: ticket.id,
           origen: "ticket",
           pendienteMaterializar: false,
+          omitida: false,
+          movida: Boolean(ticket.fechaProgramadaPreventiva),
+          ajusteTipo: ticket.fechaProgramadaPreventiva ? "MOVER" : null,
+          ajusteMotivo: null,
+          movidaDesde: ticket.fechaProgramadaPreventiva ? formatearFechaUTC(ticket.fechaCicloLogica) : null,
+          movidaA: ticket.fechaProgramadaPreventiva ? formatearFechaUTC(ticket.fechaProgramadaPreventiva) : null,
         });
       }
 
       for (const mes of Object.keys(meses)) {
-        meses[mes]!.sort((a, b) => a.fechaInicio.localeCompare(b.fechaInicio));
+        meses[mes]!.sort((a, b) => a.fechaProgramada.localeCompare(b.fechaProgramada));
       }
 
       return {
@@ -229,3 +285,4 @@ export const getMatrizRecurrencias = async (req: Request, res: Response) => {
     return res.status(500).json({ error: "Error interno del servidor" });
   }
 };
+

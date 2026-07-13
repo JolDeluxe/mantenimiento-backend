@@ -14,6 +14,9 @@ import {
   proyeccionReglaQuerySchema,
   matrizQuerySchema,
   materializeSchema,
+  moverOcurrenciaSchema,
+  omitirOcurrenciaSchema,
+  quitarAjusteSchema,
 } from "../modules/recurrencias/zod";
 
 import { listarReglasGlobal, getReglaById } from "../modules/recurrencias/01_list";
@@ -23,6 +26,7 @@ import { deleteRegla }      from "../modules/recurrencias/04_delete";
 import { getProyeccionesGlobal, getProyeccionRegla } from "../modules/recurrencias/05_proyecciones";
 import { materializeRegla } from "../modules/recurrencias/06_materialize";
 import { getMatrizRecurrencias } from "../modules/recurrencias/07_matriz";
+import { listarAjustesRegla, moverOcurrencia, omitirOcurrencia, quitarAjusteOcurrencia } from "../modules/recurrencias/08_ajustes";
 
 const router = Router();
 
@@ -73,6 +77,13 @@ router.get(
   getProyeccionRegla,
 );
 
+// GET /api/recurrencias/:id/ajustes
+router.get(
+  "/:id/ajustes",
+  validate(reglaIdSchema),
+  listarAjustesRegla,
+);
+
 // POST /api/recurrencias — Crear nueva regla
 router.post(
   "/",
@@ -103,6 +114,30 @@ router.post(
   authorize(rolesGestion),
   validate(materializeSchema),
   materializeRegla,
+);
+
+// POST /api/recurrencias/:id/ocurrencias/mover
+router.post(
+  "/:id/ocurrencias/mover",
+  authorize(rolesGestion),
+  validate(moverOcurrenciaSchema),
+  moverOcurrencia,
+);
+
+// POST /api/recurrencias/:id/ocurrencias/omitir
+router.post(
+  "/:id/ocurrencias/omitir",
+  authorize(rolesGestion),
+  validate(omitirOcurrenciaSchema),
+  omitirOcurrencia,
+);
+
+// DELETE /api/recurrencias/:id/ocurrencias/ajuste
+router.delete(
+  "/:id/ocurrencias/ajuste",
+  authorize(rolesGestion),
+  validate(quitarAjusteSchema),
+  quitarAjusteOcurrencia,
 );
 
 export default router;

@@ -3,6 +3,7 @@ import { prisma } from "../../db";
 import { Rol } from "@prisma/client";
 import { normalizarFechaLogica, calcularSiguienteFechaLogica, inicioMesUTC, finDeMesUTC } from "./helper";
 import { materializarCicloInterno } from "./02_create";
+import { resolverOcurrenciaConAjuste } from "./ajustes-helper";
 
 /**
  * Evalúa reglas activas y materializa ciclos del mes actual.
@@ -68,6 +69,15 @@ export async function procesarRecurrenciasProgramadas() {
         while (cursor <= finMes) {
           const fechaCiclo = normalizarFechaLogica(cursor);
           ciclosMes++;
+          const ocurrencia = await resolverOcurrenciaConAjuste(regla.id, fechaCiclo);
+
+          if (ocurrencia.omitida) {
+            console.log(`[CRON RECURRENCIAS] Regla ID ${regla.id}: ocurrencia ${fechaCiclo.toISOString().split("T")[0]} omitida por ajuste operativo.`);
+            omitidos++;
+            cursor = calcularSiguienteFechaLogica(fechaCiclo, regla.frecuencia, regla.intervaloDias);
+            avanzoCursor = true;
+            continue;
+          }
 
           const ticketExistente = await prisma.tarea.findFirst({
             where: {
@@ -84,6 +94,7 @@ export async function procesarRecurrenciasProgramadas() {
             const ticket = await materializarCicloInterno({
               regla,
               fechaCicloLogica: fechaCiclo,
+              fechaProgramadaPreventiva: ocurrencia.fechaProgramadaPreventiva,
               maquinaPlanta: regla.maquina.planta,
               maquinaArea: regla.maquina.area,
               creadorId
