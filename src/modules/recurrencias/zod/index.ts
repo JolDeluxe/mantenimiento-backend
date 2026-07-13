@@ -134,6 +134,35 @@ export const materializeSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// AJUSTES POR OCURRENCIA
+// ---------------------------------------------------------------------------
+const motivoOpcional = z.preprocess(preprocessNull, z.string().trim().max(1000).nullable().optional());
+
+export const moverOcurrenciaSchema = z.object({
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  body: z.object({
+    fechaOriginal: z.coerce.date({ message: "fechaOriginal es obligatoria y debe ser una fecha válida" }),
+    fechaNueva: z.coerce.date({ message: "fechaNueva es obligatoria y debe ser una fecha válida" }),
+    motivo: motivoOpcional,
+  }),
+});
+
+export const omitirOcurrenciaSchema = z.object({
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  body: z.object({
+    fechaOriginal: z.coerce.date({ message: "fechaOriginal es obligatoria y debe ser una fecha válida" }),
+    motivo: z.string().trim().min(3, "motivo es obligatorio").max(1000),
+  }),
+});
+
+export const quitarAjusteSchema = z.object({
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  body: z.object({
+    fechaOriginal: z.coerce.date({ message: "fechaOriginal es obligatoria y debe ser una fecha válida" }),
+  }),
+});
+
+// ---------------------------------------------------------------------------
 // TIPOS EXPORTADOS
 // ---------------------------------------------------------------------------
 export type CreateReglaInput = z.infer<typeof createReglaSchema>["body"];
@@ -142,3 +171,6 @@ export type RecurrenciasListQuery = z.infer<typeof recurrenciasListQuerySchema>[
 export type ProyeccionesQuery = z.infer<typeof proyeccionesQuerySchema>["query"];
 export type MatrizQuery = z.infer<typeof matrizQuerySchema>["query"];
 export type MaterializeInput  = z.infer<typeof materializeSchema>["body"];
+export type MoverOcurrenciaInput = z.infer<typeof moverOcurrenciaSchema>["body"];
+export type OmitirOcurrenciaInput = z.infer<typeof omitirOcurrenciaSchema>["body"];
+export type QuitarAjusteInput = z.infer<typeof quitarAjusteSchema>["body"];

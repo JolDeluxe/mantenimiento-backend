@@ -684,6 +684,7 @@ export const computeTicketTemporalState = (tarea: TicketWithDetails): TicketDTO 
 
   return {
     ...tarea,
+    fechaProgramada: tarea.fechaProgramadaPreventiva ?? tarea.fechaCicloLogica ?? null,
     historial: historialMapeado,
     isLate,
     isOverdue,

@@ -5,6 +5,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { generarProyeccionesPorAno, ajustarPorFinDeSemana, formatearFechaUTC } from "./helper";
 import type { ProyeccionCiclo } from "./types";
+import { keyAjuste, obtenerAjustesActivosPorRegla, resolverOcurrenciaDesdeAjuste } from "./ajustes-helper";
 
 /**
  * GET /api/recurrencias/proyecciones?year=2026
@@ -43,6 +44,7 @@ export const getProyeccionesGlobal = async (req: Request, res: Response) => {
       },
       select: { reglaRecurrenciaId: true, fechaCicloLogica: true },
     });
+    const ajustesPorCiclo = await obtenerAjustesActivosPorRegla(reglaIds, inicioAno, finAno);
 
     // Construir set de claves materializadas: "reglaId|fechaISO"
     const materializados = new Set(
@@ -63,7 +65,8 @@ export const getProyeccionesGlobal = async (req: Request, res: Response) => {
 
       for (const ciclo of ciclos) {
         const key = `${regla.id}|${ciclo.toISOString()}`;
-        const fechaVencimientoSugerida = ajustarPorFinDeSemana(ciclo);
+        const ocurrencia = resolverOcurrenciaDesdeAjuste(ciclo, ajustesPorCiclo.get(keyAjuste(regla.id, ciclo)) ?? null);
+        const fechaVencimientoSugerida = ocurrencia.movida ? ocurrencia.fechaProgramada : ajustarPorFinDeSemana(ciclo);
         proyecciones.push({
           reglaId:          regla.id,
           maquinaId:        regla.maquinaId,
@@ -77,9 +80,21 @@ export const getProyeccionesGlobal = async (req: Request, res: Response) => {
           frecuencia:       regla.frecuencia,
           fechaCicloLogica: ciclo,
           fechaCicloLogicaFormateada: formatearFechaUTC(ciclo),
+          fechaOriginal: ocurrencia.fechaOriginal,
+          fechaOriginalFormateada: formatearFechaUTC(ocurrencia.fechaOriginal),
+          fechaProgramada: ocurrencia.fechaProgramada,
+          fechaProgramadaFormateada: formatearFechaUTC(ocurrencia.fechaProgramada),
+          fechaProgramadaPreventiva: ocurrencia.fechaProgramadaPreventiva,
+          fechaProgramadaPreventivaFormateada: ocurrencia.fechaProgramadaPreventiva ? formatearFechaUTC(ocurrencia.fechaProgramadaPreventiva) : null,
+          ajusteTipo: ocurrencia.estadoAjuste,
+          ajusteMotivo: ocurrencia.motivo,
+          omitida: ocurrencia.omitida,
+          movida: ocurrencia.movida,
+          movidaDesde: ocurrencia.movidaDesde,
+          movidaA: ocurrencia.movidaA,
           fechaVencimientoSugerida: fechaVencimientoSugerida,
           fechaVencimientoSugeridaFormateada: formatearFechaUTC(fechaVencimientoSugerida),
-          pendienteMaterializar: !materializados.has(key),
+          pendienteMaterializar: !ocurrencia.omitida && !materializados.has(key),
         });
       }
     }
@@ -135,6 +150,7 @@ export const getProyeccionRegla = async (req: Request, res: Response) => {
       },
       select: { reglaRecurrenciaId: true, fechaCicloLogica: true, estado: true, id: true },
     });
+    const ajustesPorCiclo = await obtenerAjustesActivosPorRegla([id], inicioAno, finAno);
 
     const materializados = new Map(
       ticketsReales
@@ -152,7 +168,8 @@ export const getProyeccionRegla = async (req: Request, res: Response) => {
     const proyecciones = ciclos.map((ciclo) => {
       const key     = `${regla.id}|${ciclo.toISOString()}`;
       const ticket  = materializados.get(key);
-      const fechaVencimientoSugerida = ajustarPorFinDeSemana(ciclo);
+      const ocurrencia = resolverOcurrenciaDesdeAjuste(ciclo, ajustesPorCiclo.get(keyAjuste(regla.id, ciclo)) ?? null);
+      const fechaVencimientoSugerida = ocurrencia.movida ? ocurrencia.fechaProgramada : ajustarPorFinDeSemana(ciclo);
       return {
         reglaId:          regla.id,
         maquinaId:        regla.maquinaId,
@@ -166,9 +183,21 @@ export const getProyeccionRegla = async (req: Request, res: Response) => {
         frecuencia:       regla.frecuencia,
         fechaCicloLogica: ciclo,
         fechaCicloLogicaFormateada: formatearFechaUTC(ciclo),
+        fechaOriginal: ocurrencia.fechaOriginal,
+        fechaOriginalFormateada: formatearFechaUTC(ocurrencia.fechaOriginal),
+        fechaProgramada: ocurrencia.fechaProgramada,
+        fechaProgramadaFormateada: formatearFechaUTC(ocurrencia.fechaProgramada),
+        fechaProgramadaPreventiva: ocurrencia.fechaProgramadaPreventiva,
+        fechaProgramadaPreventivaFormateada: ocurrencia.fechaProgramadaPreventiva ? formatearFechaUTC(ocurrencia.fechaProgramadaPreventiva) : null,
+        ajusteTipo: ocurrencia.estadoAjuste,
+        ajusteMotivo: ocurrencia.motivo,
+        omitida: ocurrencia.omitida,
+        movida: ocurrencia.movida,
+        movidaDesde: ocurrencia.movidaDesde,
+        movidaA: ocurrencia.movidaA,
         fechaVencimientoSugerida: fechaVencimientoSugerida,
         fechaVencimientoSugeridaFormateada: formatearFechaUTC(fechaVencimientoSugerida),
-        pendienteMaterializar: ticket == null,
+        pendienteMaterializar: ticket == null && !ocurrencia.omitida,
         ticketId:    ticket?.id   ?? null,
         ticketEstado: ticket?.estado ?? null,
       };

@@ -9,6 +9,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { normalizarFechaLogica } from "./helper";
 import { materializarCicloInterno } from "./02_create";
+import { resolverOcurrenciaConAjuste } from "./ajustes-helper";
 
 const ESTADOS_MAQUINA_NO_OPERATIVOS = new Set(["BAJA", "BAJA_ERP", "DESUSO", "INACTIVA"]);
 
@@ -38,6 +39,13 @@ export const materializeRegla = async (req: Request, res: Response) => {
     const fechaCicloLogica = normalizarFechaLogica(
       fechaBodyRaw ? new Date(fechaBodyRaw) : regla.proximaFechaEjecucion
     );
+    const ocurrencia = await resolverOcurrenciaConAjuste(id, fechaCicloLogica);
+
+    if (ocurrencia.omitida) {
+      return res.status(400).json({
+        error: "Esta ocurrencia está omitida para este periodo. Quita el ajuste antes de generar mantenimiento.",
+      });
+    }
 
     const hoyLogico = normalizarFechaLogica(new Date());
     if (fechaCicloLogica > hoyLogico && !confirmarFuturo) {
@@ -65,6 +73,7 @@ export const materializeRegla = async (req: Request, res: Response) => {
     const ticket = await materializarCicloInterno({
       regla,
       fechaCicloLogica,
+      fechaProgramadaPreventiva: ocurrencia.fechaProgramadaPreventiva,
       maquinaPlanta: regla.maquina.planta,
       maquinaArea:   regla.maquina.area,
       creadorId,

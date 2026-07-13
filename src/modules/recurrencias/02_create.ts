@@ -94,11 +94,12 @@ export const createRegla = async (req: Request, res: Response) => {
 export async function materializarCicloInterno(params: {
   regla: { id: number; maquinaId: number; titulo: string; descripcion?: string | null; categoria: string; prioridad: any; tiempoEstimado?: number | null; tecnicoResponsableId: number };
   fechaCicloLogica: Date;
+  fechaProgramadaPreventiva?: Date | null;
   maquinaPlanta: string;
   maquinaArea: string;
   creadorId: number;
 }) {
-  const { regla, fechaCicloLogica, maquinaPlanta, maquinaArea, creadorId } = params;
+  const { regla, fechaCicloLogica, fechaProgramadaPreventiva = null, maquinaPlanta, maquinaArea, creadorId } = params;
 
   const fechaVencimientoMensual = finDeMesUTC(fechaCicloLogica);
 
@@ -121,6 +122,7 @@ export async function materializarCicloInterno(params: {
         // --- CAMPOS DE RECURRENCIA ---
         reglaRecurrenciaId: regla.id,
         fechaCicloLogica:   fechaCicloLogica,
+        fechaProgramadaPreventiva,
         // Asignar al técnico responsable
         responsables: {
           connect: [{ id: regla.tecnicoResponsableId }],
@@ -128,7 +130,7 @@ export async function materializarCicloInterno(params: {
       },
       select: {
         id: true, titulo: true, estado: true,
-        fechaVencimiento: true, fechaCicloLogica: true,
+        fechaVencimiento: true, fechaCicloLogica: true, fechaProgramadaPreventiva: true,
         reglaRecurrenciaId: true,
       },
     });
@@ -145,7 +147,7 @@ export async function materializarCicloInterno(params: {
         where: { reglaRecurrenciaId: regla.id, fechaCicloLogica },
         select: {
           id: true, titulo: true, estado: true,
-          fechaVencimiento: true, fechaCicloLogica: true,
+          fechaVencimiento: true, fechaCicloLogica: true, fechaProgramadaPreventiva: true,
           reglaRecurrenciaId: true,
         },
       });
