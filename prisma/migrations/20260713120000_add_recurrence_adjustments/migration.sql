@@ -13,10 +13,10 @@ CREATE TABLE `ReglaRecurrenciaAjuste` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
-    UNIQUE INDEX `ReglaRecurrenciaAjuste_reglaRecurrenciaId_fechaOriginal_key`(`reglaRecurrenciaId`, `fechaOriginal`),
-    INDEX `ReglaRecurrenciaAjuste_reglaRecurrenciaId_periodoAnio_periodoMes_idx`(`reglaRecurrenciaId`, `periodoAnio`, `periodoMes`),
-    INDEX `ReglaRecurrenciaAjuste_tipo_activo_idx`(`tipo`, `activo`),
-    INDEX `ReglaRecurrenciaAjuste_createdById_idx`(`createdById`),
+    UNIQUE INDEX `RRA_regla_fechaOriginal_key`(`reglaRecurrenciaId`, `fechaOriginal`),
+    INDEX `RRA_regla_periodo_idx`(`reglaRecurrenciaId`, `periodoAnio`, `periodoMes`),
+    INDEX `RRA_tipo_activo_idx`(`tipo`, `activo`),
+    INDEX `RRA_createdById_idx`(`createdById`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
