@@ -100,7 +100,9 @@ export const ticketFilterSchema = z.object({
     vencidos: z.preprocess((val) => val === "true", z.boolean().optional()),
     perteneceAHoy: z.preprocess((val) => val === "true", z.boolean().optional()),
     venceManana: z.preprocess((val) => val === "true", z.boolean().optional()),
+    contextoHoy: z.preprocess((val) => val === "true", z.boolean().optional()),
     scope: z.preprocess(preprocessEmpty, z.enum(["general", "mantenimientos", "actividades"]).optional()),
+    vista: z.preprocess(preprocessEmpty, z.enum(["activas", "mes", "hoy", "manana", "semana"]).optional()),
     
     sort: z.preprocess(
       (val) => {

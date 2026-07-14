@@ -3,10 +3,19 @@
 // El contrato JSON de respuesta es idéntico en todos los casos.
 import type { Request, Response } from "express";
 import type { TicketFilterQuery } from "./zod";
-import { listarBandeja, listarHoy, listarMantenimientos, listarActividades } from "./list";
+import { listarBandeja, listarHoy, listarMantenimientos, listarActividades, listarTodas } from "./list";
 
 export const listarTickets = async (req: Request, res: Response) => {
   const query = req.query as unknown as TicketFilterQuery;
+  const scope = query.scope || "general";
+
+  // Nuevo módulo HOY/ACTIVOS: cada scope tiene handler explícito.
+  // list_bandeja.ts queda reservado para Bandeja General y no debe recibir vistas de HOY.
+  if (query.vista) {
+    if (scope === "mantenimientos") return listarMantenimientos(req, res);
+    if (scope === "actividades") return listarActividades(req, res);
+    return listarTodas(req, res);
+  }
 
   const esHoy         = query.perteneceAHoy === true || String(query.perteneceAHoy) === "true";
   const esMantto      = !esHoy && query.scope === "mantenimientos";
