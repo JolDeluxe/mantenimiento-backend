@@ -20,8 +20,11 @@ type TicketOrdenable = Pick<
 export type DashboardMetricas = {
   totalFiltrado: number;
   totalResumen: number;
+  totalActivas: number;
+  totalMes: number;
   totalHoy: number;
   totalManana: number;
+  totalSemana: number;
   totalAtrasadas: number;
   totalRechazadas: number;
   equipoCount: number;
@@ -59,6 +62,12 @@ const CRITICIDAD_MAQUINA_WEIGHT: Record<string, number> = {
   C: 3,
 };
 
+const ESTADOS_ACTIVOS_BASE: EstadoTarea[] = [
+  EstadoTarea.ASIGNADA,
+  EstadoTarea.EN_PROGRESO,
+  EstadoTarea.EN_PAUSA,
+];
+
 export const isAdminOrJefe = (rol: Rol): boolean => {
   const rolesAdmin: Rol[] = [Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO];
   return rolesAdmin.includes(rol);
@@ -84,6 +93,22 @@ export const getMXDayBounds = () => {
     inicioDiaMananaMX: new Date(inicioDiaHoyMX.getTime() + 24 * 60 * 60 * 1000),
     finDiaMananaMX: new Date(inicioDiaHoyMX.getTime() + 48 * 60 * 60 * 1000 - 1),
   };
+};
+
+const getMXWeekBounds = (inicioDiaHoyMX: Date) => {
+  const day = inicioDiaHoyMX.getUTCDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const inicioSemanaMX = new Date(inicioDiaHoyMX.getTime() + diffToMonday * 24 * 60 * 60 * 1000);
+  const finSemanaMX = new Date(inicioSemanaMX.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+  return { inicioSemanaMX, finSemanaMX };
+};
+
+const getMXMonthBounds = (inicioDiaHoyMX: Date) => {
+  const mxDate = inicioDiaHoyMX.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const [year = 0, month = 1] = mxDate.split('-').map(Number);
+  const inicioMesMX = new Date(year, month - 1, 1, 0, 0, 0, 0);
+  const finMesMX = new Date(year, month, 0, 23, 59, 59, 999);
+  return { inicioMesMX, finMesMX };
 };
 
 const toMXDateForDuration = (iso: string | Date): Date => {
@@ -122,16 +147,22 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     criticidadMaquina,
     perteneceAHoy,
     venceManana,
-    scope
+    contextoHoy,
+    scope,
+    vista
   } = query;
 
   const where: Prisma.TareaWhereInput = {};
   const andConditions: Prisma.TareaWhereInput[] = [];
 
   const { inicioDiaHoyMX, finDiaHoyMX, inicioDiaMananaMX, finDiaMananaMX } = getMXDayBounds();
+  const { inicioSemanaMX, finSemanaMX } = getMXWeekBounds(inicioDiaHoyMX);
+  const { inicioMesMX, finMesMX } = getMXMonthBounds(inicioDiaHoyMX);
   const hoyPeriodo = new Date();
   const inicioMesActualUTC = new Date(Date.UTC(hoyPeriodo.getUTCFullYear(), hoyPeriodo.getUTCMonth(), 1));
   const finMesActualUTC = new Date(Date.UTC(hoyPeriodo.getUTCFullYear(), hoyPeriodo.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+  const usaVistaActivos = Boolean(vista);
+  const permiteTogglesEspeciales = vista === "activas" || vista === "mes";
 
   if (user.rol === Rol.TECNICO) {
     if (!maquinaId) {
@@ -179,10 +210,19 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     }
   }
 
-  // 🔥 REGLA DE ORO PARA CANCELADAS:
-  // Si te piden explícitamente "CANCELADA", la muestras. 
-  // Si no te la piden, exclúyela de tajo para que no ensucie la app.
-  if (estado) {
+  // Nuevo módulo HOY/ACTIVOS: la base es ASIGNADA, EN_PROGRESO y EN_PAUSA.
+  // Atrasadas y Rechazadas solo sobreescriben esta base en la primera pestaña.
+  if (usaVistaActivos && !vencidos) {
+    where.estado = { in: ESTADOS_ACTIVOS_BASE };
+
+    if (estado) {
+      if (estado === EstadoTarea.RECHAZADO && permiteTogglesEspeciales) {
+        where.estado = EstadoTarea.RECHAZADO;
+      } else {
+        andConditions.push({ estado });
+      }
+    }
+  } else if (estado) {
     where.estado = estado;
   } else if (!vencidos && !huerfanos && !perteneceAHoy && !venceManana) {
     where.estado = { not: EstadoTarea.CANCELADA };
@@ -248,7 +288,9 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
 
   // Combinación inteligente de Vencidos y Rangos
   const filterVencimiento: Prisma.DateTimeFilter = {};
+  const filterRangoProgramado: Prisma.DateTimeFilter = {};
   let hasVencimientoFilter = false;
+  let hasRangoProgramado = false;
 
   if (vencidos) {
     filterVencimiento.lt = inicioDiaHoyMX;
@@ -258,16 +300,143 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
 
   if (vencimientoDesde) {
     const [y = 0, m = 1, d = 1] = vencimientoDesde.split('-').map(Number);
-    filterVencimiento.gte = new Date(y, m - 1, d, 0, 0, 0, 0);
+    const desde = new Date(y, m - 1, d, 0, 0, 0, 0);
+    filterVencimiento.gte = desde;
+    filterRangoProgramado.gte = desde;
     hasVencimientoFilter = true;
+    hasRangoProgramado = true;
+  }
+
+  if (vista === "activas") {
+    // Sin restricción de fecha: solo ACTIVOS + filtros del usuario.
+  }
+
+  if (vista === "mes") {
+    andConditions.push({
+      OR: [
+        { fechaVencimiento: { gte: inicioMesMX, lte: finMesMX } },
+        {
+          reglaRecurrenciaId: { not: null },
+          tipo: TipoTarea.PLANEADA,
+          clasificacion: ClasificacionTarea.PREVENTIVO,
+          fechaCicloLogica: {
+            gte: inicioMesActualUTC,
+            lte: finMesActualUTC,
+          },
+        },
+      ],
+    });
+  }
+
+  if (vista === "hoy") {
+    andConditions.push({
+      OR: [
+        { fechaVencimiento: { gte: inicioDiaHoyMX, lte: finDiaHoyMX } },
+        {
+          reglaRecurrenciaId: { not: null },
+          tipo: TipoTarea.PLANEADA,
+          clasificacion: ClasificacionTarea.PREVENTIVO,
+          fechaProgramadaPreventiva: { gte: inicioDiaHoyMX, lte: finDiaHoyMX },
+        },
+        {
+          reglaRecurrenciaId: { not: null },
+          tipo: TipoTarea.PLANEADA,
+          clasificacion: ClasificacionTarea.PREVENTIVO,
+          fechaProgramadaPreventiva: null,
+          fechaCicloLogica: { gte: inicioDiaHoyMX, lte: finDiaHoyMX },
+        },
+      ],
+    });
+  }
+
+  if (vista === "manana") {
+    andConditions.push({
+      OR: [
+        { fechaVencimiento: { gte: inicioDiaMananaMX, lte: finDiaMananaMX } },
+        {
+          reglaRecurrenciaId: { not: null },
+          tipo: TipoTarea.PLANEADA,
+          clasificacion: ClasificacionTarea.PREVENTIVO,
+          fechaProgramadaPreventiva: { gte: inicioDiaMananaMX, lte: finDiaMananaMX },
+        },
+        {
+          reglaRecurrenciaId: { not: null },
+          tipo: TipoTarea.PLANEADA,
+          clasificacion: ClasificacionTarea.PREVENTIVO,
+          fechaProgramadaPreventiva: null,
+          fechaCicloLogica: { gte: inicioDiaMananaMX, lte: finDiaMananaMX },
+        },
+      ],
+    });
+  }
+
+  if (vista === "semana") {
+    const condicionesSemana: Prisma.TareaWhereInput[] = [
+      { fechaVencimiento: { gte: inicioSemanaMX, lte: finSemanaMX } },
+    ];
+
+    if (scope === "mantenimientos") {
+      condicionesSemana.push(
+        {
+          reglaRecurrenciaId: { not: null },
+          tipo: TipoTarea.PLANEADA,
+          clasificacion: ClasificacionTarea.PREVENTIVO,
+          fechaProgramadaPreventiva: { gte: inicioSemanaMX, lte: finSemanaMX },
+        },
+        {
+          reglaRecurrenciaId: { not: null },
+          tipo: TipoTarea.PLANEADA,
+          clasificacion: ClasificacionTarea.PREVENTIVO,
+          fechaProgramadaPreventiva: null,
+          fechaCicloLogica: { gte: inicioSemanaMX, lte: finSemanaMX },
+        },
+      );
+    }
+
+    andConditions.push({ OR: condicionesSemana });
   }
   if (vencimientoHasta) {
     const [y = 0, m = 1, d = 1] = vencimientoHasta.split('-').map(Number);
-    filterVencimiento.lte = new Date(y, m - 1, d, 23, 59, 59, 999);
+    const hasta = new Date(y, m - 1, d, 23, 59, 59, 999);
+    filterVencimiento.lte = hasta;
+    filterRangoProgramado.lte = hasta;
     hasVencimientoFilter = true;
+    hasRangoProgramado = true;
   }
 
-  if (hasVencimientoFilter) {
+  if (hasRangoProgramado && !vencidos) {
+    if (contextoHoy) {
+      andConditions.push({
+        estado: {
+          notIn: [EstadoTarea.RESUELTO, EstadoTarea.CERRADO, EstadoTarea.CANCELADA]
+        }
+      });
+    }
+
+    andConditions.push({
+      OR: [
+        ...(contextoHoy ? [{
+          fechaVencimiento: {
+            lt: inicioDiaHoyMX,
+          },
+        }] : []),
+        { fechaVencimiento: filterVencimiento },
+        {
+          reglaRecurrenciaId: { not: null },
+          tipo: TipoTarea.PLANEADA,
+          clasificacion: ClasificacionTarea.PREVENTIVO,
+          fechaProgramadaPreventiva: filterRangoProgramado,
+        },
+        {
+          reglaRecurrenciaId: { not: null },
+          tipo: TipoTarea.PLANEADA,
+          clasificacion: ClasificacionTarea.PREVENTIVO,
+          fechaProgramadaPreventiva: null,
+          fechaCicloLogica: filterRangoProgramado,
+        },
+      ],
+    });
+  } else if (hasVencimientoFilter) {
     where.fechaVencimiento = filterVencimiento;
   }
 
@@ -331,6 +500,8 @@ export const limpiarFiltrosTemporales = (query: TicketFilterQuery): TicketFilter
   delete baseQuery.estado;
   delete baseQuery.perteneceAHoy;
   delete baseQuery.venceManana;
+  delete baseQuery.contextoHoy;
+  delete baseQuery.vista;
   delete baseQuery.vencidos;
   delete baseQuery.vencimientoDesde;
   delete baseQuery.vencimientoHasta;
@@ -380,15 +551,21 @@ export const calcularMetricasDashboard = async (
 
   const [
     totalResumen,
+    totalActivas,
+    totalMes,
     totalHoy,
     totalManana,
+    totalSemana,
     totalAtrasadas,
     totalRechazadas,
     misTareasCount,
   ] = await Promise.all([
     prisma.tarea.count({ where: contextWhere }),
-    prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { perteneceAHoy: true }) }),
-    prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { venceManana: true }) }),
+    prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { vista: "activas" }) }),
+    prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { vista: "mes" }) }),
+    prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { vista: "hoy" }) }),
+    prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { vista: "manana" }) }),
+    prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { vista: "semana" }) }),
     prisma.tarea.count({ where: buildMetricWhere(user, querySinFiltrosTemporales, { vencidos: true }) }),
     prisma.tarea.count({ where: rechazadasEnTiempoWhere }),
     prisma.tarea.count({
@@ -402,8 +579,11 @@ export const calcularMetricasDashboard = async (
   return {
     totalFiltrado,
     totalResumen,
+    totalActivas,
+    totalMes,
     totalHoy,
     totalManana,
+    totalSemana,
     totalAtrasadas,
     totalRechazadas,
     equipoCount: totalResumen,
@@ -658,6 +838,8 @@ export const computeTicketTemporalState = (tarea: TicketWithDetails): TicketDTO 
   const vencMX = tarea.fechaVencimiento ? toMXDateStr(new Date(tarea.fechaVencimiento)) : null;
   const belongsToDate = !!vencMX && vencMX === hoyMX;
   const esTerminal = ([EstadoTarea.RESUELTO, EstadoTarea.CERRADO, EstadoTarea.CANCELADA] as EstadoTarea[]).includes(tarea.estado);
+  // Campo DTO legado usado por dashboard/badges: describe pertenencia temporal literal,
+  // no la pestaña activa del rediseño HOY/ACTIVOS.
   const perteneceAHoy = !esTerminal && (
     belongsToDate ||
     isOverdue ||

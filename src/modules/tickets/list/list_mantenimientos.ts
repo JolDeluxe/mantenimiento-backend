@@ -16,7 +16,7 @@ export const listarMantenimientos = async (req: Request, res: Response) => {
 
     const { page, limit, sort, estado } = query;
     const offset = (page - 1) * limit;
-    const usaOrdenOperativo = query.venceManana === true;
+    const usaOrdenOperativo = Boolean(query.vista) || query.venceManana === true;
 
     const querySinEstado = { ...query };
     delete querySinEstado.estado;
