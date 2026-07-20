@@ -97,7 +97,8 @@ export const getMaquinaPrefill = async (req: Request, res: Response) => {
                 EstadoTarea.EN_PROGRESO,
                 EstadoTarea.EN_PAUSA
               ]
-            }
+            },
+            creadorId: req.user!.id
           },
           select: {
             id: true,
