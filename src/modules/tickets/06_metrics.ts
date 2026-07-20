@@ -7,7 +7,7 @@ import type { TicketFilterQuery } from "./zod";
 
 export const obtenerMetricasTickets = async (req: Request, res: Response) => {
   try {
-    const user = req.user!;
+    const user = (req as any).user!;
     const query = req.query as unknown as TicketFilterQuery;
     
     const baseWhere: Prisma.TareaWhereInput = getTicketFilters({ id: user.id, rol: user.rol }, query);
@@ -73,6 +73,15 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       ? candidatoCDT
       : new Date(Date.UTC(mxY, mxM - 1, mxD, 6, 0, 0, 0));
 
+    const boundsWhere: Prisma.TareaWhereInput = {
+      ...getTicketFilters({ id: user.id, rol: user.rol }, {
+        ...limpiarFiltrosTemporales(query),
+        year: undefined,
+        month: undefined
+      }),
+      estado: { not: EstadoTarea.CANCELADA }
+    };
+
     const activeStates = [
       EstadoTarea.PENDIENTE,
       EstadoTarea.ASIGNADA,
@@ -103,7 +112,8 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
       eficaciaPorPrioridadData,
       focosRojosData,
       cumplimientoData,
-      pausaData
+      pausaData,
+      limitesFechasData
     ] = await Promise.all([
       prisma.tarea.count({ where: whereSinEstado }),
       prisma.tarea.groupBy({ 
@@ -194,6 +204,11 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
           estado: EstadoTarea.EN_PAUSA
         },
         _sum: { duracion: true }
+      }),
+      prisma.tarea.aggregate({
+        where: boundsWhere,
+        _min: { fechaVencimiento: true },
+        _max: { fechaVencimiento: true }
       })
     ]);
 
@@ -277,7 +292,8 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
           huerfanos: huerfanos,
           minutosTotalesPausa: pausaData._sum.duracion || 0
         },
-        existenciaGlobal: resumenGlobalEstatus, 
+        existenciaGlobal: resumenGlobalEstatus,
+          limitesFechas: limitesFechasData,
         eficacia: {
           general: {
             promedioEstimadoMins: Math.round(eficaciaGeneral._avg.tiempoEstimado || 0),
@@ -308,7 +324,7 @@ export const obtenerMetricasTickets = async (req: Request, res: Response) => {
     });
 
   } catch (error) {
-    await registrarError('GET_TICKET_METRICS', req.user?.id || null, error);
-    return res.status(500).json({ error: "Error interno al calcular métricas" });
+    await registrarError('GET_TICKET_METRICS', (req as any).user?.id || null, error);
+    return res.status(500).json({ error: "Error interno al calcular mtricas" });
   }
 };
