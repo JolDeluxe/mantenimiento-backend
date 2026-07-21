@@ -89,7 +89,7 @@ export const notificarNuevoReporte = async (
       persistirNotificaciones(destinatarios, TipoNotificacion.NUEVO_REPORTE, titulo, cuerpo, reporte.id),
     ]);
   } catch (error) {
-    await registrarError("NOTIF_NEW_REPORT_FAIL", 0, error);
+    await registrarError("NOTIF_NEW_REPORT_FAIL", null, error);
   }
 };
 
@@ -126,7 +126,7 @@ export const notificarAsignacionTarea = async (
       }
     }
   } catch (error) {
-    await registrarError("NOTIF_ASSIGN_FAIL", 0, error);
+    await registrarError("NOTIF_ASSIGN_FAIL", null, error);
   }
 };
 
@@ -149,7 +149,7 @@ export const notificarModificacionTarea = async (
       persistirNotificaciones(idsTecnicos, TipoNotificacion.TAREA_MODIFICADA, titulo, cuerpo, tarea.id),
     ]);
   } catch (error) {
-    await registrarError("NOTIF_MODIFICATION_FAIL", 0, error);
+    await registrarError("NOTIF_MODIFICATION_FAIL", null, error);
   }
 };
 
@@ -282,7 +282,7 @@ export const notificarCambioEstatus = async (
     }
 
   } catch (error) {
-    await registrarError("NOTIF_STATUS_CHANGE_FAIL", 0, error);
+    await registrarError("NOTIF_STATUS_CHANGE_FAIL", null, error);
   }
 };
 
@@ -297,7 +297,7 @@ export const notificarAdvertenciaTurno = async (idsTecnicos: number[]) => {
       persistirNotificaciones(idsTecnicos, TipoNotificacion.TAREA_MODIFICADA, titulo, cuerpo)
     ]);
   } catch (error) {
-    await registrarError("NOTIF_ADVERTENCIA_TURNO", 0, error);
+    await registrarError("NOTIF_ADVERTENCIA_TURNO", null, error);
   }
 };
 
@@ -312,6 +312,6 @@ export const notificarAutoPausa = async (idsTecnicos: number[]) => {
       persistirNotificaciones(idsTecnicos, TipoNotificacion.TAREA_PAUSADA, titulo, cuerpo)
     ]);
   } catch (error) {
-    await registrarError("NOTIF_AUTOPAUSA_TURNO", 0, error);
+    await registrarError("NOTIF_AUTOPAUSA_TURNO", null, error);
   }
 };

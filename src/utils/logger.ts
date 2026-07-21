@@ -5,7 +5,7 @@ export const registrarAccion = async (accion: string, usuarioId: number | null, 
     await prisma.bitacora.create({
       data: {
         accion: accion.toUpperCase(),
-        usuarioId: usuarioId === 0 ? null : usuarioId,
+        usuarioId,
         detalles
       }
     });
@@ -22,7 +22,7 @@ export const registrarError = async (contexto: string, usuarioId: number | null,
     await prisma.bitacora.create({
       data: {
         accion: `ERROR: ${contexto.toUpperCase()}`, 
-        usuarioId: usuarioId === 0 ? null : usuarioId,
+        usuarioId,
         detalles: mensajeTecnico
       }
     });
@@ -31,6 +31,7 @@ export const registrarError = async (contexto: string, usuarioId: number | null,
     console.error(`[ERROR REGISTRADO] ${contexto}:`, error);
     
   } catch (logError) {
-    console.error(`[LOGGER CRITICAL FAIL] No se pudo guardar el error de: ${contexto}`, logError);
+    console.error(`[LOGGER CRITICAL FAIL] No se pudo guardar el error secundario de: ${contexto}`, logError);
+    console.error(`[LOGGER CRITICAL FAIL] Error original que no se pudo guardar:`, error);
   }
 };

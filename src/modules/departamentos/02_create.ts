@@ -28,7 +28,7 @@ export const createDepartamento = async (req: Request, res: Response) => {
     });
 
   } catch (error) {
-    await registrarError('CREAR_DEPARTAMENTO', usuarioId || 0, error);
+    await registrarError('CREAR_DEPARTAMENTO', usuarioId || null, error);
     return res.status(500).json({ error: "Error interno al crear el departamento" });
   }
 };

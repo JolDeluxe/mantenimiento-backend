@@ -36,7 +36,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
     return res.json({ message: "Si el correo existe en el sistema, recibirás las instrucciones." });
 
   } catch (error) {
-    await registrarError("AUTH_FORGOT_PASS", 0, error);
+    await registrarError("AUTH_FORGOT_PASS", null, error);
     return res.status(500).json({ error: "Error interno del servidor" });
   }
 };

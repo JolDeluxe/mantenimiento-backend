@@ -37,7 +37,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     return res.json({ message: "Contraseña restablecida con éxito. Ya puedes iniciar sesión." });
 
   } catch (error) {
-    await registrarError("AUTH_RESET_PASS", 0, error);
+    await registrarError("AUTH_RESET_PASS", null, error);
     return res.status(500).json({ error: "Error al restablecer contraseña" });
   }
 };
