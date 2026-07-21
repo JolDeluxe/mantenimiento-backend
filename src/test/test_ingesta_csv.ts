@@ -11,10 +11,12 @@ import { prisma } from "../db";
 import { env } from "../env";
 import { procesarIngestaMaquinariaCsv } from "../utils/maquinaria-csv-ingest";
 
+declare const process: { argv: string[], exit: (code: number) => never };
+
 const args = process.argv.slice(2);
 const shouldApply = args.includes("--apply");
-const explicitFileArg = args.find((arg) => arg.startsWith("--file="));
-const previewLimitArg = args.find((arg) => arg.startsWith("--preview-limit="));
+const explicitFileArg = args.find((arg: string) => arg.startsWith("--file="));
+const previewLimitArg = args.find((arg: string) => arg.startsWith("--preview-limit="));
 
 const filePath = explicitFileArg?.replace("--file=", "").trim() || env.MAQUINARIA_CSV_FILE_PATH;
 const previewLimit = Number(previewLimitArg?.replace("--preview-limit=", "") || 30);
