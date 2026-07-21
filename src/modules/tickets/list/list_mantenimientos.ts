@@ -39,7 +39,7 @@ export const listarMantenimientos = async (req: Request, res: Response) => {
         : [{ createdAt: "desc" }];
 
     let countActive = 0;
-    if (!estado) {
+    if (!estado && !query.vista && !query.venceManana) {
       countActive = await prisma.tarea.count({ where: { ...tableWhereFinal, NOT: { estado: EstadoTarea.CERRADO } } });
     }
 
@@ -51,7 +51,7 @@ export const listarMantenimientos = async (req: Request, res: Response) => {
 
     let ticketsPage: any[] = [];
 
-    if (!estado) {
+    if (!estado && !query.vista && !query.venceManana) {
       const skipActive = offset;
       const takeActive = Math.min(limit, Math.max(0, countActive - offset));
 

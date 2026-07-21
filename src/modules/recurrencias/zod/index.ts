@@ -93,7 +93,7 @@ export const recurrenciasListQuerySchema = z.object({
     tecnicoId: z.preprocess(preprocessEmpty, z.coerce.number().int().positive().optional()),
     incluirBaja: z.preprocess(preprocessBoolean, z.boolean().optional().default(false)),
     page: z.preprocess(preprocessEmpty, z.coerce.number().int().min(1).default(1)),
-    limit: z.preprocess(preprocessEmpty, z.coerce.number().int().min(1).max(100).default(20)),
+    limit: z.preprocess(preprocessEmpty, z.coerce.number().int().min(1).max(2000).default(20)),
   }),
 });
 

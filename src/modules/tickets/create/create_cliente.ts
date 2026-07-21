@@ -1,19 +1,17 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../../db";
-import { createTicketClientSchema } from "../zod";
-import { EstadoTarea, TipoEvento, TipoTarea, Prioridad, ClasificacionTarea } from "@prisma/client";
+import { EstadoTarea, TipoEvento, TipoTarea, ClasificacionTarea } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "./helper_upload";
 import { notificarNuevoReporte } from "../../notificaciones/services";
+import type { CreateTicketClientResolvedDTO } from "../types";
 
-export const createTicketCliente = async (req: Request, res: Response) => {
+export const createTicketCliente = async (
+  req: Request,
+  res: Response,
+  resolvedDTO: CreateTicketClientResolvedDTO
+) => {
   const user = req.user!;
-
-  const validation = createTicketClientSchema.safeParse(req.body);
-  if (!validation.success) {
-    return res.status(400).json({ error: "Datos inválidos", details: validation.error.issues });
-  }
-  const data = validation.data;
 
   let urlsImagenes: string[] = [];
   if (req.files && (req.files as Express.Multer.File[]).length > 0) {
@@ -25,61 +23,29 @@ export const createTicketCliente = async (req: Request, res: Response) => {
   }
 
   try {
-    // ── PATRÓN SNAPSHOT: Si hay máquina, heredar planta y área de la BD ──────
-    let finalPlanta = data.planta;
-    let finalArea   = data.area;
-
-    if (data.maquinaId) {
-      const maquinaDb = await prisma.maquina.findUnique({
-        where: { id: data.maquinaId },
-        select: { planta: true, area: true }
-      });
-      if (maquinaDb) {
-        // La verdad de la ubicación viene de la máquina, ignorar lo que envíe el frontend
-        finalPlanta = maquinaDb.planta;
-        finalArea   = maquinaDb.area;
-      }
-    }
-
-    // ── FAT BACKEND: Clasificación y estado deducidos de la bandera TPM ───────
-    const esAutonomo = data.esMantenimientoAutonomo === true;
-
-    const clasificacionFinal: ClasificacionTarea = esAutonomo
-      ? ClasificacionTarea.AUTONOMO
-      : ClasificacionTarea.CORRECTIVO;
-
-    const estadoInicial: EstadoTarea = esAutonomo
-      ? EstadoTarea.RESUELTO   // Ya lo resolvió el operario — no entra a bandeja pendiente
-      : EstadoTarea.PENDIENTE;
-
-    const prioridadFinal: Prioridad = esAutonomo
-      ? Prioridad.BAJA         // Registro histórico — no es urgente
-      : (data.prioridad || Prioridad.MEDIA);
-
-    const notaHistorial = esAutonomo
-      ? "Mantenimiento autónomo registrado y auto-resuelto por el operario."
-      : "Falla reportada por Cliente Interno.";
+    const clasificacionFinal: ClasificacionTarea = ClasificacionTarea.CORRECTIVO;
+    const estadoInicial: EstadoTarea = EstadoTarea.PENDIENTE;
+    const notaHistorial = "Falla reportada por Cliente Interno.";
 
     const result = await prisma.$transaction(async (tx) => {
       const nuevaTarea = await tx.tarea.create({
         data: {
-          titulo: data.titulo,
-          descripcion: data.descripcion || "Sin descripción.",
-          categoria: data.categoria,
+          titulo: resolvedDTO.titulo,
+          descripcion: resolvedDTO.descripcion || "Sin descripción.",
+          categoria: resolvedDTO.categoria,
+          incidenteId: resolvedDTO.incidenteId,
           clasificacion: clasificacionFinal,
-          planta: finalPlanta,
-          area: finalArea,
-          prioridad: prioridadFinal,
+          planta: resolvedDTO.planta,
+          area: resolvedDTO.area,
+          prioridad: resolvedDTO.prioridad,
           tipo: TipoTarea.TICKET,
           estado: estadoInicial,
           creadorId: user.id,
           departamentoId: user.departamentoId,
           duracionReal: 0,
-          maquinaId: data.maquinaId ?? null,
-          paroProduccion: data.paroProduccion,
-          impactoProduccion: data.impactoProduccion ?? null,
-          // Si es autónomo, registrar el cierre inmediatamente
-          ...(esAutonomo && { finalizadoAt: new Date(), fechaInicio: new Date() }),
+          maquinaId: resolvedDTO.maquinaId ?? null,
+          paroProduccion: resolvedDTO.paroProduccion,
+          fechaParoProduccion: resolvedDTO.fechaParoProduccion ?? null,
         },
         include: { creador: true }
       });
@@ -98,16 +64,16 @@ export const createTicketCliente = async (req: Request, res: Response) => {
         await tx.imagen.createMany({
           data: urlsImagenes.map(url => ({
             url,
-            tipo: esAutonomo ? "EVIDENCIA_AUTONOMO" : "EVIDENCIA_INICIAL",
+            tipo: "EVIDENCIA_INICIAL",
             tareaId: nuevaTarea.id,
             historialId: historial.id
           }))
         });
       }
 
-      if (!esAutonomo && data.maquinaId && data.paroProduccion) {
+      if (resolvedDTO.maquinaId && resolvedDTO.paroProduccion) {
         await tx.maquina.update({
-          where: { id: data.maquinaId },
+          where: { id: resolvedDTO.maquinaId },
           data: { estado: "PARO_PRODUCCION" }
         });
       }
@@ -115,15 +81,12 @@ export const createTicketCliente = async (req: Request, res: Response) => {
       return nuevaTarea;
     });
 
-    // Solo notificar al equipo de mantenimiento si es falla real (no autónomo)
-    if (!esAutonomo) {
-      void notificarNuevoReporte(result, result.creador);
-    }
+    void notificarNuevoReporte(result, result.creador);
 
     await registrarAccion(
       "CREAR_TICKET_CLIENTE",
       user.id,
-      `Ticket creado ID: ${result.id} | Clasificación: ${clasificacionFinal}${esAutonomo ? ' | AUTÓNOMO auto-resuelto' : ''}`
+      `Ticket creado ID: ${result.id} | Clasificación: ${clasificacionFinal}`
     );
 
     return res.status(201).json({ message: "Ticket creado exitosamente", data: result });

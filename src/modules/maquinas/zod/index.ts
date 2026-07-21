@@ -12,7 +12,7 @@ export const createMaquinaSchema = z.object({
     codigo: z.string()
       .trim()
       .toUpperCase()
-      .regex(/^MBC\d{4}$/, { message: "El código debe tener el formato MBC0000 (MBC + 4 dígitos)" }),
+      .regex(/^MBC\d{4,}$/, { message: "El código debe tener el formato MBC0000" }),
     nombre: z.string().trim().min(2, "El nombre es obligatorio"),
     proceso: z.string().trim().min(2, "El proceso es obligatorio"),
     descripcion: z.preprocess(preprocessNull, z.string().nullable().optional()),
@@ -77,7 +77,7 @@ export const getMaquinaPrefillSchema = z.object({
     codigo: z.string()
       .trim()
       .toUpperCase()
-      .regex(/^MBC\d{4}$/, { message: "El código debe cumplir con el formato MBC0000" }),
+      .min(1, "El código de máquina es obligatorio"),
   }),
 });
 

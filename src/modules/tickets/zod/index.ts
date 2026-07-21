@@ -130,27 +130,27 @@ export const getTicketByIdSchema = z.object({
   params: z.object({ id: z.coerce.number().int().positive() }).strict()
 });
 
-export const createTicketClientSchema = z.object({
-  titulo: commonString.min(3),
-  categoria: commonString.min(1),
-  descripcion: commonString.optional(),
-  prioridad: z.nativeEnum(Prioridad).optional(),
-  planta: commonString.min(1),
-  area: commonString.min(1),
-  clasificacion: z.preprocess(preprocessNull, z.nativeEnum(ClasificacionTarea).nullable().optional()),
-  imagenes: z.array(z.string().url()).optional(),
+export const createTicketClientRequestSchema = z.object({
+  categoria: commonString.min(1).max(50),
+  incidenteId: commonString.min(1).max(80),
+  titulo: commonString.min(3).max(255),
+  prioridad: z.enum(["BAJA", "MEDIA", "ALTA"]),
+  descripcion: commonString.min(10, "La descripción debe tener al menos 10 caracteres").max(2000),
+  planta: commonString.max(100).optional(),
+  area: commonString.max(100).optional(),
   maquinaId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
   paroProduccion: z.preprocess(
     (val) => val === "true" || val === true,
     z.boolean().default(false)
   ),
-  impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
-  // NUEVO: bandera TPM — el operario ya resolvió el fallo de forma autónoma
-  esMantenimientoAutonomo: z.preprocess(
-    (val) => val === "true" || val === true,
-    z.boolean().default(false)
+  fechaParoProduccion: z.preprocess(
+    (val) => (val === "" || val === "null" || val === null || val === undefined ? undefined : val),
+    z.coerce.date().optional()
   ),
 }).strict();
+
+export const createTicketClientSchema = createTicketClientRequestSchema;
+
 
 
 export const createTicketAdminSchema = z.object({

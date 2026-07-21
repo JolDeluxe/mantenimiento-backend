@@ -42,11 +42,14 @@ export const changeStatusCliente = async (req: Request, res: Response) => {
     if (ticket.creadorId !== user.id) {
       return res.status(403).json({ error: "No puedes modificar un ticket que no es tuyo." });
     }
-    if (ticket.estado !== EstadoTarea.RESUELTO) {
-      return res.status(403).json({ error: "Solo puedes validar el ticket cuando el técnico lo marque como RESUELTO." });
+    const esAprobacionORechazoValido = ticket.estado === EstadoTarea.RESUELTO;
+    const esCancelacionValida = ticket.estado === EstadoTarea.PENDIENTE && nuevoEstado === EstadoTarea.CANCELADA;
+
+    if (!esAprobacionORechazoValido && !esCancelacionValida) {
+      return res.status(403).json({ error: "Solo puedes validar el ticket cuando el técnico lo marque como RESUELTO, o cancelarlo cuando está PENDIENTE." });
     }
-    if (nuevoEstado !== EstadoTarea.CERRADO && nuevoEstado !== EstadoTarea.RECHAZADO) {
-      return res.status(400).json({ error: "Como cliente, solo puedes CERRAR o RECHAZAR el ticket." });
+    if (nuevoEstado !== EstadoTarea.CERRADO && nuevoEstado !== EstadoTarea.RECHAZADO && nuevoEstado !== EstadoTarea.CANCELADA) {
+      return res.status(400).json({ error: "Como cliente, solo puedes CERRAR, RECHAZAR o CANCELAR el ticket." });
     }
 
     return ejecutarCambioEstado({

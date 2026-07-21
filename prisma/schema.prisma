@@ -182,6 +182,9 @@ model Tarea {
   intervalos     IntervaloTiempo[]
   notificaciones Notificacion[]
 
+  incidenteId          String?   @db.VarChar(80)
+  fechaParoProduccion  DateTime?
+
   // --- RECURRENCIA (nullable — solo tickets generados por ReglaRecurrencia) ---
   // fechaCicloLogica: fecha ancla pura del ciclo (no ajustada por fines de semana/feriados)
   // fechaVencimiento: fecha física/ajustada de ejecución real (ya existe arriba)
@@ -211,6 +214,8 @@ model Tarea {
   @@index([clasificacion, createdAt])
   @@index([fechaVencimiento, estado, createdAt])
   @@index([reglaRecurrenciaId, fechaCicloLogica])
+  @@index([incidenteId])
+  @@index([fechaParoProduccion])
 }
 
 model Maquina {

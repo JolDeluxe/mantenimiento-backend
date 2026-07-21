@@ -52,7 +52,7 @@ export const listarReglasGlobal = async (req: Request, res: Response) => {
     };
 
     const safePage = Math.max(Number(page) || 1, 1);
-    const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+    const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 2000);
     const skip = (safePage - 1) * safeLimit;
 
     const where: Prisma.ReglaRecurrenciaWhereInput = {
@@ -75,7 +75,7 @@ export const listarReglasGlobal = async (req: Request, res: Response) => {
       prisma.reglaRecurrencia.findMany({
         where,
         select: REGLA_SELECT,
-        orderBy: [{ activo: "desc" }, { proximaFechaEjecucion: "asc" }, { id: "asc" }],
+        orderBy: [{ activo: "desc" }, { maquina: { codigo: "asc" } }, { proximaFechaEjecucion: "asc" }],
         skip,
         take: safeLimit,
       }),

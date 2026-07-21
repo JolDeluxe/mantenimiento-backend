@@ -41,6 +41,29 @@ router.get("/metrics",
     obtenerMetricasTickets
 );
 
+// GET /api/tickets/plantas
+router.get("/plantas", async (_req, res) => {
+  try {
+    const { getPlantasOperativas } = await import("../modules/maquinas/helper");
+    const plantas = await getPlantasOperativas();
+    return res.json({ status: "success", data: { plantas } });
+  } catch (error) {
+    return res.status(500).json({ error: "Error al obtener plantas operativas" });
+  }
+});
+
+// GET /api/tickets/form-config
+router.get("/form-config", async (_req, res) => {
+  try {
+    const { getPlantasOperativas } = await import("../modules/maquinas/helper");
+    const plantas = await getPlantasOperativas();
+    return res.json({ status: "success", data: { plantas } });
+  } catch (error) {
+    return res.status(500).json({ error: "Error al obtener configuración de plantas" });
+  }
+});
+
+
 // GET /api/tickets/:id
 router.get("/:id", 
     validate(getTicketByIdSchema), 

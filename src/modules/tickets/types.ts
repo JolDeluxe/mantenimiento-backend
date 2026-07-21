@@ -105,3 +105,17 @@ export type TicketDTO = Omit<TicketWithDetails, "historial"> & {
     esTiempoManual: boolean;
   })[];
 };
+
+export interface CreateTicketClientResolvedDTO {
+  categoria: string;
+  incidenteId: string;
+  titulo: string;
+  prioridad: import("@prisma/client").Prioridad;
+  descripcion: string;
+  planta: string;
+  area: string;
+  maquinaId: number | null;
+  paroProduccion: boolean;
+  fechaParoProduccion: Date | null;
+}
+
