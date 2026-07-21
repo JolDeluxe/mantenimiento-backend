@@ -5,7 +5,7 @@ export const registrarAccion = async (accion: string, usuarioId: number | null, 
     await prisma.bitacora.create({
       data: {
         accion: accion.toUpperCase(),
-        usuarioId,
+        usuarioId: usuarioId === 0 ? null : usuarioId,
         detalles
       }
     });
@@ -22,7 +22,7 @@ export const registrarError = async (contexto: string, usuarioId: number | null,
     await prisma.bitacora.create({
       data: {
         accion: `ERROR: ${contexto.toUpperCase()}`, 
-        usuarioId,
+        usuarioId: usuarioId === 0 ? null : usuarioId,
         detalles: mensajeTecnico
       }
     });

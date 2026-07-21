@@ -25,42 +25,83 @@ export const autoCloseResolvedTickets = async () => {
 
     if (ticketsExpirados.length === 0) return;
 
-    for (const ticket of ticketsExpirados) {
-      await prisma.$transaction(async (tx) => {
-        const tareaActualizada = await tx.tarea.update({
-          where: { id: ticket.id },
-          data: { 
-            estado: EstadoTarea.CERRADO,
-            updatedAt: ahora
-            // finalizadoAt ya existe desde que pasó a RESUELTO, no se toca.
-          }
-        });
-
-        await tx.historialTarea.create({
-          data: {
-            tareaId: ticket.id,
-            usuarioId: ticket.creadorId, // Atribuimos el cierre automático al creador (o usa un ID de sistema si lo tienes configurado)
-            tipo: TipoEvento.CAMBIO_ESTADO,
-            estadoAnterior: EstadoTarea.RESUELTO,
-            estadoNuevo: EstadoTarea.CERRADO,
-            nota: "Tarea CERRADA de manera automática: Sin interacción del cliente por más de 2 días."
-          }
-        });
-
-        return tareaActualizada;
+    // Obtener usuario sistema dinámicamente como fallback
+    let systemUser = await prisma.usuario.findUnique({
+      where: { username: process.env.SYS_ADMIN_USER || "SUPER_ADMIN" }
+    });
+    if (!systemUser) {
+      systemUser = await prisma.usuario.findFirst({
+        where: { rol: "SUPER_ADMIN", estado: "ACTIVO" }
       });
+    }
+    const fallbackUserId = systemUser?.id;
 
-      // Notificar y registrar en bitácora de servidor fuera de la transacción
-      void notificarCambioEstatus(ticket, EstadoTarea.CERRADO, ticket.creadorId);
-      await registrarAccion(
-        "CIERRE_AUTOMATICO",
-        ticket.creadorId,
-        `Ticket ${ticket.id}: RESUELTO → CERRADO por inactividad (> 2 días)`
-      );
+    let evaluados = ticketsExpirados.length;
+    let cerrados = 0;
+    let omitidos = 0;
+    let conError = 0;
+
+    for (const ticket of ticketsExpirados) {
+      try {
+        // Validar si el creador original sigue existiendo en BD
+        let actorId = ticket.creadorId;
+        const creadorExiste = await prisma.usuario.findUnique({ where: { id: actorId } });
+        
+        if (!creadorExiste) {
+          if (fallbackUserId) {
+             actorId = fallbackUserId;
+          } else {
+             omitidos++;
+             await registrarError("AUTO_CLOSE_TICKETS_OMITIDO", null, `Ticket ${ticket.id} omitido: creador inexistente y no hay SUPER_ADMIN.`);
+             continue;
+          }
+        }
+
+        await prisma.$transaction(async (tx) => {
+          const tareaActualizada = await tx.tarea.update({
+            where: { id: ticket.id },
+            data: { 
+              estado: EstadoTarea.CERRADO,
+              updatedAt: ahora
+            }
+          });
+
+          await tx.historialTarea.create({
+            data: {
+              tareaId: ticket.id,
+              usuarioId: actorId, 
+              tipo: TipoEvento.CAMBIO_ESTADO,
+              estadoAnterior: EstadoTarea.RESUELTO,
+              estadoNuevo: EstadoTarea.CERRADO,
+              nota: "Tarea CERRADA de manera automática: Sin interacción del cliente por más de 2 días." + (!creadorExiste ? " (Atribuido a SISTEMA por usuario original no encontrado)." : "")
+            }
+          });
+
+          return tareaActualizada;
+        });
+
+        // Notificar y registrar en bitácora de servidor fuera de la transacción
+        void notificarCambioEstatus(ticket, EstadoTarea.CERRADO, actorId);
+        await registrarAccion(
+          "CIERRE_AUTOMATICO",
+          null,
+          `Ticket ${ticket.id}: RESUELTO → CERRADO por inactividad (> 2 días)`
+        );
+        cerrados++;
+      } catch (err) {
+        conError++;
+        await registrarError(`AUTO_CLOSE_TICKET_${ticket.id}_FAIL`, null, err);
+      }
     }
 
-} catch (error) {
-    await registrarError("AUTO_CLOSE_TICKETS", 0, error);
+    await registrarAccion(
+      "AUTO_CLOSE_TICKETS_RESUMEN", 
+      null, 
+      `Evaluación finalizada. Evaluados: ${evaluados}. Cerrados: ${cerrados}. Omitidos: ${omitidos}. Errores: ${conError}.`
+    );
+
+  } catch (error) {
+    await registrarError("AUTO_CLOSE_TICKETS", null, error);
   }
 };
 
@@ -78,10 +119,10 @@ export const enviarAdvertenciasFinTurno = async () => {
 
     if (idsTecnicos.size > 0) {
       await notificarAdvertenciaTurno(Array.from(idsTecnicos));
-      await registrarAccion("CRON_ADVERTENCIA", 0, `Advertencia enviada a ${idsTecnicos.size} técnicos.`);
+      await registrarAccion("CRON_ADVERTENCIA", null, `Advertencia enviada a ${idsTecnicos.size} técnicos.`);
     }
   } catch (error) {
-    await registrarError("CRON_ADVERTENCIA_FAIL", 0, error);
+    await registrarError("CRON_ADVERTENCIA_FAIL", null, error);
   }
 };
 
@@ -104,6 +145,20 @@ export const ejecutarAutoPausaFinTurno = async () => {
     });
 
     if (tareasActivas.length === 0) return;
+
+    let systemUser = await prisma.usuario.findUnique({
+      where: { username: process.env.SYS_ADMIN_USER || "SUPER_ADMIN" }
+    });
+    if (!systemUser) {
+      systemUser = await prisma.usuario.findFirst({
+        where: { rol: "SUPER_ADMIN", estado: "ACTIVO" }
+      });
+    }
+    const fallbackUserId = systemUser?.id;
+    if (!fallbackUserId) {
+        await registrarError("CRON_AUTOPAUSA_FAIL", null, "No se encontró un usuario SISTEMA válido para realizar la pausa.");
+        return;
+    }
 
     const idsTecnicosNotificar = new Set<number>();
 
@@ -146,7 +201,7 @@ export const ejecutarAutoPausaFinTurno = async () => {
         await tx.historialTarea.create({
           data: {
             tareaId: tarea.id,
-            usuarioId: 1, // Usuario SISTEMA.
+            usuarioId: fallbackUserId, // Usuario SISTEMA validado dinámicamente
             tipo: TipoEvento.CAMBIO_ESTADO,
             estadoAnterior: EstadoTarea.EN_PROGRESO,
             estadoNuevo: EstadoTarea.EN_PAUSA,
@@ -160,7 +215,7 @@ export const ejecutarAutoPausaFinTurno = async () => {
 
     if (idsTecnicosNotificar.size > 0) {
       await notificarAutoPausa(Array.from(idsTecnicosNotificar));
-      await registrarAccion("CRON_AUTOPAUSA", 0, `Auto-Pausa aplicada a ${tareasActivas.length} tareas.`);
+      await registrarAccion("CRON_AUTOPAUSA", null, `Auto-Pausa aplicada a ${tareasActivas.length} tareas.`);
       try {
         const io = getIO();
         io.to("global_updates").emit("datos_actualizados", { module: "tickets" });
@@ -168,6 +223,6 @@ export const ejecutarAutoPausaFinTurno = async () => {
     }
 
   } catch (error) {
-    await registrarError("CRON_AUTOPAUSA_FAIL", 0, error);
+    await registrarError("CRON_AUTOPAUSA_FAIL", null, error);
   }
 };
