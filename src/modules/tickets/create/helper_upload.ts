@@ -7,7 +7,12 @@ export const processTicketImages = async (files: Express.Multer.File[] | undefin
 
     for (const file of files) {
         try {
-            const url = await uploadTaskImage(file.buffer);
+            const url = await uploadTaskImage({
+                buffer: file.buffer,
+                originalname: file.originalname,
+                mimetype: file.mimetype,
+                size: file.size
+            });
             urls.push(url);
         } catch (error) {
             console.error("Error subiendo una de las imágenes:", error);
