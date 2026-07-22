@@ -13,6 +13,9 @@ export const uploadUserProfileImage = async (buffer: Buffer): Promise<string> =>
       {
         folder: "Mantenimiento/Usuarios",
         resource_type: "image",
+        api_key: env.CLOUDINARY_API_KEY,
+        api_secret: env.CLOUDINARY_API_SECRET,
+        cloud_name: env.CLOUDINARY_CLOUD_NAME,
         transformation: [
           { width: 500, height: 500, crop: "thumb", gravity: "face" },
           { quality: "auto:good" },
@@ -34,6 +37,9 @@ export const uploadTaskImage = async (buffer: Buffer): Promise<string> => {
       {
         folder: "Mantenimiento/Tareas",
         resource_type: "image",
+        api_key: env.CLOUDINARY_API_KEY,
+        api_secret: env.CLOUDINARY_API_SECRET,
+        cloud_name: env.CLOUDINARY_CLOUD_NAME,
         transformation: [
           { width: 1280, crop: "limit" },
           { quality: "auto:good" },

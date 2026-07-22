@@ -10,7 +10,8 @@ const whitelist = [
   // Aquí agregaremos luego los dominios de Netlify:
   "https://cuadra-mantenimiento.netlify.app",
   "https://cuadra-mbc-mantenimiento-interno.netlify.app",
-  "https://cuadra-mbc-mantenimiento-publico.netlify.app"
+  "https://cuadra-mbc-mantenimiento-publico.netlify.app",
+  "https://tutorial-mantenimiento.netlify.app"
 ];
 
 const corsOptions: cors.CorsOptions = {
