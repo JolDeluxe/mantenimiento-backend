@@ -7,9 +7,9 @@
 // Usar archivo especifico:
 // bun src/test/test_ingesta_csv.ts --file="C:/ruta/Maquinaria.csv"
 
-import { prisma } from "../db";
-import { env } from "../env";
-import { procesarIngestaMaquinariaCsv } from "../utils/maquinaria-csv-ingest";
+import { prisma } from "../src/db";
+import { env } from "../src/env";
+import { procesarIngestaMaquinariaCsv } from "../src/utils/maquinaria-csv-ingest";
 
 declare const process: { argv: string[], exit: (code: number) => never };
 

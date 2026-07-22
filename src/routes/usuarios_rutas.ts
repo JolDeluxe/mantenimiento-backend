@@ -55,7 +55,7 @@ router.get("/:id",
 // POST /api/usuarios
 router.post(
   "/", 
-  authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO]),
+  authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO]),
   upload.single('imagen'),
   validate(createUsuarioSchema), 
   crearUsuario
@@ -76,7 +76,7 @@ router.put(
 // PATCH /api/usuarios/:id
 router.patch(
   "/:id",
-  authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO]),
+  authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO]),
   validate(patchUsuarioSchema), 
   changeStatusUsuario
 );

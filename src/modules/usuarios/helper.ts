@@ -5,14 +5,9 @@ export const getSecurityFilters = (usuario: { rol: Rol, departamentoId: number |
   switch (usuario.rol) {
     case Rol.SUPER_ADMIN: return {};
     case Rol.JEFE_MTTO:
-      if (!usuario.departamentoId) throw new Error("Jefe sin departamento asignado");
-      return { departamentoId: usuario.departamentoId };
     case Rol.COORDINADOR_MTTO:
-      if (!usuario.departamentoId) throw new Error("Coordinador sin departamento asignado");
-      return {
-        departamentoId: usuario.departamentoId,
-        rol: { in: [Rol.TECNICO, Rol.COORDINADOR_MTTO] },
-      };
+      if (!usuario.departamentoId) throw new Error("Jefe/Coordinador sin departamento asignado");
+      return { departamentoId: usuario.departamentoId };
     case Rol.TECNICO:
     case Rol.CLIENTE_INTERNO:
       return null;
@@ -64,16 +59,16 @@ export const validarReglasCreacion = (
       return true;
 
     case Rol.JEFE_MTTO:
+    case Rol.COORDINADOR_MTTO:
       if (datosNuevoUsuario.departamentoId !== usuarioSolicitante.departamentoId) {
         throw new Error("Solo puedes registrar personal para tu departamento asignado.");
       }
-      const rolesPermitidosJefe: Rol[] = [Rol.TECNICO, Rol.COORDINADOR_MTTO];
+      const rolesPermitidosJefe: Rol[] = [Rol.TECNICO, Rol.COORDINADOR_MTTO, Rol.JEFE_MTTO];
       if (!rolesPermitidosJefe.includes(rolNuevo)) {
-        throw new Error("Como Jefe de Mantenimiento, solo puedes crear TÉCNICOS o COORDINADORES.");
+        throw new Error("Como Jefe o Coordinador de Mantenimiento, solo puedes crear TÉCNICOS, COORDINADORES o JEFES.");
       }
       return true;
 
-    case Rol.COORDINADOR_MTTO:
     case Rol.TECNICO:
     case Rol.CLIENTE_INTERNO:
       throw new Error("No tienes permisos para crear usuarios.");
@@ -151,6 +146,7 @@ export const validarReglasEdicion = (
       return true;
 
     case Rol.JEFE_MTTO:
+    case Rol.COORDINADOR_MTTO:
       if (usuarioObjetivo.departamentoId !== usuarioSolicitante.departamentoId) {
         throw new Error("No tienes permisos para editar usuarios de otros departamentos.");
       }
@@ -161,20 +157,18 @@ export const validarReglasEdicion = (
         throw new Error("No puedes transferir usuarios a otros departamentos.");
       }
       if (
-        usuarioObjetivo.rol === Rol.SUPER_ADMIN ||
-        usuarioObjetivo.rol === Rol.JEFE_MTTO
+        usuarioObjetivo.rol === Rol.SUPER_ADMIN
       ) {
-        throw new Error("No tienes jerarquía suficiente para editar a este usuario.");
+        throw new Error("No tienes jerarquía suficiente para editar a un Super Admin.");
       }
       if (datosNuevos.rol) {
-        const rolesPermitidos: Rol[] = [Rol.TECNICO, Rol.COORDINADOR_MTTO];
+        const rolesPermitidos: Rol[] = [Rol.TECNICO, Rol.COORDINADOR_MTTO, Rol.JEFE_MTTO];
         if (!rolesPermitidos.includes(datosNuevos.rol as Rol)) {
-          throw new Error("Rol inválido. Solo puedes asignar: TÉCNICO o COORDINADOR.");
+          throw new Error("Rol inválido. Solo puedes asignar: TÉCNICO, COORDINADOR o JEFE.");
         }
       }
       return true;
 
-    case Rol.COORDINADOR_MTTO:
     case Rol.TECNICO:
     case Rol.CLIENTE_INTERNO:
       throw new Error("Acceso denegado. No tienes permisos para editar usuarios.");
@@ -192,15 +186,14 @@ export const validarReglasDesactivacion = (
     throw new Error("Seguridad: No puedes desactivar tu propia cuenta.");
   }
   if (usuarioSolicitante.rol === Rol.SUPER_ADMIN) return true;
-  if (usuarioSolicitante.rol === Rol.JEFE_MTTO) {
+  if (usuarioSolicitante.rol === Rol.JEFE_MTTO || usuarioSolicitante.rol === Rol.COORDINADOR_MTTO) {
     if (usuarioObjetivo.departamentoId !== usuarioSolicitante.departamentoId) {
       throw new Error("Solo puedes desactivar usuarios de tu departamento.");
     }
     if (
-      usuarioObjetivo.rol === Rol.SUPER_ADMIN ||
-      usuarioObjetivo.rol === Rol.JEFE_MTTO
+      usuarioObjetivo.rol === Rol.SUPER_ADMIN
     ) {
-      throw new Error("No tienes jerarquía suficiente para desactivar a este usuario.");
+      throw new Error("No tienes jerarquía suficiente para desactivar a un Super Admin.");
     }
     return true;
   }
