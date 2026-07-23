@@ -1,8 +1,8 @@
 // status/status_cliente.ts
 // Cambio de estado para CLIENTE_INTERNO:
 //   - Debe ser el creador del ticket
-//   - Solo puede actuar cuando el ticket está en RESUELTO
-//   - Solo puede mover a CERRADO o RECHAZADO
+//   - Puede aprobar/rechazar cuando el ticket está en RESUELTO
+//   - Puede cancelar reportes activos cuando la reparación ya no sea requerida
 //   - No maneja intervalos de tiempo
 import type { Request, Response } from "express";
 import { prisma } from "../../../db";
@@ -43,10 +43,19 @@ export const changeStatusCliente = async (req: Request, res: Response) => {
       return res.status(403).json({ error: "No puedes modificar un ticket que no es tuyo." });
     }
     const esAprobacionORechazoValido = ticket.estado === EstadoTarea.RESUELTO;
-    const esCancelacionValida = ticket.estado === EstadoTarea.PENDIENTE && nuevoEstado === EstadoTarea.CANCELADA;
+    const estadosCancelablesCliente: EstadoTarea[] = [
+      EstadoTarea.PENDIENTE,
+      EstadoTarea.ASIGNADA,
+      EstadoTarea.EN_PROGRESO,
+      EstadoTarea.EN_PAUSA,
+      EstadoTarea.RECHAZADO,
+    ];
+    const esCancelacionValida =
+      nuevoEstado === EstadoTarea.CANCELADA &&
+      estadosCancelablesCliente.includes(ticket.estado);
 
     if (!esAprobacionORechazoValido && !esCancelacionValida) {
-      return res.status(403).json({ error: "Solo puedes validar el ticket cuando el técnico lo marque como RESUELTO, o cancelarlo cuando está PENDIENTE." });
+      return res.status(403).json({ error: "Solo puedes validar el ticket cuando el técnico lo marque como RESUELTO, o cancelarlo cuando la atención siga activa." });
     }
     if (nuevoEstado !== EstadoTarea.CERRADO && nuevoEstado !== EstadoTarea.RECHAZADO && nuevoEstado !== EstadoTarea.CANCELADA) {
       return res.status(400).json({ error: "Como cliente, solo puedes CERRAR, RECHAZAR o CANCELAR el ticket." });

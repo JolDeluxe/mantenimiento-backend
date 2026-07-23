@@ -8,6 +8,9 @@ import { listarBandeja, listarHoy, listarMantenimientos, listarActividades, list
 export const listarTickets = async (req: Request, res: Response) => {
   const query = req.query as unknown as TicketFilterQuery;
   const scope = query.scope || "general";
+  const esHoy = query.perteneceAHoy === true || String(query.perteneceAHoy) === "true";
+
+  if (esHoy) return listarHoy(req, res);
 
   // Nuevo módulo HOY/ACTIVOS: cada scope tiene handler explícito.
   // list_bandeja.ts queda reservado para Bandeja General y no debe recibir vistas de HOY.
@@ -17,11 +20,9 @@ export const listarTickets = async (req: Request, res: Response) => {
     return listarTodas(req, res);
   }
 
-  const esHoy         = query.perteneceAHoy === true || String(query.perteneceAHoy) === "true";
   const esMantto      = !esHoy && query.scope === "mantenimientos";
   const esActividades = !esHoy && query.scope === "actividades";
 
-  if (esHoy)         return listarHoy(req, res);
   if (esMantto)      return listarMantenimientos(req, res);
   if (esActividades) return listarActividades(req, res);
   return listarBandeja(req, res);

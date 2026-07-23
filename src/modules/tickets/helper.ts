@@ -163,6 +163,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   const finMesActualUTC = new Date(Date.UTC(hoyPeriodo.getUTCFullYear(), hoyPeriodo.getUTCMonth() + 1, 0, 23, 59, 59, 999));
   const usaVistaActivos = Boolean(vista);
   const permiteTogglesEspeciales = vista === "activas" || vista === "mes";
+  const incluirRechazadasEnHoy = perteneceAHoy && (!estado || estado === EstadoTarea.RECHAZADO);
 
   if (user.rol === Rol.TECNICO) {
     if (!maquinaId) {
@@ -210,10 +211,14 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     }
   }
 
-  // Nuevo módulo HOY/ACTIVOS: la base es ASIGNADA, EN_PROGRESO y EN_PAUSA.
-  // Atrasadas y Rechazadas solo sobreescriben esta base en la primera pestaña.
+  // Nuevo módulo HOY/ACTIVOS: la base visible es ASIGNADA, EN_PROGRESO y EN_PAUSA.
+  // En el contexto HOY también se incluyen RECHAZADO para que queden siempre al inicio.
   if (usaVistaActivos && !vencidos) {
-    where.estado = { in: ESTADOS_ACTIVOS_BASE };
+    where.estado = {
+      in: incluirRechazadasEnHoy
+        ? [...ESTADOS_ACTIVOS_BASE, EstadoTarea.RECHAZADO]
+        : ESTADOS_ACTIVOS_BASE,
+    };
 
     if (estado) {
       if (estado === EstadoTarea.RECHAZADO && permiteTogglesEspeciales) {
@@ -312,61 +317,70 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
   }
 
   if (vista === "mes") {
-    andConditions.push({
-      OR: [
-        { fechaVencimiento: { gte: inicioMesMX, lte: finMesMX } },
-        {
-          reglaRecurrenciaId: { not: null },
-          tipo: TipoTarea.PLANEADA,
-          clasificacion: ClasificacionTarea.PREVENTIVO,
-          fechaCicloLogica: {
-            gte: inicioMesActualUTC,
-            lte: finMesActualUTC,
-          },
+    const condicionesMes: Prisma.TareaWhereInput[] = [
+      { fechaVencimiento: { gte: inicioMesMX, lte: finMesMX } },
+      {
+        reglaRecurrenciaId: { not: null },
+        tipo: TipoTarea.PLANEADA,
+        clasificacion: ClasificacionTarea.PREVENTIVO,
+        fechaCicloLogica: {
+          gte: inicioMesActualUTC,
+          lte: finMesActualUTC,
         },
-      ],
+      },
+    ];
+    if (incluirRechazadasEnHoy) condicionesMes.unshift({ estado: EstadoTarea.RECHAZADO });
+
+    andConditions.push({
+      OR: condicionesMes,
     });
   }
 
   if (vista === "hoy") {
+    const condicionesHoy: Prisma.TareaWhereInput[] = [
+      { fechaVencimiento: { gte: inicioDiaHoyMX, lte: finDiaHoyMX } },
+      {
+        reglaRecurrenciaId: { not: null },
+        tipo: TipoTarea.PLANEADA,
+        clasificacion: ClasificacionTarea.PREVENTIVO,
+        fechaProgramadaPreventiva: { gte: inicioDiaHoyMX, lte: finDiaHoyMX },
+      },
+      {
+        reglaRecurrenciaId: { not: null },
+        tipo: TipoTarea.PLANEADA,
+        clasificacion: ClasificacionTarea.PREVENTIVO,
+        fechaProgramadaPreventiva: null,
+        fechaCicloLogica: { gte: inicioDiaHoyMX, lte: finDiaHoyMX },
+      },
+    ];
+    if (incluirRechazadasEnHoy) condicionesHoy.unshift({ estado: EstadoTarea.RECHAZADO });
+
     andConditions.push({
-      OR: [
-        { fechaVencimiento: { gte: inicioDiaHoyMX, lte: finDiaHoyMX } },
-        {
-          reglaRecurrenciaId: { not: null },
-          tipo: TipoTarea.PLANEADA,
-          clasificacion: ClasificacionTarea.PREVENTIVO,
-          fechaProgramadaPreventiva: { gte: inicioDiaHoyMX, lte: finDiaHoyMX },
-        },
-        {
-          reglaRecurrenciaId: { not: null },
-          tipo: TipoTarea.PLANEADA,
-          clasificacion: ClasificacionTarea.PREVENTIVO,
-          fechaProgramadaPreventiva: null,
-          fechaCicloLogica: { gte: inicioDiaHoyMX, lte: finDiaHoyMX },
-        },
-      ],
+      OR: condicionesHoy,
     });
   }
 
   if (vista === "manana") {
+    const condicionesManana: Prisma.TareaWhereInput[] = [
+      { fechaVencimiento: { gte: inicioDiaMananaMX, lte: finDiaMananaMX } },
+      {
+        reglaRecurrenciaId: { not: null },
+        tipo: TipoTarea.PLANEADA,
+        clasificacion: ClasificacionTarea.PREVENTIVO,
+        fechaProgramadaPreventiva: { gte: inicioDiaMananaMX, lte: finDiaMananaMX },
+      },
+      {
+        reglaRecurrenciaId: { not: null },
+        tipo: TipoTarea.PLANEADA,
+        clasificacion: ClasificacionTarea.PREVENTIVO,
+        fechaProgramadaPreventiva: null,
+        fechaCicloLogica: { gte: inicioDiaMananaMX, lte: finDiaMananaMX },
+      },
+    ];
+    if (incluirRechazadasEnHoy) condicionesManana.unshift({ estado: EstadoTarea.RECHAZADO });
+
     andConditions.push({
-      OR: [
-        { fechaVencimiento: { gte: inicioDiaMananaMX, lte: finDiaMananaMX } },
-        {
-          reglaRecurrenciaId: { not: null },
-          tipo: TipoTarea.PLANEADA,
-          clasificacion: ClasificacionTarea.PREVENTIVO,
-          fechaProgramadaPreventiva: { gte: inicioDiaMananaMX, lte: finDiaMananaMX },
-        },
-        {
-          reglaRecurrenciaId: { not: null },
-          tipo: TipoTarea.PLANEADA,
-          clasificacion: ClasificacionTarea.PREVENTIVO,
-          fechaProgramadaPreventiva: null,
-          fechaCicloLogica: { gte: inicioDiaMananaMX, lte: finDiaMananaMX },
-        },
-      ],
+      OR: condicionesManana,
     });
   }
 
@@ -374,6 +388,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     const condicionesSemana: Prisma.TareaWhereInput[] = [
       { fechaVencimiento: { gte: inicioSemanaMX, lte: finSemanaMX } },
     ];
+    if (incluirRechazadasEnHoy) condicionesSemana.unshift({ estado: EstadoTarea.RECHAZADO });
 
     if (scope === "mantenimientos") {
       condicionesSemana.push(

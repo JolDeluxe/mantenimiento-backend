@@ -23,6 +23,8 @@ export const ticketStandardInclude = {
       id: true, 
       nombre: true, 
       username: true, 
+      email: true,
+      telefono: true,
       imagen: true,
       cargo: true,
       rol: true
