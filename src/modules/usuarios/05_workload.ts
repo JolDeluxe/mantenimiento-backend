@@ -4,7 +4,7 @@ import { prisma } from "../../db";
 import { Rol, EstadoTarea, Estatus, Prisma } from "@prisma/client";
 import { registrarError } from "../../utils/logger";
 
-const ROLES_ASIGNABLES: Rol[] = [Rol.TECNICO, Rol.COORDINADOR_MTTO];
+const ROLES_ASIGNABLES: Rol[] = [Rol.TECNICO, Rol.COORDINADOR_MTTO, Rol.JEFE_MTTO];
 const ESTADOS_ACTIVOS: EstadoTarea[] = [EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA];
 
 /**

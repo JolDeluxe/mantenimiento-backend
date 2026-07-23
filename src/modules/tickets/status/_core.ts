@@ -54,6 +54,15 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
       nota = nota ? `${nota} (Cierre automático por Inspección)` : "(Cierre automático por Inspección)";
     }
 
+    // ─── Auto-cierre Creada por y para Administradores ────────────────────────
+    const esAdmin = user.rol === "SUPER_ADMIN" || user.rol === "JEFE_MTTO" || user.rol === "COORDINADOR_MTTO";
+    const esCreadorYResponsable = ticket.creadorId === user.id && ticket.responsables.some(r => r.id === user.id);
+    
+    if (nuevoEstado === EstadoTarea.RESUELTO && esAdmin && esCreadorYResponsable) {
+      nuevoEstado = EstadoTarea.CERRADO;
+      nota = nota ? `${nota} (Cierre automático: Autoasignada)` : "(Cierre automático: Autoasignada)";
+    }
+
     const ahora = new Date();
     const esEstadoResolucion = nuevoEstado === EstadoTarea.RESUELTO || nuevoEstado === EstadoTarea.CERRADO;
 
