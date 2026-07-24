@@ -80,6 +80,12 @@ export const getMaquinaById = async (req: Request, res: Response) => {
 };
 
 export const getMaquinaPrefill = async (req: Request, res: Response) => {
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0"
+  });
+
   try {
     const { codigo } = req.params;
     if (!codigo) {
