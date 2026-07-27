@@ -21,6 +21,7 @@ import dashboard from "./routes/dashboard_rutas";
 import maquinas from "./routes/maquinas_rutas";
 import recurrencias from "./routes/recurrencias_rutas";
 import configuracion from "./routes/configuracion_rutas";
+import public_rutas from "./routes/public_rutas";
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -49,6 +50,7 @@ app.use("/api/dashboard", dashboard);
 app.use("/api/maquinas", maquinas);
 app.use("/api/recurrencias", recurrencias);
 app.use("/api/configuracion", configuracion);
+app.use("/api/public", public_rutas);
 
 // --- ARRANQUE DEL SERVIDOR ---
 
