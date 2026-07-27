@@ -189,8 +189,8 @@ model Tarea {
   intervalos     IntervaloTiempo[]
   notificaciones Notificacion[]
 
-  incidenteId          String?   @db.VarChar(80)
-  fechaParoProduccion  DateTime?
+  incidenteId         String?   @db.VarChar(80)
+  fechaParoProduccion DateTime?
 
   // --- RECURRENCIA (nullable — solo tickets generados por ReglaRecurrencia) ---
   // fechaCicloLogica: fecha ancla pura del ciclo (no ajustada por fines de semana/feriados)
@@ -251,8 +251,9 @@ model Maquina {
   departamentoId Int? // Departamento derivado (ERP Magnus)
   departamento   Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
-  tareas            Tarea[]
-  reglasRecurrencia ReglaRecurrencia[] // Reglas de mantenimiento preventivo recurrente
+  tareas             Tarea[]
+  reglasRecurrencia  ReglaRecurrencia[] // Reglas de mantenimiento preventivo recurrente
+  plantillasRevision PlantillaRevisionMaquina[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -510,4 +511,46 @@ model ReglaRecurrenciaAjuste {
   @@index([reglaRecurrenciaId, periodoAnio, periodoMes])
   @@index([tipo, activo])
   @@index([createdById])
+}
+
+model ConfiguracionSistema {
+  id          String   @id @default(uuid())
+  clave       String   @unique @db.VarChar(100)
+  valor       String   @db.Text
+  descripcion String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PlantillaRevision {
+  id          Int              @id @default(autoincrement())
+  nombre      String           @db.VarChar(255)
+  descripcion String?          @db.Text
+  aplicaA     TipoUsoPlantilla @default(AUTONOMO)
+  contenido   Json // Estructura JSON de secciones y preguntas
+  activa      Boolean          @default(true)
+
+  maquinas PlantillaRevisionMaquina[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PlantillaRevisionMaquina {
+  plantillaId Int
+  maquinaId   Int
+  orden       Int     @default(0)
+  activa      Boolean @default(true)
+
+  plantilla PlantillaRevision @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
+  maquina   Maquina           @relation(fields: [maquinaId], references: [id], onDelete: Cascade)
+
+  @@id([plantillaId, maquinaId])
+  @@index([maquinaId, activa])
+}
+
+enum TipoUsoPlantilla {
+  AUTONOMO
+  PREVENTIVO
+  AMBOS
 }
