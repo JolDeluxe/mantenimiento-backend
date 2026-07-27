@@ -242,7 +242,7 @@ export const getTicketFilters = (user: { id: number; rol: Rol }, query: TicketFi
     where.estado = EstadoTarea.PENDIENTE;
   }
 
-  if (perteneceAHoy) {
+  if (perteneceAHoy && !usaVistaActivos) {
     // Excluir estados terminales: RESUELTO, CERRADO, CANCELADA
     andConditions.push({
       estado: {

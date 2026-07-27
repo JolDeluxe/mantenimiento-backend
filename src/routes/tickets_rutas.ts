@@ -23,6 +23,7 @@ import { obtenerMetricasTickets } from "../modules/tickets/06_metrics";
 import { rescheduleTickets } from "../modules/tickets/06_reschedule";
 import { createBatchTickets } from "../modules/tickets/create/create_batch";
 import { approveTicketsBatch } from "../modules/tickets/07_approve_batch";
+import { withIdempotency } from "../modules/idempotency/idempotency";
 
 const router = Router();
 router.use(authenticate);
@@ -76,7 +77,7 @@ router.get("/:id",
 router.post(
     "/", 
     upload.array('imagenes', 5),
-    createTicket 
+    withIdempotency("tickets.create", "/api/tickets", createTicket)
 );
 
 // POST /api/tickets/batch
@@ -84,7 +85,7 @@ router.post(
     "/batch", 
     authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO]),
     validate(createTicketBatchSchema), 
-    createBatchTickets
+    withIdempotency("tickets.createBatch", "/api/tickets/batch", createBatchTickets)
 );
 
 

@@ -73,6 +73,12 @@ enum TipoNotificacion {
   EQUIPO_RECHAZO
 }
 
+enum EstadoIdempotencia {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 // --- MODELOS ---
 
 model Departamento {
@@ -124,6 +130,7 @@ model Usuario {
   notificaciones            Notificacion[]
   reglasResponsable         ReglaRecurrencia[]       @relation("TecnicoResponsable")
   ajustesRecurrenciaCreados ReglaRecurrenciaAjuste[] @relation("AjusteRecurrenciaCreador")
+  idempotencyRecords        IdempotencyRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -301,6 +308,29 @@ model Bitacora {
   usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
+}
+
+model IdempotencyRecord {
+  id             Int                @id @default(autoincrement())
+  key            String             @db.VarChar(120)
+  usuarioId      Int
+  usuario        Usuario            @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  method         String             @db.VarChar(12)
+  operation      String             @db.VarChar(120)
+  route          String             @db.VarChar(255)
+  payloadHash    String             @db.VarChar(64)
+  status         EstadoIdempotencia @default(PROCESSING)
+  responseStatus Int?
+  responseBody   Json?
+  errorMessage   String?            @db.Text
+  expiresAt      DateTime
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([usuarioId, operation, key])
+  @@index([usuarioId, operation])
+  @@index([expiresAt])
+  @@index([status])
 }
 
 model Notificacion {
