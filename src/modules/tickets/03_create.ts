@@ -34,7 +34,7 @@ export const createTicket = async (req: Request, res: Response) => {
     }
     const input = validation.data;
 
-    let finalPlanta = "";
+    let finalPlanta: string | null = null;
     let finalArea = "";
     let finalTitulo = "";
     let finalMaquinaId: number | null = null;
@@ -79,21 +79,18 @@ export const createTicket = async (req: Request, res: Response) => {
         finalFechaParo = input.fechaParoProduccion;
       }
     } else {
-      if (!input.planta || input.planta.trim() === "") {
-        return res.status(400).json({ error: "Debe seleccionar una planta." });
-      }
-
-      const plantasValidas = await getPlantasOperativas();
-      const plantaInputUpper = input.planta.trim().toUpperCase();
-      if (!plantasValidas.includes(plantaInputUpper)) {
-        return res.status(400).json({ error: `La planta "${input.planta}" no es una opción válida.` });
+      if (input.planta && input.planta.trim() !== "") {
+        const plantasValidas = await getPlantasOperativas();
+        const plantaInputUpper = input.planta.trim().toUpperCase();
+        if (!plantasValidas.includes(plantaInputUpper)) {
+          return res.status(400).json({ error: `La planta "${input.planta}" no es una opción válida.` });
+        }
+        finalPlanta = plantaInputUpper;
       }
 
       if (!input.area || input.area.trim() === "") {
         return res.status(400).json({ error: "Debe indicar el área o ubicación." });
       }
-
-      finalPlanta = plantaInputUpper;
       finalArea = input.area.trim();
       finalTitulo = input.titulo.trim().substring(0, 255);
     }

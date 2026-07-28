@@ -34,7 +34,7 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
     }
 
     // ── PATRÓN SNAPSHOT: planta y área se heredan de la máquina si existe ────
-    let finalPlanta = data.planta || "KAPPA";
+    let finalPlanta: string | null = data.planta ?? null;
     let finalArea   = data.area   || "General";
     let finalClasificacion: ClasificacionTarea | null = data.clasificacion ?? null;
 
