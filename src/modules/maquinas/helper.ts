@@ -10,7 +10,7 @@ export const getPlantasOperativas = async (): Promise<string[]> => {
 
   return distinctResult
     .map(m => m.planta?.trim().toUpperCase())
-    .filter((p): p is string => Boolean(p) && !PLANTAS_EXCLUIDAS.has(p))
+    .filter((p): p is string => typeof p === 'string' && !PLANTAS_EXCLUIDAS.has(p))
     .sort();
 };
 

@@ -136,7 +136,7 @@ export const createTicketClientRequestSchema = z.object({
   titulo: commonString.min(3).max(255),
   prioridad: z.enum(["BAJA", "MEDIA", "ALTA"]),
   descripcion: commonString.min(10, "La descripción debe tener al menos 10 caracteres").max(2000),
-  planta: commonString.max(100).optional(),
+  planta: z.preprocess(preprocessEmpty, z.string().optional().nullable()),
   area: commonString.max(100).optional(),
   maquinaId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
   paroProduccion: z.preprocess(
@@ -163,7 +163,7 @@ export const createTicketAdminSchema = z.object({
   prioridad: z.nativeEnum(Prioridad).default(Prioridad.MEDIA),
   tipo: z.nativeEnum(TipoTarea).default(TipoTarea.TICKET),
   clasificacion: z.preprocess(preprocessNull, z.nativeEnum(ClasificacionTarea).nullable().optional()),
-  planta: z.string().optional(),
+  planta: z.preprocess(preprocessEmpty, z.string().optional().nullable()),
   area: z.string().optional(),
   categoria: commonString.min(3, "La categoría es obligatoria"),
   maquinaId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
@@ -184,7 +184,7 @@ export const updateTicketSchema = z.object({
     descripcion: z.string().optional(),
     prioridad: z.nativeEnum(Prioridad).optional(),
     categoria: z.string().optional(),
-    planta: z.string().optional(),
+    planta: z.preprocess(preprocessEmpty, z.string().optional().nullable()),
     area: z.string().optional(),
     responsables: z.preprocess(preprocessNumberArray, z.array(z.number()).optional()),
     fechaVencimiento: z.preprocess(preprocessDate, z.coerce.date().optional()),
@@ -244,7 +244,7 @@ export const createTicketBatchSchema = z.object({
         (val) => !val || val === '' ? 'Sin descripción.' : val,
         z.string()
       ),
-      planta: z.string().default('KAPPA'),
+      planta: z.preprocess(preprocessEmpty, z.string().optional().nullable()),
       area: z.string().min(1),
       
       // La categoría SIGUE SIENDO obligatoria.

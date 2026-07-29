@@ -114,7 +114,7 @@ export interface CreateTicketClientResolvedDTO {
   titulo: string;
   prioridad: import("@prisma/client").Prioridad;
   descripcion: string;
-  planta: string;
+  planta: string | null;
   area: string;
   maquinaId: number | null;
   paroProduccion: boolean;

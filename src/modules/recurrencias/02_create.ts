@@ -95,7 +95,7 @@ export async function materializarCicloInterno(params: {
   regla: { id: number; maquinaId: number; titulo: string; descripcion?: string | null; categoria: string; prioridad: any; tiempoEstimado?: number | null; tecnicoResponsableId: number };
   fechaCicloLogica: Date;
   fechaProgramadaPreventiva?: Date | null;
-  maquinaPlanta: string;
+  maquinaPlanta: string | null;
   maquinaArea: string;
   creadorId: number;
 }) {
