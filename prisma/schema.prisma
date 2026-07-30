@@ -130,6 +130,9 @@ model Usuario {
   notificaciones            Notificacion[]
   reglasResponsable         ReglaRecurrencia[]       @relation("TecnicoResponsable")
   ajustesRecurrenciaCreados ReglaRecurrenciaAjuste[] @relation("AjusteRecurrenciaCreador")
+  reglasActividadCreadas            ReglaActividadRecurrente[]       @relation("ReglaActividadCreador")
+  reglasActividadResponsable        ReglaActividadRecurrente[]       @relation("ReglaActividadResponsables")
+  ajustesActividadRecurrenteCreados ReglaActividadRecurrenteAjuste[] @relation("ReglaActividadAjusteCreador")
   idempotencyRecords        IdempotencyRecord[]
 
   createdAt DateTime @default(now())
@@ -200,11 +203,16 @@ model Tarea {
   fechaProgramadaPreventiva DateTime?
   reglaRecurrencia          ReglaRecurrencia? @relation(fields: [reglaRecurrenciaId], references: [id], onDelete: SetNull)
 
+  // Recurrencia de actividades: conserva el origen histórico de la tarea.
+  reglaActividadRecurrenteId Int?
+  reglaActividadRecurrente   ReglaActividadRecurrente? @relation("ReglaActividadTareas", fields: [reglaActividadRecurrenteId], references: [id], onDelete: Restrict)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Anti-duplicados de ciclos: un ticket por regla + fecha lógica de ciclo
   @@unique([reglaRecurrenciaId, fechaCicloLogica])
+  @@unique([reglaActividadRecurrenteId, fechaCicloLogica])
   // --- ÍNDICES DE RENDIMIENTO ---
   @@index([creadorId])
   @@index([departamentoId])
@@ -445,6 +453,12 @@ enum TipoAjusteRecurrencia {
   OMITIR
 }
 
+enum UnidadRecurrenciaActividad {
+  DIA
+  SEMANA
+  MES
+}
+
 model ReglaRecurrencia {
   id Int @id @default(autoincrement())
 
@@ -510,6 +524,70 @@ model ReglaRecurrenciaAjuste {
   @@unique([reglaRecurrenciaId, fechaOriginal])
   @@index([reglaRecurrenciaId, periodoAnio, periodoMes])
   @@index([tipo, activo])
+  @@index([createdById])
+}
+
+model ReglaActividadRecurrente {
+  id Int @id @default(autoincrement())
+
+  titulo      String    @db.VarChar(255)
+  descripcion String?   @db.Text
+  categoria   String
+  planta      String?
+  area        String
+  prioridad   Prioridad @default(MEDIA)
+
+  fechaInicio DateTime
+  fechaFin    DateTime?
+
+  horaInicioMinutos Int?
+  horaFinMinutos    Int?
+  tiempoEstimado    Int?
+
+  unidad    UnidadRecurrenciaActividad
+  intervalo Int                        @default(1)
+
+  proximaFechaEjecucion DateTime
+
+  activo      Boolean   @default(true)
+  archivadoAt DateTime?
+
+  creadorId Int
+  creador   Usuario @relation("ReglaActividadCreador", fields: [creadorId], references: [id], onDelete: Restrict)
+
+  responsables Usuario[]                        @relation("ReglaActividadResponsables")
+  tareas       Tarea[]                          @relation("ReglaActividadTareas")
+  ajustes      ReglaActividadRecurrenteAjuste[] @relation("ReglaActividadAjustes")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([archivadoAt, activo, proximaFechaEjecucion])
+  @@index([planta, area])
+  @@index([categoria])
+  @@index([creadorId])
+}
+
+model ReglaActividadRecurrenteAjuste {
+  id Int @id @default(autoincrement())
+
+  reglaActividadRecurrenteId Int
+  reglaActividadRecurrente   ReglaActividadRecurrente @relation("ReglaActividadAjustes", fields: [reglaActividadRecurrenteId], references: [id], onDelete: Restrict)
+
+  fechaOriginal DateTime
+  tipo          TipoAjusteRecurrencia
+  fechaNueva    DateTime?
+  motivo        String?               @db.Text
+  activo        Boolean               @default(true)
+
+  createdById Int
+  createdBy   Usuario @relation("ReglaActividadAjusteCreador", fields: [createdById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([reglaActividadRecurrenteId, fechaOriginal])
+  @@index([reglaActividadRecurrenteId, activo, fechaOriginal])
   @@index([createdById])
 }
 

@@ -20,6 +20,7 @@ import notificaciones from "./routes/notificaciones_rutas";
 import dashboard from "./routes/dashboard_rutas";
 import maquinas from "./routes/maquinas_rutas";
 import recurrencias from "./routes/recurrencias_rutas";
+import actividadesRecurrentes from "./routes/actividades_recurrentes_rutas";
 import configuracion from "./routes/configuracion_rutas";
 import public_rutas from "./routes/public_rutas";
 
@@ -49,6 +50,7 @@ app.use("/api/notificaciones", notificaciones);
 app.use("/api/dashboard", dashboard);
 app.use("/api/maquinas", maquinas);
 app.use("/api/recurrencias", recurrencias);
+app.use("/api/actividades-recurrentes", actividadesRecurrentes);
 app.use("/api/configuracion", configuracion);
 app.use("/api/public", public_rutas);
 
