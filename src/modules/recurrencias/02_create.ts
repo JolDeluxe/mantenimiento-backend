@@ -52,6 +52,7 @@ export const createRegla = async (req: Request, res: Response) => {
         intervaloDias:        body.intervaloDias ?? null,
         tecnicoResponsableId: body.tecnicoResponsableId,
         proximaFechaEjecucion: fechaCicloLogicaNormalizada,
+        fechaInicio:           fechaCicloLogicaNormalizada,
         activo:               body.activo ?? true,
       },
       include: {

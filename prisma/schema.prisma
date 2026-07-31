@@ -445,6 +445,7 @@ enum FrecuenciaRecurrencia {
   SEMANAL // Cada 7 días
   QUINCENAL // Cada 14 días
   MENSUAL // Mismo día del mes siguiente (con ajuste de desbordamiento)
+  TRIMESTRAL // Cada 3 meses calendar preservando ancla
   PERSONALIZADA_DIAS // Cada N días definidos en intervaloDias
 }
 
@@ -485,6 +486,7 @@ model ReglaRecurrencia {
   // proximaFechaEjecucion: fecha LÓGICA pura del próximo ciclo (sin ajuste de fin de semana/feriado)
   // El cron busca reglas donde proximaFechaEjecucion <= hoy
   proximaFechaEjecucion DateTime
+  fechaInicio           DateTime @default(now())
 
   activo Boolean @default(true) // Permite pausar la regla sin borrarla
 

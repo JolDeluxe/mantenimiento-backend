@@ -64,7 +64,7 @@ export const updateRegla = async (req: Request, res: Response) => {
         ...(body.frecuencia           !== undefined && { frecuencia: body.frecuencia }),
         ...(body.intervaloDias        !== undefined && { intervaloDias: body.intervaloDias }),
         ...(body.tecnicoResponsableId !== undefined && { tecnicoResponsableId: body.tecnicoResponsableId }),
-        ...(nuevaFechaLogica          !== undefined && { proximaFechaEjecucion: nuevaFechaLogica }),
+        ...(nuevaFechaLogica          !== undefined && { proximaFechaEjecucion: nuevaFechaLogica, fechaInicio: nuevaFechaLogica }),
         ...(body.activo               !== undefined && { activo: body.activo }),
       },
       include: {

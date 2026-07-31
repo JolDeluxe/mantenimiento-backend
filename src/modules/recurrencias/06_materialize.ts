@@ -91,6 +91,7 @@ export const materializeRegla = async (req: Request, res: Response) => {
         fechaCicloLogica,
         regla.frecuencia,
         regla.intervaloDias,
+        regla.fechaInicio,
       );
       await prisma.reglaRecurrencia.update({
         where: { id },

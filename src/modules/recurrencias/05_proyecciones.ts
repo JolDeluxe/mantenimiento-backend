@@ -27,6 +27,7 @@ export const getProyeccionesGlobal = async (req: Request, res: Response) => {
         frecuencia: true,
         intervaloDias: true,
         proximaFechaEjecucion: true,
+        fechaInicio: true,
         maquina: { select: { codigo: true, nombre: true } },
         tecnicoResponsable: { select: { id: true, nombre: true } },
       },
@@ -61,6 +62,8 @@ export const getProyeccionesGlobal = async (req: Request, res: Response) => {
         regla.frecuencia,
         regla.intervaloDias,
         year,
+        200,
+        regla.fechaInicio,
       );
 
       for (const ciclo of ciclos) {
@@ -134,6 +137,7 @@ export const getProyeccionRegla = async (req: Request, res: Response) => {
         frecuencia: true,
         intervaloDias: true,
         proximaFechaEjecucion: true,
+        fechaInicio: true,
         maquina: { select: { codigo: true, nombre: true } },
         tecnicoResponsable: { select: { id: true, nombre: true } },
       },
@@ -163,6 +167,8 @@ export const getProyeccionRegla = async (req: Request, res: Response) => {
       regla.frecuencia,
       regla.intervaloDias,
       year,
+      200,
+      regla.fechaInicio,
     );
 
     const proyecciones = ciclos.map((ciclo) => {

@@ -55,6 +55,7 @@ export function calcularSiguienteFechaLogica(
   fechaActual: Date,
   frecuencia: FrecuenciaRecurrencia,
   intervaloDias?: number | null,
+  fechaInicio?: Date | null,
 ): Date {
   const base = normalizarFechaLogica(fechaActual);
 
@@ -70,6 +71,13 @@ export function calcularSiguienteFechaLogica(
       // Si el mes destino no tiene ese día (ej. 31 → febrero), se ajusta
       // al último día válido del mes destino (clamp), sin saltarse al mes siguiente.
       return addMonthUTC(base, 1);
+
+    case FrecuenciaRecurrencia.TRIMESTRAL: {
+      const anchor = fechaInicio ? normalizarFechaLogica(fechaInicio) : base;
+      const monthsDiff = (base.getUTCFullYear() - anchor.getUTCFullYear()) * 12 + base.getUTCMonth() - anchor.getUTCMonth();
+      const nextMonths = monthsDiff + 3;
+      return addMonthUTC(anchor, nextMonths);
+    }
 
     case FrecuenciaRecurrencia.PERSONALIZADA_DIAS: {
       const dias = intervaloDias ?? 7;
@@ -129,6 +137,7 @@ export function generarProyeccionesPorAno(
   intervaloDias: number | null | undefined,
   year: number,
   maxCiclos = 200,
+  fechaInicio?: Date | null,
 ): Date[] {
   const inicioAno = new Date(Date.UTC(year, 0, 1));
   const finAno    = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
@@ -142,7 +151,7 @@ export function generarProyeccionesPorAno(
   // Limitamos la retrocesión a 5 años hacia atrás como guardia.
   const limite5AnosAtras = new Date(Date.UTC(year - 5, 0, 1));
   while (cursor > inicioAno && cursor > limite5AnosAtras) {
-    const prev = retrocederUnCiclo(cursor, frecuencia, intervaloDias);
+    const prev = retrocederUnCiclo(cursor, frecuencia, intervaloDias, fechaInicio);
     if (prev >= cursor) break; // Guardia contra loop infinito
     cursor = prev;
   }
@@ -153,7 +162,7 @@ export function generarProyeccionesPorAno(
     if (cursor >= inicioAno && cursor <= finAno) {
       proyecciones.push(new Date(cursor));
     }
-    const next = calcularSiguienteFechaLogica(cursor, frecuencia, intervaloDias);
+    const next = calcularSiguienteFechaLogica(cursor, frecuencia, intervaloDias, fechaInicio);
     if (next <= cursor) break; // Guardia contra loop infinito
     cursor = next;
     if (cursor.getUTCFullYear() > year + 1) break; // No proyectar más de 1 año extra
@@ -193,6 +202,7 @@ function retrocederUnCiclo(
   fecha: Date,
   frecuencia: FrecuenciaRecurrencia,
   intervaloDias?: number | null,
+  fechaInicio?: Date | null,
 ): Date {
   switch (frecuencia) {
     case FrecuenciaRecurrencia.SEMANAL:
@@ -201,6 +211,13 @@ function retrocederUnCiclo(
       return addDaysUTC(fecha, -14);
     case FrecuenciaRecurrencia.MENSUAL:
       return addMonthUTC(fecha, -1);
+    case FrecuenciaRecurrencia.TRIMESTRAL: {
+      const anchor = fechaInicio ? normalizarFechaLogica(fechaInicio) : fecha;
+      const base = normalizarFechaLogica(fecha);
+      const monthsDiff = (base.getUTCFullYear() - anchor.getUTCFullYear()) * 12 + base.getUTCMonth() - anchor.getUTCMonth();
+      const prevMonths = monthsDiff - 3;
+      return addMonthUTC(anchor, prevMonths);
+    }
     case FrecuenciaRecurrencia.PERSONALIZADA_DIAS:
       return addDaysUTC(fecha, -(intervaloDias ?? 7));
     default:

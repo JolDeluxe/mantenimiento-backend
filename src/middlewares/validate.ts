@@ -64,8 +64,13 @@ export const validate = (schema: ZodSchema) => async (req: Request, res: Respons
       return res.status(400).json({
         status: "error",
         message: "Datos de entrada inválidos",
+        error: "Datos de entrada inválidos",
         errors: error.issues.map((issue: any) => ({
           field: issue.path.join("."), 
+          message: issue.message,
+        })),
+        details: error.issues.map((issue: any) => ({
+          path: issue.path.filter((p: any) => p !== "body" && p !== "query" && p !== "params"),
           message: issue.message,
         })),
       });
