@@ -152,7 +152,7 @@ export const updateTicketAdmin = async (req: Request, res: Response) => {
         select: { planta: true, area: true, estado: true }
       });
       if (!maquinaDb) return res.status(400).json({ error: "La máquina seleccionada no existe." });
-      if (maquinaDb.estado === "BAJA" || maquinaDb.estado === "BAJA_ERP") {
+      if (maquinaDb.estado === "BAJA" || maquinaDb.estado === "BAJA") {
         return res.status(400).json({ error: "No se pueden asociar máquinas dadas de baja." });
       }
       finalPlanta    = maquinaDb.planta;

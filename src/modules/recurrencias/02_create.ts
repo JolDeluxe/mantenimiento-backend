@@ -6,7 +6,7 @@ import { Prisma, ClasificacionTarea, TipoTarea, EstadoTarea } from "@prisma/clie
 import type { CreateReglaInput } from "./zod";
 import { normalizarFechaLogica, finDeMesUTC } from "./helper";
 
-const ESTADOS_MAQUINA_NO_OPERATIVOS = new Set(["BAJA", "BAJA_ERP", "DESUSO", "INACTIVA"]);
+const ESTADOS_MAQUINA_NO_OPERATIVOS = new Set(["BAJA", "BAJA", "DESUSO", "INACTIVA"]);
 
 export const createRegla = async (req: Request, res: Response) => {
   try {

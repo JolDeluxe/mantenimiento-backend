@@ -27,7 +27,7 @@ export async function procesarRecurrenciasProgramadas() {
         activo: true,
         proximaFechaEjecucion: { lte: finMes },
         maquina: {
-          estado: { notIn: ["BAJA", "BAJA_ERP", "DESUSO", "INACTIVA"] },
+          estado: { notIn: ["BAJA", "BAJA", "DESUSO", "INACTIVA"] },
         },
       },
       include: {

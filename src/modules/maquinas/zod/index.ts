@@ -5,7 +5,7 @@ const preprocessNull = (val: unknown) => (val === "" || val === "null" || val ==
 
 // Constantes locales: los enums de BD fueron eliminados, usamos strings literales
 const CRITICIDADES_VALIDAS = ["A", "B", "C"] as const;
-const ESTADOS_MAQUINA_VALIDOS = ["OPERATIVA", "PARO_PRODUCCION", "EN_REPARACION", "INACTIVA", "BAJA", "BAJA_ERP"] as const;
+const ESTADOS_MAQUINA_VALIDOS = ["OPERATIVA", "PARO_PRODUCCION", "EN_REPARACION", "INACTIVA", "BAJA"] as const;
 
 export const createMaquinaSchema = z.object({
   body: z.object({

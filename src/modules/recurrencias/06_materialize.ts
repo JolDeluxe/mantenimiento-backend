@@ -11,7 +11,7 @@ import { normalizarFechaLogica } from "./helper";
 import { materializarCicloInterno } from "./02_create";
 import { resolverOcurrenciaConAjuste } from "./ajustes-helper";
 
-const ESTADOS_MAQUINA_NO_OPERATIVOS = new Set(["BAJA", "BAJA_ERP", "DESUSO", "INACTIVA"]);
+const ESTADOS_MAQUINA_NO_OPERATIVOS = new Set(["BAJA", "BAJA", "DESUSO", "INACTIVA"]);
 
 export const materializeRegla = async (req: Request, res: Response) => {
   try {

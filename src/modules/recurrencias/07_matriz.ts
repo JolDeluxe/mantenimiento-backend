@@ -35,7 +35,7 @@ type MesesMatriz = Record<string, Array<{
   movidaA: string | null;
 }>>;
 
-const ESTADOS_MAQUINA_OCULTOS = ["BAJA", "BAJA_ERP", "DESUSO", "INACTIVA"];
+const ESTADOS_MAQUINA_OCULTOS = ["BAJA", "BAJA", "DESUSO", "INACTIVA"];
 const ESTADOS_TERMINADOS = new Set(["RESUELTO", "CERRADO"]);
 
 const crearMesesVacios = (): MesesMatriz =>

@@ -3,6 +3,7 @@ import readline from "readline";
 import { styleText } from "util";
 import { prisma } from "../db";
 import { env } from "../env";
+import { EstadoTarea, TipoEvento, Rol } from "@prisma/client";
 
 type Logger = Pick<Console, "log" | "error" | "warn">;
 
@@ -101,6 +102,78 @@ function derivePlanta(ubicacionRaw: string, procesoRaw: string): string {
   if (ubicacionUpper.includes("BAJA")) return "BAJA";
   if (ubicacionUpper.includes("SERVICIOS") || ubicacionUpper.includes("GENERAL")) return "GENERAL";
   return "KAPPA";
+}
+
+export async function procesarBajaMaquina(dbMaquinaId: number) {
+  const ahora = new Date();
+  // Encontrar el primer admin activo para asignar auditoría
+  const admin = await prisma.usuario.findFirst({
+    where: { rol: Rol.SUPER_ADMIN, estado: "ACTIVO" },
+    select: { id: true }
+  });
+  const adminId = admin?.id ?? 1;
+
+  await prisma.$transaction(async (tx) => {
+    // 1. Cambiar estado a BAJA
+    await tx.maquina.update({
+      where: { id: dbMaquinaId },
+      data: { estado: "BAJA" }
+    });
+
+    // 2. Desactivar reglas recurrentes preventivas
+    await tx.reglaRecurrencia.updateMany({
+      where: { maquinaId: dbMaquinaId, activo: true },
+      data: { activo: false }
+    });
+
+    // 3. Obtener y cancelar tareas abiertas
+    const tareasAbiertas = await tx.tarea.findMany({
+      where: {
+        maquinaId: dbMaquinaId,
+        estado: { in: [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA] }
+      },
+      select: { id: true, estado: true }
+    });
+
+    for (const tarea of tareasAbiertas) {
+      // Cerrar intervalos abiertos si los hay
+      const intervaloAbierto = await tx.intervaloTiempo.findFirst({
+        where: { tareaId: tarea.id, fin: null },
+        orderBy: { inicio: "desc" }
+      });
+      
+      let duracionMinutos = 0;
+      if (intervaloAbierto) {
+        duracionMinutos = Math.floor((ahora.getTime() - intervaloAbierto.inicio.getTime()) / 60000);
+        await tx.intervaloTiempo.update({
+          where: { id: intervaloAbierto.id },
+          data: { fin: ahora, duracion: duracionMinutos }
+        });
+      }
+
+      // Cancelar tarea
+      await tx.tarea.update({
+        where: { id: tarea.id },
+        data: {
+          estado: EstadoTarea.CANCELADA,
+          finalizadoAt: ahora,
+          ...(duracionMinutos > 0 ? { duracionReal: { increment: duracionMinutos } } : {})
+        }
+      });
+
+      // Registrar historial
+      await tx.historialTarea.create({
+        data: {
+          tareaId: tarea.id,
+          usuarioId: adminId,
+          tipo: TipoEvento.CAMBIO_ESTADO,
+          estadoAnterior: tarea.estado,
+          estadoNuevo: EstadoTarea.CANCELADA,
+          nota: "Cancelada automáticamente por baja definitiva de la máquina"
+        }
+      });
+    }
+  });
 }
 
 function deriveDepartamento(
@@ -251,26 +324,41 @@ export async function procesarIngestaMaquinariaCsv(options: MaquinariaCsvIngestO
     const area = ubicacionRaw.slice(0, 100);
     const planta = derivePlanta(ubicacionRaw, proceso).slice(0, 100);
     const departamentoId = deriveDepartamento(planta, area, proceso, deptoMap);
-    const isBaja = ubicacionRaw.toUpperCase().includes("BAJA");
+    const isBaja = ubicacionRaw.toUpperCase().includes("BAJA") || ubicacionRaw.toUpperCase().includes("VENTA");
     const estadoFinal = isBaja ? "BAJA" : "OPERATIVA";
 
     if (existingMap.has(codeUpper)) {
       const existing = existingMap.get(codeUpper)!;
-      const nuevoEstado = isBaja ? "BAJA" : (existing.estado === "BAJA_ERP" || existing.estado === "BAJA" ? "OPERATIVA" : undefined);
+      const nuevoEstado = isBaja ? "BAJA" : (existing.estado === "BAJA" ? "OPERATIVA" : undefined);
 
       if (apply) {
-        await prisma.maquina.update({
-          where: { id: existing.id },
-          data: {
-            nombre: nombre.slice(0, 255),
-            proceso: proceso.slice(0, 150),
-            planta,
-            area,
-            ubicacionDetalle: ubicacionRaw.slice(0, 255),
-            departamentoId,
-            ...(nuevoEstado ? { estado: nuevoEstado } : {}),
-          },
-        });
+        if (nuevoEstado === "BAJA" && existing.estado !== "BAJA") {
+          await procesarBajaMaquina(existing.id);
+          await prisma.maquina.update({
+            where: { id: existing.id },
+            data: {
+              nombre: nombre.slice(0, 255),
+              proceso: proceso.slice(0, 150),
+              planta,
+              area,
+              ubicacionDetalle: ubicacionRaw.slice(0, 255),
+              departamentoId,
+            },
+          });
+        } else {
+          await prisma.maquina.update({
+            where: { id: existing.id },
+            data: {
+              nombre: nombre.slice(0, 255),
+              proceso: proceso.slice(0, 150),
+              planta,
+              area,
+              ubicacionDetalle: ubicacionRaw.slice(0, 255),
+              departamentoId,
+              ...(nuevoEstado ? { estado: nuevoEstado } : {}),
+            },
+          });
+        }
       } else {
         pushPreview(preview.actualizadas, `${codeUpper} — ${nombre}`, previewLimit);
       }
@@ -305,10 +393,7 @@ export async function procesarIngestaMaquinariaCsv(options: MaquinariaCsvIngestO
   for (const [codeUpper, dbMaquina] of existingMap.entries()) {
     if (!csvCodesSet.has(codeUpper) && dbMaquina.estado !== "BAJA") {
       if (apply) {
-        await prisma.maquina.update({
-          where: { id: dbMaquina.id },
-          data: { estado: "BAJA" },
-        });
+        await procesarBajaMaquina(dbMaquina.id);
       } else {
         pushPreview(preview.bajas, codeUpper, previewLimit);
       }

@@ -243,7 +243,7 @@ model Maquina {
   imagen      String? @db.VarChar(255)
 
   criticidad String? @default("C") @db.VarChar(10) // Clasificación ABC (Editable localmente)
-  estado     String  @default("OPERATIVA") @db.VarChar(50) // Estado operativo (Operativa, En Reparación, Inactiva, Baja, Baja_ERP)
+  estado     String  @default("OPERATIVA") @db.VarChar(50) // Estado operativo (Operativa, En Reparación, Inactiva, Baja)
 
   marca       String? @db.VarChar(100) // Fabricante (ERP Magnus)
   modelo      String? @db.VarChar(100) // Modelo (ERP Magnus)

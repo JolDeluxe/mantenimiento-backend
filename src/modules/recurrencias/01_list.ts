@@ -5,7 +5,7 @@ import type { Request, Response } from "express";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db";
 
-const ESTADOS_MAQUINA_OCULTOS = ["BAJA", "BAJA_ERP", "DESUSO", "INACTIVA"];
+const ESTADOS_MAQUINA_OCULTOS = ["BAJA", "BAJA", "DESUSO", "INACTIVA"];
 
 const REGLA_SELECT = {
   id: true,

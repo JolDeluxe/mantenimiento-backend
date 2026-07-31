@@ -145,7 +145,8 @@ export const patchUsuarioSchema = z.object({
     id: z.coerce.number().int().positive(),
   }).strict(),
   body: z.object({
-    estado: z.enum(estatusArray, { message: "El estado solo puede ser ACTIVO o INACTIVO" })
+    estado: z.enum(estatusArray, { message: "El estado solo puede ser ACTIVO o INACTIVO" }),
+    tecnicoReemplazoId: z.coerce.number().int().positive().optional()
   }).strict()
 });
 

@@ -55,7 +55,7 @@ export const createTicket = async (req: Request, res: Response) => {
         return res.status(400).json({ error: "La máquina seleccionada no existe." });
       }
 
-      if (maquinaDb.estado === "BAJA" || maquinaDb.estado === "BAJA_ERP") {
+      if (maquinaDb.estado === "BAJA" || maquinaDb.estado === "BAJA") {
         return res.status(400).json({ error: "No se pueden crear tickets para una máquina dada de baja." });
       }
 
