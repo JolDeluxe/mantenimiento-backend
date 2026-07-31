@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { registrarAccion } from "../../utils/logger";
-import { minutosDesdeHora, normalizarFechaLogica } from "../../utils/recurrencia-temporal";
+import { esDomingo, minutosDesdeHora, normalizarFechaLogica, siguienteCicloOperativo } from "../../utils/recurrencia-temporal";
 import { ActividadRecurrenteError, dtoReglaActividad, validarResponsablesActivos } from "./helper";
 import { reglaActividadInclude } from "./types";
 import type { CreateReglaActividadInput } from "./zod";
@@ -16,6 +16,12 @@ export async function crearReglaActividad(req: Request, res: Response) {
       ? horaFinMinutos - horaInicioMinutos
       : body.tiempoEstimado!;
     const fechaInicio = normalizarFechaLogica(body.fechaInicio);
+    if (esDomingo(fechaInicio) && (body.unidad === "SEMANA" || (body.unidad === "DIA" && body.intervalo % 7 === 0))) {
+      return res.status(400).json({ error: "La fecha inicial no puede anclar una recurrencia que siempre caería en domingo" });
+    }
+    const proximaFechaEjecucion = esDomingo(fechaInicio)
+      ? siguienteCicloOperativo({ fechaInicio, fechaFin: null, unidad: body.unidad, intervalo: body.intervalo }, fechaInicio)
+      : fechaInicio;
 
     const regla = await prisma.reglaActividadRecurrente.create({
       data: {
@@ -32,7 +38,7 @@ export async function crearReglaActividad(req: Request, res: Response) {
         tiempoEstimado,
         unidad: body.unidad,
         intervalo: body.intervalo,
-        proximaFechaEjecucion: fechaInicio,
+        proximaFechaEjecucion,
         creadorId: req.user!.id,
         responsables: { connect: responsables.map((id) => ({ id })) },
       },

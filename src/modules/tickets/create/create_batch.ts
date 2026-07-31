@@ -16,7 +16,7 @@ export const createBatchTickets = async (req: Request, res: Response) => {
       ...new Set(tareas.map((t: any) => t.maquinaId).filter(Boolean))
     ] as number[];
 
-    const maquinasMap = new Map<number, { planta: string | null; area: string }>();
+    const maquinasMap = new Map<number, { planta: string | null; area: string | null }>();
 
     if (maquinaIdsUnicos.length > 0) {
       const maquinas = await prisma.maquina.findMany({
@@ -35,7 +35,7 @@ export const createBatchTickets = async (req: Request, res: Response) => {
 
         // ── SNAPSHOT: La ubicación de la máquina siempre gana ────────────────
         let finalPlanta: string | null = tarea.planta ?? null;
-        let finalArea   = tarea.area   || "General";
+        let finalArea: string | null = tarea.area || "General";
         let clasificacionFinal: ClasificacionTarea | null = null;
 
         if (tarea.maquinaId && maquinasMap.has(tarea.maquinaId)) {

@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { TipoAjusteRecurrencia } from "@prisma/client";
 import { prisma } from "../../db";
 import { registrarAccion } from "../../utils/logger";
-import { esCicloDelPatron, fechaEstaEnRango, normalizarFechaLogica } from "../../utils/recurrencia-temporal";
+import { esCicloOperativoDelPatron, esDomingo, fechaEstaEnRango, normalizarFechaLogica } from "../../utils/recurrencia-temporal";
 import { estadosMovibles, programacionTarea } from "./helper";
 import { reglaActividadInclude, type ReglaActividadConRelaciones } from "./types";
 
@@ -20,7 +20,7 @@ async function obtenerReglaOperable(id: number): Promise<ReglaOperableResult> {
 
 function validarCiclo(regla: NonNullable<Awaited<ReturnType<typeof prisma.reglaActividadRecurrente.findUnique>>>, fecha: Date) {
   const patron = { fechaInicio: regla.fechaInicio, fechaFin: regla.fechaFin, unidad: regla.unidad, intervalo: regla.intervalo };
-  if (!esCicloDelPatron(patron, fecha)) throw new Error("La ocurrencia no pertenece al patrón de la regla");
+  if (!esCicloOperativoDelPatron(patron, fecha)) throw new Error("La ocurrencia no pertenece al patrón operativo de la regla");
 }
 
 export async function listarAjustesActividad(req: Request, res: Response) {
@@ -49,6 +49,7 @@ export async function moverOcurrenciaActividad(req: Request, res: Response) {
     const fechaOriginal = normalizarFechaLogica(body.fechaOriginal);
     const fechaNueva = normalizarFechaLogica(body.fechaNueva);
     validarCiclo(state.regla, fechaOriginal);
+    if (esDomingo(fechaNueva)) return res.status(400).json({ error: "La fecha nueva no puede ser domingo" });
     if (!fechaEstaEnRango(state.regla, fechaNueva)) return res.status(400).json({ error: "La fecha nueva queda fuera de la vigencia de la regla" });
     const tarea = await prisma.tarea.findFirst({ where: { reglaActividadRecurrenteId: id, fechaCicloLogica: fechaOriginal }, select: { id: true, estado: true } });
     if (tarea && !estadosMovibles.has(tarea.estado)) return res.status(409).json({ error: "La tarea ya está en curso o finalizada y no puede moverse desde la regla" });

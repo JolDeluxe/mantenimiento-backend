@@ -92,7 +92,7 @@ describe("materialización de actividades recurrentes", () => {
     expect((fake.tareas[0]!.fechaCicloLogica as Date).toISOString()).toBe("2026-01-03T00:00:00.000Z");
     expect(fake.historial).toHaveLength(1);
     expect(fake.actualizacionesCursor).toHaveLength(1);
-    expect((fake.actualizacionesCursor[0]!.proximaFechaEjecucion as Date).toISOString()).toBe("2026-01-04T00:00:00.000Z");
+    expect((fake.actualizacionesCursor[0]!.proximaFechaEjecucion as Date).toISOString()).toBe("2026-01-05T00:00:00.000Z");
   });
 
   test("materializa ASIGNADA y copia responsables como snapshot", async () => {
@@ -118,7 +118,7 @@ describe("materialización de actividades recurrentes", () => {
     const skipped = await materializarActividadEnTransaccion({ tx: omitirTx.tx, regla: omitida, fechaCicloLogica: fecha("2026-01-03"), creadorId: 9 });
     expect(skipped.omitida).toBe(true);
     expect(omitirTx.tareas).toHaveLength(0);
-    expect((omitirTx.actualizacionesCursor[0]!.proximaFechaEjecucion as Date).toISOString()).toBe("2026-01-04T00:00:00.000Z");
+    expect((omitirTx.actualizacionesCursor[0]!.proximaFechaEjecucion as Date).toISOString()).toBe("2026-01-05T00:00:00.000Z");
 
     const existente = crearRegla();
     const existingTx = crearTx(existente);
@@ -133,9 +133,17 @@ describe("materialización de actividades recurrentes", () => {
     const regla = crearRegla();
     const fake = crearTx(regla);
     await materializarActividadEnTransaccion({ tx: fake.tx, regla, fechaCicloLogica: fecha("2026-01-02"), creadorId: 9 });
-    await materializarActividadEnTransaccion({ tx: fake.tx, regla, fechaCicloLogica: fecha("2026-01-04"), creadorId: 9 });
+    await materializarActividadEnTransaccion({ tx: fake.tx, regla, fechaCicloLogica: fecha("2026-01-05"), creadorId: 9 });
     expect(fake.actualizacionesCursor).toHaveLength(0);
     await expect(materializarActividadEnTransaccion({ tx: fake.tx, regla, fechaCicloLogica: fecha("2026-02-01"), creadorId: 9 })).rejects.toBeInstanceOf(ActividadRecurrenteError);
+    expect(fake.actualizacionesCursor).toHaveLength(0);
+  });
+
+  test("rechaza materializar domingos aunque coincidan con el patrón calendario", async () => {
+    const regla = crearRegla();
+    const fake = crearTx(regla);
+    await expect(materializarActividadEnTransaccion({ tx: fake.tx, regla, fechaCicloLogica: fecha("2026-01-04"), creadorId: 9 })).rejects.toBeInstanceOf(ActividadRecurrenteError);
+    expect(fake.tareas).toHaveLength(0);
     expect(fake.actualizacionesCursor).toHaveLength(0);
   });
 

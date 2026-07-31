@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { UnidadRecurrenciaActividad } from "@prisma/client";
 import {
+  esCicloOperativoDelPatron,
   esCicloDelPatron,
   fechaHoraMexico,
+  generarCiclosOperativosEnRango,
   generarCiclosEnRango,
   minutosDesdeHora,
+  siguienteCicloOperativo,
 } from "./recurrencia-temporal";
 
 const monthly = {
@@ -52,6 +55,14 @@ describe("recurrencia temporal de actividades", () => {
     expect(esCicloDelPatron({ fechaInicio: start, unidad: UnidadRecurrenciaActividad.DIA, intervalo: 2 }, "2026-01-03")).toBe(true);
     expect(esCicloDelPatron({ fechaInicio: start, unidad: UnidadRecurrenciaActividad.SEMANA, intervalo: 1 }, "2026-01-08")).toBe(true);
     expect(esCicloDelPatron({ fechaInicio: start, unidad: UnidadRecurrenciaActividad.SEMANA, intervalo: 2 }, "2026-01-08")).toBe(false);
+  });
+
+  test("los ciclos operativos excluyen domingos", () => {
+    const patron = { fechaInicio: new Date(Date.UTC(2026, 6, 30)), unidad: UnidadRecurrenciaActividad.DIA, intervalo: 1 };
+    const cycles = generarCiclosOperativosEnRango(patron, new Date(Date.UTC(2026, 6, 30)), new Date(Date.UTC(2026, 7, 3)));
+    expect(cycles.map((cycle) => cycle.toISOString().slice(0, 10))).toEqual(["2026-07-30", "2026-07-31", "2026-08-01", "2026-08-03"]);
+    expect(esCicloOperativoDelPatron(patron, "2026-08-02")).toBe(false);
+    expect(siguienteCicloOperativo(patron, new Date(Date.UTC(2026, 7, 1))).toISOString().slice(0, 10)).toBe("2026-08-03");
   });
 
   test("convierte horario de México y valida HH:mm", () => {

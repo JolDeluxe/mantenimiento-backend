@@ -35,7 +35,7 @@ export const createTicket = async (req: Request, res: Response) => {
     const input = validation.data;
 
     let finalPlanta: string | null = null;
-    let finalArea = "";
+    let finalArea: string | null = "";
     let finalTitulo = "";
     let finalMaquinaId: number | null = null;
     let finalParoProduccion = false;
@@ -102,7 +102,7 @@ export const createTicket = async (req: Request, res: Response) => {
       prioridad: input.prioridad as Prioridad,
       descripcion: input.descripcion.trim(),
       planta: finalPlanta,
-      area: finalArea,
+      area: finalArea ?? "",
       maquinaId: finalMaquinaId,
       paroProduccion: finalParoProduccion,
       fechaParoProduccion: finalFechaParo,

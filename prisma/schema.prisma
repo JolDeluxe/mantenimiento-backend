@@ -250,7 +250,7 @@ model Maquina {
   numeroSerie String? @unique @db.VarChar(100) // S/N (ERP Magnus)
 
   planta           String?  @db.VarChar(100) // Planta/Piso derivada (ERP Magnus)
-  area             String  @db.VarChar(100) // Área/Línea derivada (ERP Magnus)
+  area             String? @db.VarChar(100) // Área/Línea derivada (ERP Magnus)
   ubicacionDetalle String? @db.VarChar(255) // Ubicación cruda (ERP Magnus)
 
   fechaInstalacion    DateTime? // Instalación (ERP Magnus)

@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { formatearFechaLogica, generarCiclosEnRango, normalizarFechaLogica } from "../../utils/recurrencia-temporal";
+import { formatearFechaLogica, generarCiclosOperativosEnRango, normalizarFechaLogica } from "../../utils/recurrencia-temporal";
 import { resolverAjuste } from "./helper";
 import { reglaActividadInclude, type ProyeccionActividad, type ReglaActividadConRelaciones } from "./types";
 
@@ -25,7 +25,7 @@ async function proyectar(reglas: ReglaActividadConRelaciones[], from: Date, to: 
   const tasks = new Map(tareas.filter((tarea) => tarea.fechaCicloLogica).map((tarea) => [`${tarea.reglaActividadRecurrenteId}|${tarea.fechaCicloLogica!.toISOString()}`, tarea]));
   const ajustesMap = new Map(ajustes.map((ajuste) => [`${ajuste.reglaActividadRecurrenteId}|${ajuste.fechaOriginal.toISOString()}`, ajuste]));
 
-  return reglas.flatMap((regla) => generarCiclosEnRango(regla, from, to).map((cycle) => {
+  return reglas.flatMap((regla) => generarCiclosOperativosEnRango(regla, from, to).map((cycle) => {
     const key = `${regla.id}|${cycle.toISOString()}`;
     const ajuste = ajustesMap.get(key) ?? null;
     const resolved = resolverAjuste(cycle, ajuste);

@@ -24,7 +24,7 @@ export const createMaquinaSchema = z.object({
     modelo: z.preprocess(preprocessNull, z.string().nullable().optional()),
     numeroSerie: z.preprocess(preprocessNull, z.string().nullable().optional()),
     planta: z.preprocess(preprocessEmpty, z.string().trim().optional().nullable()),
-    area: z.string().trim().min(1, "El área es obligatoria"),
+    area: z.preprocess(preprocessNull, z.string().nullable().optional()),
     ubicacionDetalle: z.preprocess(preprocessNull, z.string().nullable().optional()),
     departamentoId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
     fechaInstalacion: z.preprocess(preprocessNull, z.coerce.date().nullable().optional()),

@@ -63,6 +63,10 @@ export function fechaEstaEnRango(patron: PatronActividadRecurrente, fecha: Date 
   return !patron.fechaFin || cycle <= normalizarFechaLogica(patron.fechaFin);
 }
 
+export function esDomingo(fecha: Date | string): boolean {
+  return normalizarFechaLogica(fecha).getUTCDay() === 0;
+}
+
 export function esCicloDelPatron(patron: PatronActividadRecurrente, fecha: Date | string): boolean {
   if (!Number.isInteger(patron.intervalo) || patron.intervalo <= 0 || !fechaEstaEnRango(patron, fecha)) {
     return false;
@@ -94,6 +98,20 @@ export function siguienteCiclo(patron: PatronActividadRecurrente, cicloActual: D
   return sumarMesesDesdeAncla(start, currentMonths + patron.intervalo);
 }
 
+export function esCicloOperativoDelPatron(patron: PatronActividadRecurrente, fecha: Date | string): boolean {
+  return !esDomingo(fecha) && esCicloDelPatron(patron, fecha);
+}
+
+export function siguienteCicloOperativo(patron: PatronActividadRecurrente, cicloActual: Date, maxSaltos = 370): Date {
+  let cursor = siguienteCiclo(patron, cicloActual);
+  let guard = 0;
+  while (esDomingo(cursor)) {
+    cursor = siguienteCiclo(patron, cursor);
+    if (++guard > maxSaltos) throw new Error("No existe un próximo ciclo operativo sin domingo para este patrón");
+  }
+  return cursor;
+}
+
 export function generarCiclosEnRango(patron: PatronActividadRecurrente, desde: Date, hasta: Date, maxCiclos = 1000): Date[] {
   const start = normalizarFechaLogica(patron.fechaInicio);
   const rangeStart = normalizarFechaLogica(desde);
@@ -117,6 +135,10 @@ export function generarCiclosEnRango(patron: PatronActividadRecurrente, desde: D
     cursor = siguienteCiclo({ ...patron, fechaFin: null }, cursor);
   }
   return cycles;
+}
+
+export function generarCiclosOperativosEnRango(patron: PatronActividadRecurrente, desde: Date, hasta: Date, maxCiclos = 1000): Date[] {
+  return generarCiclosEnRango(patron, desde, hasta, maxCiclos).filter((cycle) => !esDomingo(cycle));
 }
 
 export function minutosDesdeHora(valor: string): number {

@@ -96,7 +96,7 @@ export async function materializarCicloInterno(params: {
   fechaCicloLogica: Date;
   fechaProgramadaPreventiva?: Date | null;
   maquinaPlanta: string | null;
-  maquinaArea: string;
+  maquinaArea: string | null;
   creadorId: number;
 }) {
   const { regla, fechaCicloLogica, fechaProgramadaPreventiva = null, maquinaPlanta, maquinaArea, creadorId } = params;

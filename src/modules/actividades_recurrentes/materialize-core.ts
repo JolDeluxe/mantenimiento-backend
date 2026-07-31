@@ -1,9 +1,9 @@
 import { EstadoTarea, Estatus, Prisma, TipoAjusteRecurrencia, TipoEvento, TipoTarea } from "@prisma/client";
 import {
-  esCicloDelPatron,
+  esCicloOperativoDelPatron,
   fechaEstaEnRango,
   normalizarFechaLogica,
-  siguienteCiclo,
+  siguienteCicloOperativo,
 } from "../../utils/recurrencia-temporal";
 import { ActividadRecurrenteError, programacionTarea, resolverAjuste } from "./helper";
 import type { ReglaActividadConRelaciones } from "./types";
@@ -73,8 +73,8 @@ export async function materializarActividadEnTransaccion(params: {
   const { tx, regla, creadorId } = params;
   const fechaCicloLogica = normalizarFechaLogica(params.fechaCicloLogica);
   const patron = { fechaInicio: regla.fechaInicio, fechaFin: regla.fechaFin, unidad: regla.unidad, intervalo: regla.intervalo };
-  if (!esCicloDelPatron(patron, fechaCicloLogica)) {
-    throw new ActividadRecurrenteError("La fecha solicitada no pertenece al patrón de la regla");
+  if (!esCicloOperativoDelPatron(patron, fechaCicloLogica)) {
+    throw new ActividadRecurrenteError("La fecha solicitada no pertenece al patrón operativo de la regla");
   }
   const ajuste = await tx.reglaActividadRecurrenteAjuste.findUnique({
     where: { reglaActividadRecurrenteId_fechaOriginal: { reglaActividadRecurrenteId: regla.id, fechaOriginal: fechaCicloLogica } },
@@ -84,7 +84,7 @@ export async function materializarActividadEnTransaccion(params: {
     if (normalizarFechaLogica(regla.proximaFechaEjecucion).getTime() === fechaCicloLogica.getTime()) {
       await tx.reglaActividadRecurrente.update({
         where: { id: regla.id },
-        data: { proximaFechaEjecucion: siguienteCiclo({ ...patron, fechaFin: null }, fechaCicloLogica) },
+        data: { proximaFechaEjecucion: siguienteCicloOperativo({ ...patron, fechaFin: null }, fechaCicloLogica) },
       });
     }
     return { tarea: null, yaExistia: false, omitida: true, fechaCicloLogica, fechaEfectiva: null, responsablesIds: [] };
@@ -108,7 +108,7 @@ export async function materializarActividadEnTransaccion(params: {
   if (normalizarFechaLogica(regla.proximaFechaEjecucion).getTime() === fechaCicloLogica.getTime()) {
     await tx.reglaActividadRecurrente.update({
       where: { id: regla.id },
-      data: { proximaFechaEjecucion: siguienteCiclo({ ...patron, fechaFin: null }, fechaCicloLogica) },
+      data: { proximaFechaEjecucion: siguienteCicloOperativo({ ...patron, fechaFin: null }, fechaCicloLogica) },
     });
   }
   return { tarea, yaExistia: false, omitida: false, fechaCicloLogica, fechaEfectiva: resolved.fechaProgramada, responsablesIds };
