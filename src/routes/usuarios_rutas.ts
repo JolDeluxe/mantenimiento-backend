@@ -16,7 +16,7 @@ import {
 import { listarUsuarios, getUsuarioById } from "../modules/usuarios/01_list";
 import { crearUsuario } from "../modules/usuarios/02_create";
 import { updateUsuario } from "../modules/usuarios/03_update";
-import { changeStatusUsuario } from "../modules/usuarios/04_patch";
+import { changeStatusUsuario, getBajaImpactoUsuario } from "../modules/usuarios/04_patch";
 import { getWorkload } from "../modules/usuarios/05_workload";
 
 const router = Router();
@@ -35,6 +35,13 @@ router.get("/",
 router.get("/workload",
   authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO]),
   getWorkload
+);
+
+// GET /api/usuarios/:id/baja-impacto
+router.get("/:id/baja-impacto",
+  authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO]),
+  validate(getUsuarioByIdSchema),
+  getBajaImpactoUsuario
 );
 
 // GET /api/usuarios/inactivos

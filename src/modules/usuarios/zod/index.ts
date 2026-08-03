@@ -146,7 +146,27 @@ export const patchUsuarioSchema = z.object({
   }).strict(),
   body: z.object({
     estado: z.enum(estatusArray, { message: "El estado solo puede ser ACTIVO o INACTIVO" }),
-    tecnicoReemplazoId: z.coerce.number().int().positive().optional()
+    tecnicoReemplazoId: z.coerce.number().int().positive().optional(),
+    reasignaciones: z.object({
+      tareas: z.array(
+        z.object({
+          tareaId: z.number().int().positive(),
+          tecnicoReemplazoId: z.number().int().positive(),
+        }).strict()
+      ).optional(),
+      actividadesRecurrentes: z.array(
+        z.object({
+          reglaId: z.number().int().positive(),
+          tecnicoReemplazoId: z.number().int().positive(),
+        }).strict()
+      ).optional(),
+      mantenimientosRecurrentes: z.array(
+        z.object({
+          reglaId: z.number().int().positive(),
+          tecnicoReemplazoId: z.number().int().positive(),
+        }).strict()
+      ).optional(),
+    }).strict().optional(),
   }).strict()
 });
 
