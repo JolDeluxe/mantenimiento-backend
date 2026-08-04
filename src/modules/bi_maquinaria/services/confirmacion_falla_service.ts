@@ -99,10 +99,8 @@ export async function crearFallaProvisional(
   tx: Prisma.TransactionClient,
   input: CrearFallaProvisionaInput,
 ) {
-  // Verificar que la tarea no tenga ya una falla vinculada (garantía de integridad 1-1).
   const existente = await tx.fallaMaquina.findUnique({
     where: { tareaId: input.tareaId },
-    select: { id: true },
   });
   if (existente) return existente; // Idempotente: no crear duplicado.
 
@@ -137,7 +135,17 @@ export async function crearFallaProvisional(
  * Ejecutado fuera de la transacción de cambio de estado (llamada directa desde el controlador).
  */
 export async function confirmarFalla(input: ConfirmarFallaInput) {
-  const falla = await prisma.fallaMaquina.findUniqueOrThrow({
+  return prisma.$transaction(async (tx) => {
+    return confirmarFallaEnTransaccion(tx, input);
+  });
+}
+
+/** Versión transaccional de confirmarFalla. */
+export async function confirmarFallaEnTransaccion(
+  tx: Prisma.TransactionClient,
+  input: ConfirmarFallaInput,
+) {
+  const falla = await tx.fallaMaquina.findUniqueOrThrow({
     where: { id: input.fallaId },
     select: { id: true, estado: true },
   });
@@ -155,7 +163,7 @@ export async function confirmarFalla(input: ConfirmarFallaInput) {
     throw new Error("La fecha de confirmación de la falla no puede ser futura.");
   }
 
-  return prisma.fallaMaquina.update({
+  return tx.fallaMaquina.update({
     where: { id: input.fallaId },
     data: {
       estado:               EstadoFalla.ABIERTA,
@@ -172,7 +180,17 @@ export async function confirmarFalla(input: ConfirmarFallaInput) {
  * No alimenta métricas de Frecuencia, MTTR ni MTBF.
  */
 export async function descartarFalla(input: DescartarFallaInput) {
-  const falla = await prisma.fallaMaquina.findUniqueOrThrow({
+  return prisma.$transaction(async (tx) => {
+    return descartarFallaEnTransaccion(tx, input);
+  });
+}
+
+/** Versión transaccional de descartarFalla. */
+export async function descartarFallaEnTransaccion(
+  tx: Prisma.TransactionClient,
+  input: DescartarFallaInput,
+) {
+  const falla = await tx.fallaMaquina.findUniqueOrThrow({
     where: { id: input.fallaId },
     select: { id: true, estado: true },
   });
@@ -188,7 +206,7 @@ export async function descartarFalla(input: DescartarFallaInput) {
     );
   }
 
-  return prisma.fallaMaquina.update({
+  return tx.fallaMaquina.update({
     where: { id: input.fallaId },
     data: {
       estado:               EstadoFalla.DESCARTADA,

@@ -237,7 +237,12 @@ export const changeStatusSchema = z.object({
     fallaResolucion: z.preprocess(
       preprocessJsonObject,
       z.object({
-        impactoConfirmado: z.nativeEnum(ImpactoProduccionConfirmado),
+        descartar: z.preprocess(preprocessBoolean, z.boolean().optional()),
+        impactoConfirmado: z.nativeEnum(ImpactoProduccionConfirmado).optional(),
+        fechaFallaConfirmada: z.preprocess(
+          (val) => (val === "" || val === "null" || val === null ? undefined : val),
+          z.coerce.date().optional()
+        ),
         inicioParo: z.preprocess(
           (val) => (val === "" || val === "null" || val === null ? undefined : val),
           z.coerce.date().optional()

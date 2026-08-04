@@ -7,6 +7,7 @@ import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "./helper_upload";
 import { notificarAsignacionTarea } from "../../notificaciones/services";
 import { calcularMinutosProgramadosMX } from "../helper";
+import { crearFallaProvisional } from "../../bi_maquinaria/services/confirmacion_falla_service";
 
 export const createTicketAdmin = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -148,6 +149,15 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
             : "Tarea de infraestructura creada."
         }
       });
+
+      // BI MAQUINARIA FASE 1: Falla provisional
+      if (nuevaTarea.clasificacion === ClasificacionTarea.CORRECTIVO && nuevaTarea.maquinaId) {
+        await crearFallaProvisional(tx, {
+          tareaId: nuevaTarea.id,
+          maquinaId: nuevaTarea.maquinaId,
+          fechaFallaReportada: nuevaTarea.createdAt,
+        });
+      }
 
       if (urlsImagenes.length > 0) {
         await tx.imagen.createMany({

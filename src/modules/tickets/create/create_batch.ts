@@ -1,9 +1,9 @@
-// src/modules/tickets/create/create_batch.ts
 import type { Request, Response } from "express";
 import { prisma } from "../../../db";
 import { EstadoTarea, TipoEvento, ClasificacionTarea } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { calcularMinutosProgramadosMX } from "../helper";
+import { crearFallaProvisional } from "../../bi_maquinaria/services/confirmacion_falla_service";
 
 export const createBatchTickets = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -50,7 +50,7 @@ export const createBatchTickets = async (req: Request, res: Response) => {
           // Sin máquina pero con clasificación explícita (ej: infraestructura general)
           clasificacionFinal = tarea.clasificacion as ClasificacionTarea;
         }
-        // Sin maquinaId y sin clasificacion → null (tarea de infraestructura genérica)
+        // Sin maquinaId and sin clasificacion → null (tarea de infraestructura genérica)
 
         const responsablesConnect = tieneResponsables
           ? tarea.responsables.map((id: number) => ({ id }))
@@ -99,6 +99,15 @@ export const createBatchTickets = async (req: Request, res: Response) => {
               : "Tarea registrada mediante inserción masiva (Batch)."
           }
         });
+
+        // BI MAQUINARIA FASE 1: Falla provisional
+        if (clasificacionFinal === ClasificacionTarea.CORRECTIVO && nuevoTicket.maquinaId) {
+          await crearFallaProvisional(tx, {
+            tareaId: nuevoTicket.id,
+            maquinaId: nuevoTicket.maquinaId,
+            fechaFallaReportada: nuevoTicket.createdAt,
+          });
+        }
 
         if (tarea.maquinaId && tarea.paroProduccion) {
           await tx.maquina.update({

@@ -5,6 +5,7 @@ import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "./helper_upload";
 import { notificarNuevoReporte } from "../../notificaciones/services";
 import type { CreateTicketClientResolvedDTO } from "../types";
+import { crearFallaProvisional } from "../../bi_maquinaria/services/confirmacion_falla_service";
 
 export const createTicketCliente = async (
   req: Request,
@@ -59,6 +60,15 @@ export const createTicketCliente = async (
           nota: notaHistorial
         }
       });
+
+      // BI MAQUINARIA FASE 1: Falla provisional
+      if (nuevaTarea.maquinaId) {
+        await crearFallaProvisional(tx, {
+          tareaId: nuevaTarea.id,
+          maquinaId: nuevaTarea.maquinaId,
+          fechaFallaReportada: nuevaTarea.fechaParoProduccion || nuevaTarea.createdAt,
+        });
+      }
 
       if (urlsImagenes.length > 0) {
         await tx.imagen.createMany({

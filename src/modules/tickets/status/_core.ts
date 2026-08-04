@@ -5,11 +5,17 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../../db";
 import { EstadoTarea, TipoEvento, Rol, Prisma } from "@prisma/client";
+import type { FallaMaquina } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { notificarCambioEstatus } from "../../notificaciones/services";
 import { deleteImageByUrl } from "../../../utils/cloudinary";
 import { getIO } from "../../../utils/socket";
-import { resolverFallaEnTransaccion } from "../../bi_maquinaria/services/confirmacion_falla_service";
+import {
+  resolverFallaEnTransaccion,
+  confirmarFallaEnTransaccion,
+  descartarFallaEnTransaccion,
+  crearFallaProvisional,
+} from "../../bi_maquinaria/services/confirmacion_falla_service";
 
 export type TicketConResponsables = Prisma.TareaGetPayload<{
   include: { responsables: true };
@@ -34,7 +40,9 @@ export interface CambioEstadoOptions {
   manejarIntervalos:     boolean; // técnico y admin abren/cierran IntervaloTiempo
   // BI Maquinaria FASE 1: datos de resolución de falla (opcional)
   fallaResolucion?: {
-    impactoConfirmado: import("@prisma/client").ImpactoProduccionConfirmado;
+    descartar?: boolean;
+    impactoConfirmado?: import("@prisma/client").ImpactoProduccionConfirmado;
+    fechaFallaConfirmada?: Date;
     inicioParo?: Date;
     porcentajeAfectacion?: number | null;
   };
@@ -72,6 +80,7 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
 
     const ahora = new Date();
     const esEstadoResolucion = nuevoEstado === EstadoTarea.RESUELTO || nuevoEstado === EstadoTarea.CERRADO;
+    const esCorrectivoDeMaquina = ticket.clasificacion === "CORRECTIVO" && ticket.maquinaId !== null;
 
     // ─── Registro de tiempo manual ─────────────────────────────────────────────
     let fechaCierreReal        = ahora;
@@ -106,6 +115,99 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
         minutosManualesDirectos = duracionManual;
         finTiempoManual = ahora;
         inicioTiempoManual = new Date(ahora.getTime() - duracionManual * 60000);
+      }
+    }
+
+    // ─── BI MAQUINARIA FASE 1: VALIDACIÓN OBLIGATORIA AL RESOLVER CORRECTIVOS DE MÁQUINA ───
+    if (esEstadoResolucion && esCorrectivoDeMaquina && !cierreAdministrativo) {
+      // 1. Buscar la FallaMaquina vinculada
+      let fallaVinculada = await prisma.fallaMaquina.findUnique({
+        where: { tareaId: ticketId },
+        select: { id: true, estado: true }
+      });
+
+      const estadoFallaActual = fallaVinculada ? fallaVinculada.estado : "PENDIENTE_DE_DIAGNOSTICO";
+      const requiereDecision = estadoFallaActual === "PENDIENTE_DE_DIAGNOSTICO" || estadoFallaActual === "ABIERTA";
+
+      if (requiereDecision) {
+        if (!fallaResolucion) {
+          return res.status(400).json({
+            error: "Debes resolver el diagnóstico de la falla (Confirmar o Descartar) antes de marcar la tarea como resuelta."
+          });
+        }
+
+        if (fallaResolucion.descartar !== true) {
+          // Confirmación de la falla requerida
+          if (!fallaResolucion.fechaFallaConfirmada) {
+            return res.status(400).json({
+              error: "La fecha de confirmación de la falla es obligatoria."
+            });
+          }
+
+          const fechaConf = new Date(fallaResolucion.fechaFallaConfirmada);
+          if (fechaConf > ahora) {
+            return res.status(400).json({
+              error: "La fecha de confirmación de la falla no puede ser futura."
+            });
+          }
+
+          const fechaLimiteParo = esCierreManualAtrasado ? fechaCierreReal : ahora;
+          if (fechaConf > fechaLimiteParo) {
+            return res.status(400).json({
+              error: "La fecha de confirmación de la falla no puede ser posterior a la fecha de restauración de la máquina."
+            });
+          }
+
+          if (!maquinaOperativaAlResolver) {
+            return res.status(400).json({
+              error: "Para resolver una falla confirmada, debes marcar que la máquina quedó funcional y probada."
+            });
+          }
+
+          if (!fallaResolucion.impactoConfirmado || fallaResolucion.impactoConfirmado === "NO_CONFIRMADO") {
+            return res.status(400).json({
+              error: "Debes seleccionar el impacto confirmado de la falla en producción (SIN_PARO, PARO_PARCIAL o PARO_TOTAL)."
+            });
+          }
+
+          const imp = fallaResolucion.impactoConfirmado;
+          if (imp === "PARO_PARCIAL" || imp === "PARO_TOTAL") {
+            if (!fallaResolucion.inicioParo) {
+              return res.status(400).json({
+                error: `El inicio del paro es obligatorio para el impacto ${imp}.`
+              });
+            }
+            if (new Date(fallaResolucion.inicioParo) >= fechaLimiteParo) {
+              return res.status(400).json({
+                error: "El inicio del paro debe ser anterior a la fecha de restauración de la máquina."
+              });
+            }
+          }
+
+          if (imp === "PARO_PARCIAL") {
+            const pct = fallaResolucion.porcentajeAfectacion;
+            if (pct !== undefined && pct !== null) {
+              if (pct < 1 || pct > 99) {
+                return res.status(400).json({
+                  error: "El porcentaje de afectación para PARO_PARCIAL debe estar entre 1 y 99%."
+                });
+              }
+            }
+          }
+
+          if (imp === "SIN_PARO") {
+            if (fallaResolucion.inicioParo) {
+              return res.status(400).json({
+                error: "No debes proporcionar inicio de paro si seleccionaste SIN_PARO."
+              });
+            }
+            if (fallaResolucion.porcentajeAfectacion !== undefined && fallaResolucion.porcentajeAfectacion !== null) {
+              return res.status(400).json({
+                error: "No debes proporcionar porcentaje de afectación si seleccionaste SIN_PARO."
+              });
+            }
+          }
+        }
       }
     }
 
@@ -233,16 +335,40 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
         }
 
         // ─── BI MAQUINARIA FASE 1: Resolución de Falla ──────────────────────────
-        // Si la tarea tiene una FallaMaquina ABIERTA vinculada, la resolvemos atómicamente.
-        // fallaResolucion es opcional: si el técnico no lo provee, la falla queda ABIERTA
-        // y deberá resolverse manualmente. No bloqueamos el flujo de tickets por ello.
         if (fallaResolucion) {
-          const fallaVinculada = await tx.fallaMaquina.findUnique({
-            where: { tareaId: ticketId },
-            select: { id: true, estado: true },
+          let fallaVinculada: FallaMaquina | null = await tx.fallaMaquina.findUnique({
+            where: { tareaId: ticketId }
           });
 
-          if (fallaVinculada && fallaVinculada.estado === "ABIERTA") {
+          // Si es un ticket legacy que no tiene FallaMaquina, la creamos al vuelo.
+          if (!fallaVinculada) {
+            fallaVinculada = await crearFallaProvisional(tx, {
+              tareaId: ticketId,
+              maquinaId: ticket.maquinaId,
+              fechaFallaReportada: ticket.fechaParoProduccion || ticket.createdAt,
+            });
+          }
+
+          // Validación estricta del tipo no nulo
+          if (!fallaVinculada) {
+            throw new Error(`No se pudo cargar ni crear la falla de maquinaria para la tarea ${ticketId}`);
+          }
+
+          if (fallaResolucion.descartar === true) {
+            await descartarFallaEnTransaccion(tx, {
+              fallaId: fallaVinculada.id,
+              tecnicoId: user.id,
+            });
+          } else if (fallaResolucion.impactoConfirmado) {
+            // Si la falla sigue en PENDIENTE_DE_DIAGNOSTICO o ABIERTA, le confirmamos la fecha definitiva
+            if (fallaVinculada.estado === "PENDIENTE_DE_DIAGNOSTICO" || fallaVinculada.estado === "ABIERTA") {
+              await confirmarFallaEnTransaccion(tx, {
+                fallaId: fallaVinculada.id,
+                tecnicoId: user.id,
+                fechaFallaConfirmada: new Date(fallaResolucion.fechaFallaConfirmada!),
+              });
+            }
+
             await resolverFallaEnTransaccion({
               tx,
               fallaId:              fallaVinculada.id,
