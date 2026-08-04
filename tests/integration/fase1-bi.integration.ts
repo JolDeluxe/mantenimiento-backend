@@ -79,16 +79,30 @@ describe("BI Maquinaria - Fase 1 Integración (mantenimiento_test)", () => {
   });
 
   afterAll(async () => {
-    // Limpieza total del entorno de pruebas
-    await prisma.intervaloParoMaquina.deleteMany({});
-    await prisma.fallaMaquina.deleteMany({});
-    await prisma.intervaloTiempo.deleteMany({});
-    await prisma.historialTarea.deleteMany({});
-    await prisma.imagen.deleteMany({});
-    await prisma.tarea.deleteMany({});
-    await prisma.maquina.deleteMany({});
-    await prisma.usuario.deleteMany({});
-    await prisma.departamento.deleteMany({});
+    // Limpieza exclusiva de los datos creados por esta suite.
+    const tareas = await prisma.tarea.findMany({
+      where: {
+        OR: [
+          { maquinaId },
+          { creadorId: usuarioId },
+        ],
+      },
+      select: { id: true },
+    });
+    const tareaIds = tareas.map((t) => t.id);
+
+    await prisma.intervaloParoMaquina.deleteMany({ where: { maquinaId } });
+    await prisma.fallaMaquina.deleteMany({ where: { maquinaId } });
+    await prisma.intervaloTiempo.deleteMany({ where: { OR: [{ usuarioId }, { tareaId: { in: tareaIds } }] } });
+    await prisma.historialTarea.deleteMany({ where: { OR: [{ usuarioId }, { tareaId: { in: tareaIds } }] } });
+    await prisma.imagen.deleteMany({ where: { tareaId: { in: tareaIds } } });
+    await prisma.notificacion.deleteMany({ where: { OR: [{ usuarioId }, { tareaId: { in: tareaIds } }] } });
+    await prisma.notificacionLog.deleteMany({ where: { usuarioId } });
+    await prisma.bitacora.deleteMany({ where: { usuarioId } });
+    await prisma.tarea.deleteMany({ where: { id: { in: tareaIds } } });
+    await prisma.maquina.deleteMany({ where: { id: maquinaId } });
+    await prisma.usuario.delete({ where: { id: usuarioId } });
+    await prisma.departamento.delete({ where: { id: deptoId } });
     await prisma.$disconnect();
   });
 

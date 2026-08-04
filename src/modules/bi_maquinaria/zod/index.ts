@@ -134,3 +134,5 @@ export type ConfirmarFallaBody   = z.infer<typeof confirmarFallaSchema>["body"];
 export type DescartarFallaParams = z.infer<typeof descartarFallaSchema>["params"];
 export type DescartarFallaBody   = z.infer<typeof descartarFallaSchema>["body"];
 export type ResolucionFallaInput = z.infer<typeof resolucionFallaSchema>;
+
+export * from "./metrics_query_schema";

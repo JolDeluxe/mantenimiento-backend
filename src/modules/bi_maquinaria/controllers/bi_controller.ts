@@ -22,7 +22,10 @@ import { confirmarFallaSchema, descartarFallaSchema } from "../zod";
 // El técnico confirma que existe una avería real y provee la fecha confirmada.
 // ---------------------------------------------------------------------------
 export const confirmarFallaController = async (req: Request, res: Response) => {
-  const user = req.user!;
+  const user = req.user;
+  if (!user) {
+    return res.status(401).json({ error: "Autenticación requerida" });
+  }
 
   const validation = confirmarFallaSchema.safeParse({
     params: req.params,
@@ -67,7 +70,10 @@ export const confirmarFallaController = async (req: Request, res: Response) => {
 // El técnico determina que no hubo avería real.
 // ---------------------------------------------------------------------------
 export const descartarFallaController = async (req: Request, res: Response) => {
-  const user = req.user!;
+  const user = req.user;
+  if (!user) {
+    return res.status(401).json({ error: "Autenticación requerida" });
+  }
 
   const validation = descartarFallaSchema.safeParse({
     params: req.params,

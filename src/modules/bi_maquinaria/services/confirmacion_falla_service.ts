@@ -319,6 +319,13 @@ export async function resolverFallaEnTransaccion(input: ResolverFallaInput) {
     impactoConfirmado === ImpactoProduccionConfirmado.PARO_PARCIAL ||
     impactoConfirmado === ImpactoProduccionConfirmado.PARO_TOTAL
   ) {
+    const inicioParo = input.inicioParo;
+    if (!inicioParo) {
+      throw new Error(
+        `El inicio del paro es obligatorio cuando el impacto es ${impactoConfirmado}.`,
+      );
+    }
+
     const porcentajeFinal =
       impactoConfirmado === ImpactoProduccionConfirmado.PARO_TOTAL
         ? 100
@@ -341,7 +348,7 @@ export async function resolverFallaEnTransaccion(input: ResolverFallaInput) {
         impacto:             impactoConfirmado,
         porcentajeAfectacion: porcentajeFinal,
         calidadDato,
-        inicio:              input.inicioParo!,
+        inicio:              inicioParo,
         fin:                 fechaRestauracion,
         confirmadoPorId:     tecnicoId,
       },
