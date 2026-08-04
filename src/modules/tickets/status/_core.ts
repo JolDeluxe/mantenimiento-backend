@@ -9,6 +9,7 @@ import { registrarError, registrarAccion } from "../../../utils/logger";
 import { notificarCambioEstatus } from "../../notificaciones/services";
 import { deleteImageByUrl } from "../../../utils/cloudinary";
 import { getIO } from "../../../utils/socket";
+import { resolverFallaEnTransaccion } from "../../bi_maquinaria/services/confirmacion_falla_service";
 
 export type TicketConResponsables = Prisma.TareaGetPayload<{
   include: { responsables: true };
@@ -31,13 +32,19 @@ export interface CambioEstadoOptions {
   // Flags de comportamiento por rol
   autoCloseInspeccion:   boolean; // técnico y admin auto-cierran INSPECCION
   manejarIntervalos:     boolean; // técnico y admin abren/cierran IntervaloTiempo
+  // BI Maquinaria FASE 1: datos de resolución de falla (opcional)
+  fallaResolucion?: {
+    impactoConfirmado: import("@prisma/client").ImpactoProduccionConfirmado;
+    inicioParo?: Date;
+    porcentajeAfectacion?: number | null;
+  };
 }
 
 export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<Response> => {
   const {
     ticketId, ticket, imagenesFinales, fechaVencimiento, refacciones,
     registroTiempoManual, maquinaOperativaAlResolver, cierreAdministrativo = false, user, req, res,
-    autoCloseInspeccion, manejarIntervalos,
+    autoCloseInspeccion, manejarIntervalos, fallaResolucion,
   } = opts;
 
   let nuevoEstado = opts.nuevoEstado;
@@ -223,6 +230,30 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
           await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "OPERATIVA" } });
         } else if (ticket.paroProduccion && nuevoEstado === EstadoTarea.RESUELTO && maquinaOperativaAlResolver !== true) {
           await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "PARO_PRODUCCION" } });
+        }
+
+        // ─── BI MAQUINARIA FASE 1: Resolución de Falla ──────────────────────────
+        // Si la tarea tiene una FallaMaquina ABIERTA vinculada, la resolvemos atómicamente.
+        // fallaResolucion es opcional: si el técnico no lo provee, la falla queda ABIERTA
+        // y deberá resolverse manualmente. No bloqueamos el flujo de tickets por ello.
+        if (fallaResolucion) {
+          const fallaVinculada = await tx.fallaMaquina.findUnique({
+            where: { tareaId: ticketId },
+            select: { id: true, estado: true },
+          });
+
+          if (fallaVinculada && fallaVinculada.estado === "ABIERTA") {
+            await resolverFallaEnTransaccion({
+              tx,
+              fallaId:              fallaVinculada.id,
+              maquinaId:            ticket.maquinaId,
+              tecnicoId:            user.id,
+              fechaRestauracion:    esCierreManualAtrasado ? fechaCierreReal : ahora,
+              impactoConfirmado:    fallaResolucion.impactoConfirmado,
+              inicioParo:           fallaResolucion.inicioParo,
+              porcentajeAfectacion: fallaResolucion.porcentajeAfectacion,
+            });
+          }
         }
       }
 

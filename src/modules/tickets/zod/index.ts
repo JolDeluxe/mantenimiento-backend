@@ -1,6 +1,6 @@
 // src/modules/tickets/zod/index.ts
 import { z } from "zod";
-import { Prioridad, EstadoTarea, TipoTarea, ClasificacionTarea } from "@prisma/client";
+import { Prioridad, EstadoTarea, TipoTarea, ClasificacionTarea, ImpactoProduccionConfirmado } from "@prisma/client";
 
 const commonString = z.string().trim();
 
@@ -232,7 +232,22 @@ export const changeStatusSchema = z.object({
         }, { message: "La fecha de vencimiento no puede estar en el pasado" })
         .optional()
     ),
-    refacciones: z.preprocess(preprocessJsonObject, z.any().optional())
+    refacciones: z.preprocess(preprocessJsonObject, z.any().optional()),
+    // BI Maquinaria FASE 1: datos de resolución de falla (opcionales — solo para tickets correctivos con máquina)
+    fallaResolucion: z.preprocess(
+      preprocessJsonObject,
+      z.object({
+        impactoConfirmado: z.nativeEnum(ImpactoProduccionConfirmado),
+        inicioParo: z.preprocess(
+          (val) => (val === "" || val === "null" || val === null ? undefined : val),
+          z.coerce.date().optional()
+        ),
+        porcentajeAfectacion: z.preprocess(
+          (val) => (val === "" || val === null || val === "null" ? null : val),
+          z.number().int().min(1).max(99).nullable().optional()
+        ),
+      }).optional()
+    ),
   }).strict()
 });
 
