@@ -5,6 +5,7 @@ import { getBIKPISController, getBIDetailController, getBIFiltrosController } fr
 import { getMaquinaKPIs } from "../../src/modules/maquinas/01_list";
 import { authenticate } from "../../src/middlewares/authenticate";
 import { authorize } from "../../src/middlewares/authorize";
+import { ejecutarAutoPausaFinTurno } from "../../src/modules/tickets/automations";
 
 const RUN_PREFIX = `TEST_BI_FASE2_${Date.now()}`;
 
@@ -318,10 +319,37 @@ describe("BI Maquinaria - Fase 2 Integración (mantenimiento_test)", () => {
   it("10, 11, 12. Frecuencia y MTTR validan correctamente fallas abiertas y cerradas", async () => {
     await resetAnalyticData();
 
-    // Falla 1: confirmada y restaurada (MTTR = 60 min)
+    const tareaRestaurada = await prisma.tarea.create({
+      data: {
+        titulo: `${RUN_PREFIX}_MTTR_TECNICO_1`,
+        descripcion: "Trabajo técnico de prueba",
+        maquinaId: maquina1Id,
+        estado: "RESUELTO",
+        creadorId: superAdminUser.id,
+        clasificacion: "CORRECTIVO",
+        tipo: "TICKET",
+        duracionReal: 60,
+        createdAt: new Date("2026-08-02T10:00:00-06:00"),
+        finalizadoAt: new Date("2026-08-02T11:00:00-06:00"),
+      },
+    });
+
+    await prisma.intervaloTiempo.create({
+      data: {
+        tareaId: tareaRestaurada.id,
+        usuarioId: superAdminUser.id,
+        estado: "EN_PROGRESO",
+        inicio: new Date("2026-08-02T10:00:00-06:00"),
+        fin: new Date("2026-08-02T11:00:00-06:00"),
+        duracion: 60,
+      },
+    });
+
+    // Falla 1: confirmada y restaurada (MTTR técnico = 60 min)
     await prisma.fallaMaquina.create({
       data: {
         maquinaId: maquina1Id,
+        tareaId: tareaRestaurada.id,
         estado: EstadoFalla.REHABILITADA,
         calidadDato: CalidadDato.CONFIRMADO,
         contabilizaComoFalla: true,
@@ -367,8 +395,10 @@ describe("BI Maquinaria - Fase 2 Integración (mantenimiento_test)", () => {
     expect(m1Row.metricas.frecuencia.valor).toBe(2);
     expect(m1Row.metricas.frecuencia.fallasAbiertas).toBe(1);
     expect(m1Row.metricas.frecuencia.fallasRestauradas).toBe(1);
-    // MTTR usa solo la restaurada = 60 min
+    // MTTR técnico usa solo la restaurada con intervalo técnico válido = 60 min
     expect(m1Row.metricas.mttr.valorMinutos).toBe(60);
+    expect(m1Row.metricas.mttr.sumaMinutosTrabajoTecnico).toBe(60);
+    expect(m1Row.metricas.restauracionCalendario.valorPromedioMinutos).toBe(60);
     expect(m1Row.metricas.mttr.fallasRestauradasUsadas).toBe(1);
     expect(m1Row.metricas.mttr.fallasAbiertasExcluidas).toBe(1);
   });
@@ -552,7 +582,7 @@ describe("BI Maquinaria - Fase 2 Integración (mantenimiento_test)", () => {
   });
 
   // 20. Intervalos superpuestos
-  it("20. intervalos superpuestos hacen la disponibilidad NO_CALCULABLE sin sumar doble", async () => {
+  it("20. paros totales superpuestos se fusionan y disponibilidad sigue calculable", async () => {
     await resetAnalyticData();
 
     await prisma.intervaloParoMaquina.createMany({
@@ -582,9 +612,10 @@ describe("BI Maquinaria - Fase 2 Integración (mantenimiento_test)", () => {
     await getBIKPISController(mockReq(superAdminUser, baseQuery()), res);
 
     const m1Row = findEquipoRow(res.body.data, maquina1Id);
-    expect(m1Row.metricas.disponibilidad.valorPorcentaje).toBeNull();
-    expect(m1Row.metricas.disponibilidad.estado).toBe("NO_CALCULABLE");
-    expect(m1Row.metricas.disponibilidad.advertencias).toContain("INTERVALOS_PARO_SUPERPUESTOS");
+    expect(m1Row.metricas.disponibilidad.valorPorcentaje).toBeCloseTo(95.8333, 3);
+    expect(m1Row.metricas.disponibilidad.minutosParoEquivalentes).toBe(180);
+    expect(m1Row.metricas.disponibilidad.estado).toBe("CALCULABLE");
+    expect(m1Row.metricas.disponibilidad.advertencias).toContain("INTERVALOS_PARO_FUSIONADOS");
   });
 
   // 26, 27, 28. Minutos-máquina y suma de bases en proceso/área
@@ -821,6 +852,32 @@ describe("BI Maquinaria - Fase 2 Integración (mantenimiento_test)", () => {
   it("32b. falla sin confirmadoPorId queda fuera de métricas oficiales y detalle", async () => {
     await resetAnalyticData();
 
+    const tareaValida = await prisma.tarea.create({
+      data: {
+        titulo: `${RUN_PREFIX}_MTTR_CONFIRMADOR_VALIDO`,
+        descripcion: "Trabajo técnico válido",
+        maquinaId: maquina1Id,
+        estado: "RESUELTO",
+        creadorId: superAdminUser.id,
+        clasificacion: "CORRECTIVO",
+        tipo: "TICKET",
+        duracionReal: 60,
+        createdAt: new Date("2026-08-03T10:00:00-06:00"),
+        finalizadoAt: new Date("2026-08-03T11:00:00-06:00"),
+      },
+    });
+
+    await prisma.intervaloTiempo.create({
+      data: {
+        tareaId: tareaValida.id,
+        usuarioId: superAdminUser.id,
+        estado: "EN_PROGRESO",
+        inicio: new Date("2026-08-03T10:00:00-06:00"),
+        fin: new Date("2026-08-03T11:00:00-06:00"),
+        duracion: 60,
+      },
+    });
+
     await prisma.fallaMaquina.createMany({
       data: [
         {
@@ -851,6 +908,7 @@ describe("BI Maquinaria - Fase 2 Integración (mantenimiento_test)", () => {
         },
         {
           maquinaId: maquina1Id,
+          tareaId: tareaValida.id,
           estado: EstadoFalla.CERRADA,
           calidadDato: CalidadDato.CONFIRMADO,
           contabilizaComoFalla: true,
@@ -1143,8 +1201,170 @@ describe("BI Maquinaria - Fase 2 Integración (mantenimiento_test)", () => {
     await prisma.departamento.delete({ where: { id: sentinel.id } });
   });
 
+  it("48a. Fase 2.1 calcula respuesta, MTTR técnico y restauración calendario con el ejemplo completo", async () => {
+    await resetAnalyticData();
+
+    const tarea = await prisma.tarea.create({
+      data: {
+        titulo: `${RUN_PREFIX}_FASE_2_1_EJEMPLO`,
+        descripcion: "Ejemplo 120 vs 1020",
+        maquinaId: maquina1Id,
+        estado: "RESUELTO",
+        creadorId: superAdminUser.id,
+        clasificacion: "CORRECTIVO",
+        tipo: "TICKET",
+        duracionReal: 120,
+        createdAt: new Date("2026-08-03T16:00:00-06:00"),
+        finalizadoAt: new Date("2026-08-04T09:00:00-06:00"),
+      },
+    });
+
+    await prisma.intervaloTiempo.createMany({
+      data: [
+        {
+          tareaId: tarea.id,
+          usuarioId: superAdminUser.id,
+          estado: "EN_PROGRESO",
+          inicio: new Date("2026-08-03T16:30:00-06:00"),
+          fin: new Date("2026-08-03T17:30:00-06:00"),
+          duracion: 60,
+        },
+        {
+          tareaId: tarea.id,
+          usuarioId: superAdminUser.id,
+          estado: "EN_PROGRESO",
+          inicio: new Date("2026-08-04T08:00:00-06:00"),
+          fin: new Date("2026-08-04T09:00:00-06:00"),
+          duracion: 60,
+        },
+      ],
+    });
+
+    await prisma.fallaMaquina.create({
+      data: {
+        maquinaId: maquina1Id,
+        tareaId: tarea.id,
+        estado: EstadoFalla.REHABILITADA,
+        calidadDato: CalidadDato.CONFIRMADO,
+        contabilizaComoFalla: true,
+        impactoConfirmado: ImpactoProduccionConfirmado.PARO_TOTAL,
+        fechaFallaReportada: new Date("2026-08-03T16:00:00-06:00"),
+        fechaFallaConfirmada: new Date("2026-08-03T16:00:00-06:00"),
+        fechaRestauracion: new Date("2026-08-04T09:00:00-06:00"),
+        confirmadoPorId: superAdminUser.id,
+        snapshotCodigo: `${RUN_PREFIX}_MBC_M1`,
+        snapshotProceso: "Inyeccion",
+        snapshotArea: "Moldeo",
+        snapshotCriticidad: "A",
+      },
+    });
+
+    for (const agrupacion of ["EQUIPO", "PROCESO", "AREA"]) {
+      const res = mockRes();
+      await getBIKPISController(mockReq(superAdminUser, {
+        desde: "2026-08-01T00:00:00-06:00",
+        hasta: "2026-08-05T00:00:00-06:00",
+        agrupacion,
+        ...(agrupacion === "EQUIPO" ? { maquinaId: String(maquina1Id) } : {}),
+        ...(agrupacion === "PROCESO" ? { proceso: "Inyeccion" } : {}),
+        ...(agrupacion === "AREA" ? { area: "Moldeo" } : {}),
+      }), res);
+
+      expect(res.statusCode).toBe(200);
+      const row = agrupacion === "EQUIPO"
+        ? res.body.data.find((item: any) => item.equipo?.id === maquina1Id)
+        : agrupacion === "PROCESO"
+          ? res.body.data.find((item: any) => item.proceso === "Inyeccion")
+          : res.body.data.find((item: any) => item.area === "Moldeo");
+      expect(row).toBeDefined();
+      expect(row.metricas.tiempoRespuesta.valorPromedioMinutos).toBe(30);
+      expect(row.metricas.mttr.valorMinutos).toBe(120);
+      expect(row.metricas.mttr.sumaMinutosTrabajoTecnico).toBe(120);
+      expect(row.metricas.restauracionCalendario.valorPromedioMinutos).toBe(1020);
+      expect(row.metricas.restauracionCalendario.sumaMinutos).toBe(1020);
+      expect(row.metricas.frecuencia.valor).toBe(1);
+      expect(row.metricas.mtbf.valorMinutos).toBeNull();
+      expect(row.metricas.confiabilidad.estado).toBe("MUESTRA_INSUFICIENTE");
+    }
+
+    const orderRes = mockRes();
+    await getBIKPISController(mockReq(superAdminUser, {
+      desde: "2026-08-01T00:00:00-06:00",
+      hasta: "2026-08-05T00:00:00-06:00",
+      agrupacion: "EQUIPO",
+      ordenarPor: "MTTR",
+      direccion: "DESC",
+    }), orderRes);
+    expect(orderRes.statusCode).toBe(200);
+    expect(orderRes.body.data[0].metricas.mttr.valorMinutos).toBe(120);
+
+    const detailRes = mockRes();
+    await getBIDetailController(mockReq(superAdminUser, {
+      desde: "2026-08-01T00:00:00-06:00",
+      hasta: "2026-08-05T00:00:00-06:00",
+    }, { maquinaId: String(maquina1Id) }), detailRes);
+    expect(detailRes.statusCode).toBe(200);
+    expect(detailRes.body.metricas.tiempoRespuesta.valorPromedioMinutos).toBe(30);
+    expect(detailRes.body.metricas.mttr.valorMinutos).toBe(120);
+    expect(detailRes.body.metricas.restauracionCalendario.valorPromedioMinutos).toBe(1020);
+    expect(detailRes.body.fallas.restauradas[0].tiempoTecnicoActivoMinutos).toBe(120);
+    expect(detailRes.body.fallas.restauradas[0].intervalosTecnicosFusionados).toHaveLength(2);
+  });
+
+  it("48b. Auto-pausa de fin de turno cierra intervalos a 17:30 e idempotencia conserva duración", async () => {
+    await resetAnalyticData();
+
+    const tarea = await prisma.tarea.create({
+      data: {
+        titulo: `${RUN_PREFIX}_AUTOPAUSA_1730`,
+        descripcion: "Auto pausa fin de turno",
+        maquinaId: maquina1Id,
+        estado: "EN_PROGRESO",
+        creadorId: superAdminUser.id,
+        clasificacion: "CORRECTIVO",
+        tipo: "TICKET",
+        duracionReal: 0,
+        createdAt: new Date("2026-08-03T16:00:00-06:00"),
+        responsables: { connect: [{ id: tecnicoUser.id }] },
+      },
+    });
+
+    const intervalo = await prisma.intervaloTiempo.create({
+      data: {
+        tareaId: tarea.id,
+        usuarioId: tecnicoUser.id,
+        estado: "EN_PROGRESO",
+        inicio: new Date("2026-08-03T16:30:00-06:00"),
+      },
+    });
+
+    await ejecutarAutoPausaFinTurno({
+      ahora: new Date("2026-08-03T17:45:00-06:00"),
+      tipoJornada: "SEMANA",
+    });
+
+    const tareaPausada = await prisma.tarea.findUnique({ where: { id: tarea.id } });
+    const intervaloCerrado = await prisma.intervaloTiempo.findUnique({ where: { id: intervalo.id } });
+    expect(tareaPausada?.estado).toBe("EN_PAUSA");
+    expect(tareaPausada?.duracionReal).toBe(60);
+    expect(intervaloCerrado?.fin?.toISOString()).toBe("2026-08-03T23:30:00.000Z");
+    expect(intervaloCerrado?.duracion).toBe(60);
+
+    await ejecutarAutoPausaFinTurno({
+      ahora: new Date("2026-08-03T17:45:00-06:00"),
+      tipoJornada: "SEMANA",
+    });
+
+    const tareaDespues = await prisma.tarea.findUnique({ where: { id: tarea.id } });
+    const historial = await prisma.historialTarea.findMany({ where: { tareaId: tarea.id } });
+    expect(tareaDespues?.duracionReal).toBe(60);
+    expect(historial.filter((h) => h.nota?.includes("SISTEMA_FIN_TURNO"))).toHaveLength(1);
+  });
+
   // 49. Endpoint heredado de máquina continúa funcionando
   it("49. Endpoint heredado getMaquinaKPIs funciona correctamente", async () => {
+    await resetAnalyticData();
+
     // Crear una tarea resuelta para que el endpoint legacy tenga datos
     await prisma.tarea.create({
       data: {

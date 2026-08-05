@@ -2,6 +2,11 @@
  * bi_maquinaria/calculations/mtbf.ts
  *
  * Funciones puras para el cálculo de MTBF (Mean Time Between Failures).
+ *
+ * Modelo BI programado:
+ * MTBF dias = minutos operativos programados / frecuencia / 540.
+ * Si frecuencia = 0, se reporta el periodo observado como dato censurado
+ * hacia la derecha: "al menos X dias sin fallas".
  */
 
 export interface FallaMTBFInput {
@@ -20,122 +25,73 @@ export interface MTBFResult {
   intervalosValidos: number;
   intervalosInvalidos: number;
   maquinasConIntervalos: number;
+  frecuenciaBase: number;
+  minutosOperativosProgramados: number;
+  censurado: boolean;
   estado: "CALCULABLE" | "SIN_DATOS" | "MUESTRA_INSUFICIENTE" | "NO_CALCULABLE" | "DATO_INCOMPLETO";
   advertencias: string[];
 }
 
-type FallaMTBFConfirmada = FallaMTBFInput & {
-  fechaFallaConfirmada: Date;
-};
+const MINUTOS_DIA_PROGRAMADO_BASE = 540;
 
 export function calcularMTBF(
   fallasMaquina: FallaMTBFInput[],
-  maquinasIds: number[],
+  _maquinasIds: number[],
   desde: Date,
-  hastaEfectivo: Date
+  hastaEfectivo: Date,
+  minutosProgramados = 0,
+  minutosParoNoPlanificadoEquivalentes = 0,
 ): MTBFResult {
-  // Agrupar fallas por máquina
-  const fallasPorMaquina = new Map<number, FallaMTBFConfirmada[]>();
-  for (const f of fallasMaquina) {
-    if (!f.contabilizaComoFalla || !f.fechaFallaConfirmada) continue;
-    const list = fallasPorMaquina.get(f.maquinaId) || [];
-    list.push({ ...f, fechaFallaConfirmada: f.fechaFallaConfirmada });
-    fallasPorMaquina.set(f.maquinaId, list);
-  }
-
-  let totalSumaMinutos = 0;
-  let totalValidos = 0;
-  let totalInvalidos = 0;
-  let maquinasContabilizadas = 0;
   const advertencias = new Set<string>();
 
-  for (const mid of maquinasIds) {
-    const list = fallasPorMaquina.get(mid) || [];
-    if (list.length === 0) continue;
-
-    // Ordenar por fechaFallaConfirmada ascendente
-    const sorted = [...list].sort(
-      (a, b) => a.fechaFallaConfirmada.getTime() - b.fechaFallaConfirmada.getTime()
-    );
-
-    let maquinasTieneValidos = false;
-    let prev: FallaMTBFConfirmada | null = null;
-
-    for (const current of sorted) {
-      const currentConfirmTime = current.fechaFallaConfirmada.getTime();
-
-      // El intervalo se calcula si la falla actual (siguiente) cae en el período
-      if (currentConfirmTime < desde.getTime() || currentConfirmTime >= hastaEfectivo.getTime()) {
-        prev = current;
-        continue;
-      }
-
-      // Buscar la falla confirmada anterior
-      if (prev) {
-        if (prev.estado === "ABIERTA" || !prev.fechaRestauracion) {
-          // No hay restauración anterior todavía, no se puede calcular un intervalo
-          totalInvalidos++;
-          continue;
-        }
-
-        const prevRestTime = prev.fechaRestauracion.getTime();
-
-        // Si hay solapamiento (la anterior se restauró después de que inició la actual)
-        if (prevRestTime > currentConfirmTime) {
-          totalInvalidos++;
-          advertencias.add("INTERVALOS_MTBF_SUPERPUESTOS");
-          continue;
-        }
-
-        const diffMins = (currentConfirmTime - prevRestTime) / 60000;
-
-        if (diffMins <= 0) {
-          totalInvalidos++;
-          continue;
-        }
-
-        totalSumaMinutos += diffMins;
-        totalValidos++;
-        maquinasTieneValidos = true;
-      }
-
-      prev = current;
-    }
-
-    if (maquinasTieneValidos) {
-      maquinasContabilizadas++;
-    }
-  }
-
-  let valorMinutos: number | null = null;
-  let valorDias: number | null = null;
-  let estado: MTBFResult["estado"] = "SIN_DATOS";
-
-  const totalFallasConfirmadasEnPeriodo = fallasMaquina.filter(f => {
+  const frecuencia = fallasMaquina.filter(f => {
     if (!f.contabilizaComoFalla || !f.fechaFallaConfirmada) return false;
     const t = f.fechaFallaConfirmada.getTime();
     return t >= desde.getTime() && t < hastaEfectivo.getTime();
   }).length;
 
-  if (totalFallasConfirmadasEnPeriodo === 0) {
-    estado = "SIN_DATOS";
-  } else if (totalValidos === 0) {
-    estado = "MUESTRA_INSUFICIENTE";
-    advertencias.add("INTERVALOS_MTBF_INSUFICIENTES");
-  } else {
-    valorMinutos = totalSumaMinutos / totalValidos;
-    valorDias = valorMinutos / 1440;
-    estado = "CALCULABLE";
+  const minutosOperativosProgramados = Math.max(
+    0,
+    minutosProgramados - minutosParoNoPlanificadoEquivalentes,
+  );
+
+  if (minutosProgramados <= 0) {
+    return {
+      valorDias: null,
+      valorMinutos: null,
+      sumaMinutosIntervalos: 0,
+      intervalosValidos: 0,
+      intervalosInvalidos: 0,
+      maquinasConIntervalos: 0,
+      frecuenciaBase: frecuencia,
+      minutosOperativosProgramados,
+      censurado: false,
+      estado: "SIN_DATOS",
+      advertencias: ["SIN_MINUTOS_PROGRAMADOS"],
+    };
+  }
+
+  const censurado = frecuencia === 0;
+  const valorMinutos = censurado
+    ? minutosOperativosProgramados
+    : minutosOperativosProgramados / frecuencia;
+  const valorDias = valorMinutos / MINUTOS_DIA_PROGRAMADO_BASE;
+
+  if (censurado) {
+    advertencias.add("MTBF_CENSURADO_SIN_FALLAS");
   }
 
   return {
     valorDias,
     valorMinutos,
-    sumaMinutosIntervalos: totalSumaMinutos,
-    intervalosValidos: totalValidos,
-    intervalosInvalidos: totalInvalidos,
-    maquinasConIntervalos: maquinasContabilizadas,
-    estado,
+    sumaMinutosIntervalos: minutosOperativosProgramados,
+    intervalosValidos: frecuencia,
+    intervalosInvalidos: 0,
+    maquinasConIntervalos: minutosOperativosProgramados > 0 ? 1 : 0,
+    frecuenciaBase: frecuencia,
+    minutosOperativosProgramados,
+    censurado,
+    estado: "CALCULABLE",
     advertencias: Array.from(advertencias),
   };
 }

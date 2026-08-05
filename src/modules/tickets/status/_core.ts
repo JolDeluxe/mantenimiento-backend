@@ -13,7 +13,6 @@ import { getIO } from "../../../utils/socket";
 import {
   resolverFallaEnTransaccion,
   confirmarFallaEnTransaccion,
-  descartarFallaEnTransaccion,
   crearFallaProvisional,
 } from "../../bi_maquinaria/services/confirmacion_falla_service";
 
@@ -132,80 +131,83 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
       if (requiereDecision) {
         if (!fallaResolucion) {
           return res.status(400).json({
-            error: "Debes resolver el diagnóstico de la falla (Confirmar o Descartar) antes de marcar la tarea como resuelta."
+            error: "Debes completar los datos de cierre de la falla antes de marcar la tarea como resuelta."
           });
         }
 
-        if (fallaResolucion.descartar !== true) {
-          // Confirmación de la falla requerida
-          if (!fallaResolucion.fechaFallaConfirmada) {
+        if (fallaResolucion.descartar === true) {
+          return res.status(400).json({
+            error: "El cierre técnico de correctivos de maquinaria no permite descartar el reporte."
+          });
+        }
+
+        if (!fallaResolucion.fechaFallaConfirmada) {
+          return res.status(400).json({
+            error: "La hora real de inicio de la falla es obligatoria."
+          });
+        }
+
+        const fechaConf = new Date(fallaResolucion.fechaFallaConfirmada);
+        if (fechaConf > ahora) {
+          return res.status(400).json({
+            error: "La hora real de inicio de la falla no puede ser futura."
+          });
+        }
+
+        const fechaLimiteParo = esCierreManualAtrasado ? fechaCierreReal : ahora;
+        if (fechaConf > fechaLimiteParo) {
+          return res.status(400).json({
+            error: "La hora real de inicio de la falla no puede ser posterior a la restauración de la máquina."
+          });
+        }
+
+        if (!maquinaOperativaAlResolver) {
+          return res.status(400).json({
+            error: "Para finalizar, debes confirmar que se realizaron pruebas y la máquina quedó operativa."
+          });
+        }
+
+        if (!fallaResolucion.impactoConfirmado || fallaResolucion.impactoConfirmado === "NO_CONFIRMADO") {
+          return res.status(400).json({
+            error: "Debes indicar si hubo paro de producción real y su impacto cuando corresponda."
+          });
+        }
+
+        const imp = fallaResolucion.impactoConfirmado;
+        if (imp === "PARO_PARCIAL" || imp === "PARO_TOTAL") {
+          if (!fallaResolucion.inicioParo) {
             return res.status(400).json({
-              error: "La fecha de confirmación de la falla es obligatoria."
+              error: `El inicio del paro es obligatorio para el impacto ${imp}.`
             });
           }
-
-          const fechaConf = new Date(fallaResolucion.fechaFallaConfirmada);
-          if (fechaConf > ahora) {
+          if (new Date(fallaResolucion.inicioParo) >= fechaLimiteParo) {
             return res.status(400).json({
-              error: "La fecha de confirmación de la falla no puede ser futura."
+              error: "El inicio del paro debe ser anterior a la restauración de la máquina."
             });
           }
+        }
 
-          const fechaLimiteParo = esCierreManualAtrasado ? fechaCierreReal : ahora;
-          if (fechaConf > fechaLimiteParo) {
-            return res.status(400).json({
-              error: "La fecha de confirmación de la falla no puede ser posterior a la fecha de restauración de la máquina."
-            });
-          }
-
-          if (!maquinaOperativaAlResolver) {
-            return res.status(400).json({
-              error: "Para resolver una falla confirmada, debes marcar que la máquina quedó funcional y probada."
-            });
-          }
-
-          if (!fallaResolucion.impactoConfirmado || fallaResolucion.impactoConfirmado === "NO_CONFIRMADO") {
-            return res.status(400).json({
-              error: "Debes seleccionar el impacto confirmado de la falla en producción (SIN_PARO, PARO_PARCIAL o PARO_TOTAL)."
-            });
-          }
-
-          const imp = fallaResolucion.impactoConfirmado;
-          if (imp === "PARO_PARCIAL" || imp === "PARO_TOTAL") {
-            if (!fallaResolucion.inicioParo) {
+        if (imp === "PARO_PARCIAL") {
+          const pct = fallaResolucion.porcentajeAfectacion;
+          if (pct !== undefined && pct !== null) {
+            if (pct < 1 || pct > 99) {
               return res.status(400).json({
-                error: `El inicio del paro es obligatorio para el impacto ${imp}.`
+                error: "El porcentaje de afectación para PARO_PARCIAL debe estar entre 1 y 99%."
               });
             }
-            if (new Date(fallaResolucion.inicioParo) >= fechaLimiteParo) {
-              return res.status(400).json({
-                error: "El inicio del paro debe ser anterior a la fecha de restauración de la máquina."
-              });
-            }
           }
+        }
 
-          if (imp === "PARO_PARCIAL") {
-            const pct = fallaResolucion.porcentajeAfectacion;
-            if (pct !== undefined && pct !== null) {
-              if (pct < 1 || pct > 99) {
-                return res.status(400).json({
-                  error: "El porcentaje de afectación para PARO_PARCIAL debe estar entre 1 y 99%."
-                });
-              }
-            }
+        if (imp === "SIN_PARO") {
+          if (fallaResolucion.inicioParo) {
+            return res.status(400).json({
+              error: "No debes proporcionar inicio de paro si seleccionaste SIN_PARO."
+            });
           }
-
-          if (imp === "SIN_PARO") {
-            if (fallaResolucion.inicioParo) {
-              return res.status(400).json({
-                error: "No debes proporcionar inicio de paro si seleccionaste SIN_PARO."
-              });
-            }
-            if (fallaResolucion.porcentajeAfectacion !== undefined && fallaResolucion.porcentajeAfectacion !== null) {
-              return res.status(400).json({
-                error: "No debes proporcionar porcentaje de afectación si seleccionaste SIN_PARO."
-              });
-            }
+          if (fallaResolucion.porcentajeAfectacion !== undefined && fallaResolucion.porcentajeAfectacion !== null) {
+            return res.status(400).json({
+              error: "No debes proporcionar porcentaje de afectación si seleccionaste SIN_PARO."
+            });
           }
         }
       }
@@ -355,10 +357,7 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
           }
 
           if (fallaResolucion.descartar === true) {
-            await descartarFallaEnTransaccion(tx, {
-              fallaId: fallaVinculada.id,
-              tecnicoId: user.id,
-            });
+            throw new Error("El cierre técnico de correctivos de maquinaria no permite descartar el reporte.");
           } else if (fallaResolucion.impactoConfirmado) {
             // Si la falla sigue en PENDIENTE_DE_DIAGNOSTICO o ABIERTA, le confirmamos la fecha definitiva
             if (fallaVinculada.estado === "PENDIENTE_DE_DIAGNOSTICO" || fallaVinculada.estado === "ABIERTA") {

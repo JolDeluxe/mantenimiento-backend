@@ -12,20 +12,28 @@ describe("Confiabilidad - Cálculos puros", () => {
     expect(res.estado).toBe("CALCULABLE");
   });
 
-  it("debe retornar null en horizontes si MTBF es null", () => {
-    const res = calcularConfiabilidad(null, "MUESTRA_INSUFICIENTE");
-    expect(res.r1DiaPorcentaje).toBeNull();
-    expect(res.r7DiasPorcentaje).toBeNull();
+  it("debe retornar 100% si frecuencia es cero", () => {
+    const res = calcularConfiabilidad(null, "CALCULABLE", 0);
+    expect(res.r1DiaPorcentaje).toBe(100);
+    expect(res.r7DiasPorcentaje).toBe(100);
+    expect(res.r30DiasPorcentaje).toBe(100);
+    expect(res.estado).toBe("CALCULABLE");
+  });
+
+  it("debe retornar 0% sin null si hay frecuencia pero MTBF es inválido", () => {
+    const res = calcularConfiabilidad(null, "MUESTRA_INSUFICIENTE", 1);
+    expect(res.r1DiaPorcentaje).toBe(0);
+    expect(res.r7DiasPorcentaje).toBe(0);
     expect(res.estado).toBe("MUESTRA_INSUFICIENTE");
   });
 
   it("debe retornar NO_CALCULABLE si MTBF <= 0", () => {
     const res = calcularConfiabilidad(0, "CALCULABLE");
-    expect(res.r1DiaPorcentaje).toBeNull();
+    expect(res.r1DiaPorcentaje).toBe(0);
     expect(res.estado).toBe("NO_CALCULABLE");
 
     const resNeg = calcularConfiabilidad(-5, "CALCULABLE");
-    expect(resNeg.r1DiaPorcentaje).toBeNull();
+    expect(resNeg.r1DiaPorcentaje).toBe(0);
     expect(resNeg.estado).toBe("NO_CALCULABLE");
   });
 });

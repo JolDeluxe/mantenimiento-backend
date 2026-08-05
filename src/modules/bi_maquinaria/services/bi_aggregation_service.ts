@@ -162,6 +162,8 @@ function getSortValue(row: AggregatedRow, key: string): string | number | null {
       return row.area;
     case "FRECUENCIA":
       return row.metricas.frecuencia.valor;
+    case "RESTAURACION":
+      return row.metricas.mttr.sumaMinutosTrabajoTecnico;
     case "MTTR":
       return row.metricas.mttr.valorMinutos;
     case "MTBF":

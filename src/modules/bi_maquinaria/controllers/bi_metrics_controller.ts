@@ -67,7 +67,9 @@ export const getBIKPISController = async (req: Request, res: Response) => {
       desde,
       hastaEfectivo,
       queryParams.calidad,
-      ahora
+      ahora,
+      queryParams.incluirHistoricos,
+      hasta
     );
 
     // 5. Agrupar y agregar
@@ -138,6 +140,7 @@ export const getBIKPISController = async (req: Request, res: Response) => {
           estadoMaquina: queryParams.estadoMaquina,
           buscar: queryParams.buscar,
           incluirAreaNula: queryParams.incluirAreaNula,
+          incluirHistoricos: queryParams.incluirHistoricos,
         },
         paginacion,
         totalMaquinasFiltradas,
@@ -151,9 +154,10 @@ export const getBIKPISController = async (req: Request, res: Response) => {
         fallasAbiertas,
         fallasRestauradas,
         intervalosMTBFValidos,
-        minutosMaquinaObservados,
-        minutosParoEquivalentesConfirmados,
-        minutosParcialesSinPorcentaje,
+      minutosMaquinaObservados,
+      minutosProgramados: minutosMaquinaObservados,
+      minutosParoEquivalentesConfirmados,
+      minutosParcialesSinPorcentaje,
       },
       data: dataPaginada,
     });
@@ -200,7 +204,7 @@ export const getBIDetailController = async (req: Request, res: Response) => {
   }
 
   const { maquinaId } = validation.data.params;
-  const { desde, hasta, paginaEventos, limiteEventos } = validation.data.query;
+  const { desde, hasta, paginaEventos, limiteEventos, incluirHistoricos } = validation.data.query;
 
   try {
     const detail = await BIDetailService.obtenerDetalleMaquina({
@@ -210,6 +214,7 @@ export const getBIDetailController = async (req: Request, res: Response) => {
       paginaEventos,
       limiteEventos,
       ahora,
+      incluirHistoricos,
     });
 
     return res.json(detail);

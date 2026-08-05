@@ -1,127 +1,221 @@
 import { describe, it, expect } from "bun:test";
-import { calcularDisponibilidadMaquina } from "../calculations/disponibilidad";
+import { calcularDisponibilidadMaquina, type ParoInput } from "../calculations/disponibilidad";
 
 describe("Disponibilidad - Cálculos puros", () => {
   const desde = new Date("2026-08-01T00:00:00-06:00");
-  const hastaEfectivo = new Date("2026-08-02T00:00:00-06:00"); // 1 día (1440 min)
+  const hastaEfectivo = new Date("2026-08-02T00:00:00-06:00");
   const maquinaCreatedAt = new Date("2026-07-20T00:00:00-06:00");
 
-  it("debe retornar 100% de disponibilidad sin intervalos de paro", () => {
-    const res = calcularDisponibilidadMaquina([], 1440, desde, hastaEfectivo, maquinaCreatedAt);
+  const paro = (input: Partial<ParoInput> & { id: number; inicio: Date; fin?: Date | null }): ParoInput => ({
+    maquinaId: 1,
+    tipo: "NO_PLANIFICADO",
+    impacto: "PARO_TOTAL",
+    porcentajeAfectacion: 100,
+    calidadDato: "CONFIRMADO",
+    fin: input.fin ?? null,
+    ...input,
+  });
+
+  const calcular = (paros: ParoInput[], minutos = 1440) =>
+    calcularDisponibilidadMaquina(paros, minutos, desde, hastaEfectivo, maquinaCreatedAt);
+
+  const expectFiniteNumbers = (value: unknown) => {
+    if (typeof value === "number") {
+      expect(Number.isNaN(value)).toBe(false);
+      expect(Number.isFinite(value)).toBe(true);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(expectFiniteNumbers);
+      return;
+    }
+    if (value && typeof value === "object") {
+      Object.values(value).forEach(expectFiniteNumbers);
+    }
+  };
+
+  it("retorna 100% sin paros", () => {
+    const res = calcular([]);
     expect(res.valorPorcentaje).toBe(100);
+    expect(res.minutosParoEquivalentes).toBe(0);
     expect(res.estado).toBe("CALCULABLE");
   });
 
-  it("debe restar correctamente un paro total", () => {
-    const paros = [
-      {
-        id: 1,
-        maquinaId: 1,
-        tipo: "NO_PLANIFICADO",
-        impacto: "PARO_TOTAL",
-        porcentajeAfectacion: 100,
-        inicio: new Date("2026-08-01T10:00:00-06:00"),
-        fin: new Date("2026-08-01T12:00:00-06:00"), // 2 horas = 120 min
-        calidadDato: "CONFIRMADO",
-      },
-    ];
-
-    const res = calcularDisponibilidadMaquina(paros, 1440, desde, hastaEfectivo, maquinaCreatedAt);
-    // (1440 - 120) / 1440 * 100 = 91.6666...
+  it("resta un PARO_TOTAL", () => {
+    const res = calcular([
+      paro({ id: 1, inicio: new Date("2026-08-01T10:00:00-06:00"), fin: new Date("2026-08-01T12:00:00-06:00") }),
+    ]);
     expect(res.valorPorcentaje).toBeCloseTo(91.6666, 3);
     expect(res.minutosParoEquivalentes).toBe(120);
+  });
+
+  it("suma dos PARO_TOTAL no superpuestos", () => {
+    const res = calcular([
+      paro({ id: 1, inicio: new Date("2026-08-01T08:00:00-06:00"), fin: new Date("2026-08-01T09:00:00-06:00") }),
+      paro({ id: 2, inicio: new Date("2026-08-01T10:00:00-06:00"), fin: new Date("2026-08-01T12:00:00-06:00") }),
+    ]);
+    expect(res.minutosParoEquivalentes).toBe(180);
+    expect(res.valorPorcentaje).toBeCloseTo(87.5, 3);
+  });
+
+  it("fusiona dos PARO_TOTAL superpuestos", () => {
+    const res = calcular([
+      paro({ id: 1, inicio: new Date("2026-08-01T08:00:00-06:00"), fin: new Date("2026-08-01T10:00:00-06:00") }),
+      paro({ id: 2, inicio: new Date("2026-08-01T09:00:00-06:00"), fin: new Date("2026-08-01T11:00:00-06:00") }),
+    ]);
+    expect(res.estado).toBe("CALCULABLE");
+    expect(res.minutosParoEquivalentes).toBe(180);
+    expect(res.valorPorcentaje).toBeCloseTo(87.5, 3);
+    expect(res.advertencias).toContain("INTERVALOS_PARO_FUSIONADOS");
+  });
+
+  it("fusiona tres PARO_TOTAL encadenados", () => {
+    const res = calcular([
+      paro({ id: 1, inicio: new Date("2026-08-01T08:00:00-06:00"), fin: new Date("2026-08-01T10:00:00-06:00") }),
+      paro({ id: 2, inicio: new Date("2026-08-01T09:30:00-06:00"), fin: new Date("2026-08-01T11:00:00-06:00") }),
+      paro({ id: 3, inicio: new Date("2026-08-01T11:00:00-06:00"), fin: new Date("2026-08-01T12:00:00-06:00") }),
+    ]);
+    expect(res.minutosParoEquivalentes).toBe(240);
     expect(res.estado).toBe("CALCULABLE");
   });
 
-  it("debe restar proporcionalmente un paro parcial con porcentaje", () => {
-    const paros = [
-      {
-        id: 1,
-        maquinaId: 1,
-        tipo: "NO_PLANIFICADO",
-        impacto: "PARO_PARCIAL",
-        porcentajeAfectacion: 50, // 50% de afectación
-        inicio: new Date("2026-08-01T10:00:00-06:00"),
-        fin: new Date("2026-08-01T12:00:00-06:00"), // 120 min reales * 0.5 = 60 min equivalentes
-        calidadDato: "CONFIRMADO",
-      },
-    ];
+  it("computa PARO_TOTAL abierto hasta hastaEfectivo", () => {
+    const res = calcular([
+      paro({ id: 1, inicio: new Date("2026-08-01T22:00:00-06:00"), fin: null }),
+    ]);
+    expect(res.minutosParoEquivalentes).toBe(120);
+    expect(res.intervalosAbiertos).toBe(1);
+    expect(res.advertencias).toContain("PARO_ABIERTO");
+  });
 
-    const res = calcularDisponibilidadMaquina(paros, 1440, desde, hastaEfectivo, maquinaCreatedAt);
-    // (1440 - 60) / 1440 * 100 = 95.8333...
-    expect(res.valorPorcentaje).toBeCloseTo(95.8333, 3);
+  it("PARO_TOTAL domina un PARO_PARCIAL superpuesto", () => {
+    const res = calcular([
+      paro({ id: 1, inicio: new Date("2026-08-01T08:00:00-06:00"), fin: new Date("2026-08-01T10:00:00-06:00") }),
+      paro({
+        id: 2,
+        impacto: "PARO_PARCIAL",
+        porcentajeAfectacion: 50,
+        inicio: new Date("2026-08-01T09:00:00-06:00"),
+        fin: new Date("2026-08-01T11:00:00-06:00"),
+      }),
+    ]);
+    expect(res.minutosParoEquivalentes).toBe(150);
+    expect(res.estado).toBe("CALCULABLE");
+    expect(res.advertencias).toContain("INTERVALOS_PARO_FUSIONADOS");
+  });
+
+  it("resta PARO_PARCIAL con porcentaje", () => {
+    const res = calcular([
+      paro({
+        id: 1,
+        impacto: "PARO_PARCIAL",
+        porcentajeAfectacion: 50,
+        inicio: new Date("2026-08-01T10:00:00-06:00"),
+        fin: new Date("2026-08-01T12:00:00-06:00"),
+      }),
+    ]);
     expect(res.minutosParoEquivalentes).toBe(60);
-    expect(res.estado).toBe("CALCULABLE");
+    expect(res.valorPorcentaje).toBeCloseTo(95.8333, 3);
   });
 
-  it("debe retornar DATO_INCOMPLETO y valorPorcentaje null si hay paro parcial sin porcentaje", () => {
-    const paros = [
-      {
+  it("PARO_PARCIAL sin porcentaje deja DATO_INCOMPLETO", () => {
+    const res = calcular([
+      paro({
         id: 1,
-        maquinaId: 1,
-        tipo: "NO_PLANIFICADO",
         impacto: "PARO_PARCIAL",
-        porcentajeAfectacion: null, // Sin porcentaje
-        inicio: new Date("2026-08-01T10:00:00-06:00"),
-        fin: new Date("2026-08-01T12:00:00-06:00"), // 120 min
+        porcentajeAfectacion: null,
         calidadDato: "DATO_INCOMPLETO",
-      },
-    ];
-
-    const res = calcularDisponibilidadMaquina(paros, 1440, desde, hastaEfectivo, maquinaCreatedAt);
+        inicio: new Date("2026-08-01T10:00:00-06:00"),
+        fin: new Date("2026-08-01T12:00:00-06:00"),
+      }),
+    ]);
     expect(res.valorPorcentaje).toBeNull();
-    expect(res.minutosParoEquivalentes).toBe(0);
-    expect(res.minutosParcialesSinPorcentaje).toBe(120);
-    expect(res.disponibilidadConDatosConocidosPorcentaje).toBe(100); // Excluyendo el incompleto
     expect(res.estado).toBe("DATO_INCOMPLETO");
+    expect(res.minutosParcialesSinPorcentaje).toBe(120);
+    expect(res.advertencias).toContain("PARO_PARCIAL_SIN_PORCENTAJE");
   });
 
-  it("debe excluir paros planificados (preventivos) y reportarlos como auxiliar", () => {
-    const paros = [
-      {
+  it("dos parciales superpuestos con porcentajes distintos son ambiguos", () => {
+    const res = calcular([
+      paro({
         id: 1,
-        maquinaId: 1,
-        tipo: "PLANIFICADO",
-        impacto: "PARO_TOTAL",
-        porcentajeAfectacion: 100,
+        impacto: "PARO_PARCIAL",
+        porcentajeAfectacion: 40,
         inicio: new Date("2026-08-01T10:00:00-06:00"),
-        fin: new Date("2026-08-01T12:00:00-06:00"), // 120 min
-        calidadDato: "CONFIRMADO",
-      },
-    ];
+        fin: new Date("2026-08-01T12:00:00-06:00"),
+      }),
+      paro({
+        id: 2,
+        impacto: "PARO_PARCIAL",
+        porcentajeAfectacion: 60,
+        inicio: new Date("2026-08-01T11:00:00-06:00"),
+        fin: new Date("2026-08-01T13:00:00-06:00"),
+      }),
+    ]);
+    expect(res.valorPorcentaje).toBeNull();
+    expect(res.estado).toBe("NO_CALCULABLE");
+    expect(res.advertencias).toContain("PAROS_PARCIALES_SUPERPUESTOS_AMBIGUOS");
+  });
 
-    const res = calcularDisponibilidadMaquina(paros, 1440, desde, hastaEfectivo, maquinaCreatedAt);
-    expect(res.valorPorcentaje).toBe(100); // Excluido
+  it("duplicado del mismo fallaId se fusiona y no cuenta doble", () => {
+    const res = calcular([
+      paro({ id: 1, inicio: new Date("2026-08-01T08:00:00-06:00"), fin: new Date("2026-08-01T10:00:00-06:00") }),
+      paro({ id: 2, inicio: new Date("2026-08-01T08:00:00-06:00"), fin: new Date("2026-08-01T10:00:00-06:00") }),
+    ]);
+    expect(res.minutosParoEquivalentes).toBe(120);
+    expect(res.advertencias).toContain("INTERVALOS_PARO_FUSIONADOS");
+  });
+
+  it("intervalo inválido no inventa duración", () => {
+    const res = calcular([
+      paro({ id: 1, inicio: new Date("2026-08-01T12:00:00-06:00"), fin: new Date("2026-08-01T10:00:00-06:00") }),
+    ]);
+    expect(res.valorPorcentaje).toBeNull();
+    expect(res.estado).toBe("NO_CALCULABLE");
+    expect(res.minutosParoEquivalentes).toBe(0);
+    expect(res.advertencias).toContain("FECHA_PARO_INVALIDA");
+  });
+
+  it("recorta el paro al periodo solicitado", () => {
+    const res = calcular([
+      paro({ id: 1, inicio: new Date("2026-07-31T23:00:00-06:00"), fin: new Date("2026-08-01T01:00:00-06:00") }),
+      paro({ id: 2, inicio: new Date("2026-08-01T23:00:00-06:00"), fin: new Date("2026-08-02T01:00:00-06:00") }),
+    ]);
+    expect(res.minutosParoEquivalentes).toBe(120);
+  });
+
+  it("excluye planificados sin reducir disponibilidad", () => {
+    const res = calcular([
+      paro({
+        id: 1,
+        tipo: "PLANIFICADO",
+        inicio: new Date("2026-08-01T10:00:00-06:00"),
+        fin: new Date("2026-08-01T12:00:00-06:00"),
+      }),
+    ]);
+    expect(res.valorPorcentaje).toBe(100);
     expect(res.minutosParoPlanificado).toBe(120);
   });
 
-  it("debe reportar NO_CALCULABLE si existen intervalos superpuestos en la misma máquina", () => {
-    const paros = [
-      {
-        id: 1,
-        maquinaId: 1,
-        tipo: "NO_PLANIFICADO",
-        impacto: "PARO_TOTAL",
-        porcentajeAfectacion: 100,
-        inicio: new Date("2026-08-01T10:00:00-06:00"),
-        fin: new Date("2026-08-01T12:00:00-06:00"),
-        calidadDato: "CONFIRMADO",
-      },
-      {
-        id: 2,
-        maquinaId: 1,
-        tipo: "NO_PLANIFICADO",
-        impacto: "PARO_TOTAL",
-        porcentajeAfectacion: 100,
-        inicio: new Date("2026-08-01T11:00:00-06:00"), // Solapado
-        fin: new Date("2026-08-01T13:00:00-06:00"),
-        calidadDato: "CONFIRMADO",
-      },
-    ];
+  it("disponibilidad se calcula aunque la falla que originó el paro siga abierta", () => {
+    const res = calcular([
+      paro({ id: 1, inicio: new Date("2026-08-01T22:00:00-06:00"), fin: null }),
+    ]);
+    expect(res.estado).toBe("CALCULABLE");
+    expect(res.valorPorcentaje).toBeCloseTo(91.6666, 3);
+  });
 
-    const res = calcularDisponibilidadMaquina(paros, 1440, desde, hastaEfectivo, maquinaCreatedAt);
+  it("no genera NaN", () => {
+    const res = calcular([], 0);
+    expectFiniteNumbers(res);
     expect(res.valorPorcentaje).toBeNull();
-    expect(res.estado).toBe("NO_CALCULABLE");
-    expect(res.advertencias).toContain("INTERVALOS_PARO_SUPERPUESTOS");
+  });
+
+  it("no genera Infinity", () => {
+    const res = calcular([
+      paro({ id: 1, inicio: new Date("2026-08-01T10:00:00-06:00"), fin: new Date("2026-08-01T11:00:00-06:00") }),
+    ], 0);
+    expectFiniteNumbers(res);
+    expect(res.valorPorcentaje).toBeNull();
   });
 });

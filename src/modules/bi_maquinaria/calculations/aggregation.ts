@@ -6,7 +6,7 @@
  */
 
 import type { FrecuenciaResult } from "./frecuencia";
-import type { MTTRResult } from "./mttr";
+import type { MTTRResult, RestauracionCalendarioResult, TiempoRespuestaResult } from "./mttr";
 import type { MTBFResult } from "./mtbf";
 import type { DisponibilidadResult } from "./disponibilidad";
 import type { ConfiabilidadResult } from "./confiabilidad";
@@ -16,6 +16,8 @@ export interface MaquinaMetricsBase {
   minutosObservados: number;
   frecuencia: FrecuenciaResult;
   mttr: MTTRResult;
+  tiempoRespuesta: TiempoRespuestaResult;
+  restauracionCalendario: RestauracionCalendarioResult;
   mtbf: MTBFResult;
   disponibilidad: Omit<DisponibilidadResult, "minutosMaquinaObservados">;
   confiabilidad: ConfiabilidadResult;
@@ -24,9 +26,12 @@ export interface MaquinaMetricsBase {
 export interface GroupMetricsResult {
   frecuencia: FrecuenciaResult;
   mttr: MTTRResult;
+  tiempoRespuesta: TiempoRespuestaResult;
+  restauracionCalendario: RestauracionCalendarioResult;
   mtbf: MTBFResult;
   disponibilidad: Omit<DisponibilidadResult, "minutosMaquinaObservados"> & {
     minutosMaquinaObservados: number;
+    minutosProgramados: number;
   };
   confiabilidad: ConfiabilidadResult;
 }
@@ -44,7 +49,11 @@ export function agregarMetricasGrupo(
   let totalFallasAbiertas = 0;
   let totalFallasRestauradas = 0;
 
-  let totalSumaMinutosRestauracion = 0;
+  let totalSumaMinutosTrabajoTecnico = 0;
+  let totalSumaMinutosRespuesta = 0;
+  let totalFallasRespuestaUsadas = 0;
+  let totalSumaMinutosCalendarioRestauracion = 0;
+  let totalFallasCalendarioRestauracionUsadas = 0;
   let totalFallasRestauradasUsadas = 0;
   let totalFallasAbiertasExcluidas = 0;
   let totalFallasInvalidasExcluidas = 0;
@@ -58,6 +67,8 @@ export function agregarMetricasGrupo(
 
   const freqAdvertencias = new Set<string>();
   const mttrAdvertencias = new Set<string>();
+  const respuestaAdvertencias = new Set<string>();
+  const calendarioAdvertencias = new Set<string>();
   const mtbfAdvertencias = new Set<string>();
   const dispAdvertencias = new Set<string>();
 
@@ -84,11 +95,19 @@ export function agregarMetricasGrupo(
     m.frecuencia.advertencias.forEach(a => freqAdvertencias.add(a));
 
     // mttr
-    totalSumaMinutosRestauracion += m.mttr.sumaMinutosRestauracion;
+    totalSumaMinutosTrabajoTecnico += m.mttr.sumaMinutosTrabajoTecnico;
     totalFallasRestauradasUsadas += m.mttr.fallasRestauradasUsadas;
     totalFallasAbiertasExcluidas += m.mttr.fallasAbiertasExcluidas;
     totalFallasInvalidasExcluidas += m.mttr.fallasInvalidasExcluidas;
     m.mttr.advertencias.forEach(a => mttrAdvertencias.add(a));
+
+    totalSumaMinutosRespuesta += m.tiempoRespuesta.sumaMinutos;
+    totalFallasRespuestaUsadas += m.tiempoRespuesta.fallasUsadas;
+    m.tiempoRespuesta.advertencias.forEach(a => respuestaAdvertencias.add(a));
+
+    totalSumaMinutosCalendarioRestauracion += m.restauracionCalendario.sumaMinutos;
+    totalFallasCalendarioRestauracionUsadas += m.restauracionCalendario.fallasUsadas;
+    m.restauracionCalendario.advertencias.forEach(a => calendarioAdvertencias.add(a));
 
     // mtbf
     totalSumaMinutosIntervalosMTBF += m.mtbf.sumaMinutosIntervalos;
@@ -108,7 +127,7 @@ export function agregarMetricasGrupo(
   };
 
   // 2. MTTR final
-  let mttrValor: number | null = null;
+  let mttrValor: number | null = 0;
   let mttrEstado: MTTRResult["estado"] = "SIN_DATOS";
   if (totalFallasConfirmadas === 0) {
     mttrEstado = "SIN_DATOS";
@@ -116,12 +135,13 @@ export function agregarMetricasGrupo(
     mttrEstado = "MUESTRA_INSUFICIENTE";
     mttrAdvertencias.add("FALLAS_RESTAURADAS_INSUFICIENTES");
   } else {
-    mttrValor = totalSumaMinutosRestauracion / totalFallasRestauradasUsadas;
+    mttrValor = totalSumaMinutosTrabajoTecnico / totalFallasRestauradasUsadas;
     mttrEstado = "CALCULABLE";
   }
   const mttr: MTTRResult = {
     valorMinutos: mttrValor,
-    sumaMinutosRestauracion: totalSumaMinutosRestauracion,
+    sumaMinutosTrabajoTecnico: totalSumaMinutosTrabajoTecnico,
+    sumaMinutosRestauracion: totalSumaMinutosTrabajoTecnico,
     fallasRestauradasUsadas: totalFallasRestauradasUsadas,
     fallasAbiertasExcluidas: totalFallasAbiertasExcluidas,
     fallasInvalidasExcluidas: totalFallasInvalidasExcluidas,
@@ -129,27 +149,68 @@ export function agregarMetricasGrupo(
     advertencias: Array.from(mttrAdvertencias),
   };
 
-  // 3. MTBF final
-  let mtbfValorDias: number | null = null;
-  let mtbfValorMinutos: number | null = null;
-  let mtbfEstado: MTBFResult["estado"] = "SIN_DATOS";
-  if (totalFallasConfirmadas === 0) {
-    mtbfEstado = "SIN_DATOS";
-  } else if (totalIntervalosMTBFValidos === 0) {
-    mtbfEstado = "MUESTRA_INSUFICIENTE";
-    mtbfAdvertencias.add("INTERVALOS_MTBF_INSUFICIENTES");
-  } else {
-    mtbfValorMinutos = totalSumaMinutosIntervalosMTBF / totalIntervalosMTBFValidos;
-    mtbfValorDias = mtbfValorMinutos / 1440;
-    mtbfEstado = "CALCULABLE";
+  const buildPromedioMetric = (
+    suma: number,
+    usadas: number,
+    warnings: Set<string>,
+  ): TiempoRespuestaResult => {
+    let estado: TiempoRespuestaResult["estado"] = "SIN_DATOS";
+    let valorPromedioMinutos: number | null = null;
+    if (totalFallasConfirmadas === 0) {
+      estado = "SIN_DATOS";
+    } else if (usadas === 0) {
+      estado = "MUESTRA_INSUFICIENTE";
+    } else {
+      estado = "CALCULABLE";
+      valorPromedioMinutos = suma / usadas;
+    }
+    return {
+      valorPromedioMinutos,
+      sumaMinutos: suma,
+      fallasUsadas: usadas,
+      estado,
+      advertencias: Array.from(warnings),
+    };
+  };
+
+  const tiempoRespuesta = buildPromedioMetric(
+    totalSumaMinutosRespuesta,
+    totalFallasRespuestaUsadas,
+    respuestaAdvertencias,
+  );
+
+  const restauracionCalendario: RestauracionCalendarioResult = buildPromedioMetric(
+    totalSumaMinutosCalendarioRestauracion,
+    totalFallasCalendarioRestauracionUsadas,
+    calendarioAdvertencias,
+  );
+
+  // 3. MTBF final: modelo programado agregado, no promedio de MTBF por máquina.
+  const minutosOperativosProgramados = Math.max(
+    0,
+    totalMinutosObservados - totalMinutosParoEquivalentes,
+  );
+  const mtbfCensurado = totalFallasConfirmadas === 0;
+  const mtbfValorMinutos = totalMinutosObservados <= 0
+    ? null
+    : mtbfCensurado
+      ? minutosOperativosProgramados
+      : minutosOperativosProgramados / totalFallasConfirmadas;
+  const mtbfValorDias = mtbfValorMinutos === null ? null : mtbfValorMinutos / 540;
+  const mtbfEstado: MTBFResult["estado"] = totalMinutosObservados <= 0 ? "SIN_DATOS" : "CALCULABLE";
+  if (mtbfCensurado && totalMinutosObservados > 0) {
+    mtbfAdvertencias.add("MTBF_CENSURADO_SIN_FALLAS");
   }
   const mtbf: MTBFResult = {
     valorDias: mtbfValorDias,
     valorMinutos: mtbfValorMinutos,
-    sumaMinutosIntervalos: totalSumaMinutosIntervalosMTBF,
-    intervalosValidos: totalIntervalosMTBFValidos,
+    sumaMinutosIntervalos: minutosOperativosProgramados,
+    intervalosValidos: totalFallasConfirmadas,
     intervalosInvalidos: totalIntervalosMTBFInvalidos,
-    maquinasConIntervalos: maquinasMetricas.filter(m => m.mtbf.intervalosValidos > 0).length,
+    maquinasConIntervalos: maquinasMetricas.filter(m => m.minutosObservados > 0).length,
+    frecuenciaBase: totalFallasConfirmadas,
+    minutosOperativosProgramados,
+    censurado: mtbfCensurado,
     estado: mtbfEstado,
     advertencias: Array.from(mtbfAdvertencias),
   };
@@ -179,6 +240,7 @@ export function agregarMetricasGrupo(
     valorPorcentaje: dispValor,
     disponibilidadConDatosConocidosPorcentaje: dispConocidos,
     minutosMaquinaObservados: totalMinutosObservados,
+    minutosProgramados: totalMinutosObservados,
     minutosParoEquivalentes: totalMinutosParoEquivalentes,
     minutosParcialesSinPorcentaje: totalMinutosParcialesSinPorcentaje,
     minutosParoPlanificado: totalMinutosParoPlanificado,
@@ -188,11 +250,13 @@ export function agregarMetricasGrupo(
   };
 
   // 5. Confiabilidad final
-  const confiabilidad = calcularConfiabilidad(mtbf.valorDias, mtbf.estado);
+  const confiabilidad = calcularConfiabilidad(mtbf.valorDias, mtbf.estado, frecuencia.valor);
 
   return {
     frecuencia,
     mttr,
+    tiempoRespuesta,
+    restauracionCalendario,
     mtbf,
     disponibilidad,
     confiabilidad,

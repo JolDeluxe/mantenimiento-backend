@@ -1,5 +1,9 @@
 import { describe, it, expect } from "bun:test";
-import { validarYCalcularPeriodo, calcularMinutosObservadosMaquina } from "../calculations/periodos";
+import {
+  validarYCalcularPeriodo,
+  calcularMinutosObservadosMaquina,
+  calcularMinutosProgramadosMaquina,
+} from "../calculations/periodos";
 
 describe("Periodos de BI - Cálculos puros", () => {
   const ahora = new Date("2026-08-05T12:00:00-06:00");
@@ -83,5 +87,39 @@ describe("Periodos de BI - Cálculos puros", () => {
       hastaEfectivo,
     });
     expect(m3).toBe(0);
+  });
+
+  it("calcula minutos programados del 05/08/2026 como día completo aunque hastaEfectivo sea la hora actual", () => {
+    const minutos = calcularMinutosProgramadosMaquina({
+      maquinaCreatedAt: new Date("2026-07-28T14:21:42-06:00"),
+      desde: new Date("2026-08-05T00:00:00-06:00"),
+      hastaSolicitado: new Date("2026-08-06T00:00:00-06:00"),
+      ahora,
+    });
+
+    expect(minutos).toBe(540);
+  });
+
+  it("calcula minutos programados del 01/08/2026 al 05/08/2026 con domingo sin actividad en cero", () => {
+    const minutos = calcularMinutosProgramadosMaquina({
+      maquinaCreatedAt: new Date("2026-07-28T14:21:42-06:00"),
+      desde: new Date("2026-08-01T00:00:00-06:00"),
+      hastaSolicitado: new Date("2026-08-06T00:00:00-06:00"),
+      ahora,
+    });
+
+    expect(minutos).toBe(1980);
+  });
+
+  it("calcula domingo con actividad como 360 minutos", () => {
+    const minutos = calcularMinutosProgramadosMaquina({
+      maquinaCreatedAt: new Date("2026-07-28T14:21:42-06:00"),
+      desde: new Date("2026-08-02T00:00:00-06:00"),
+      hastaSolicitado: new Date("2026-08-03T00:00:00-06:00"),
+      ahora,
+      domingosConActividad: new Set(["2026-08-02"]),
+    });
+
+    expect(minutos).toBe(360);
   });
 });

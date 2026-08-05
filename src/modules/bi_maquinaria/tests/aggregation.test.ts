@@ -16,10 +16,25 @@ describe("Agregación de Grupo - Cálculos puros", () => {
         },
         mttr: {
           valorMinutos: 60, // 60 min
+          sumaMinutosTrabajoTecnico: 60,
           sumaMinutosRestauracion: 60,
           fallasRestauradasUsadas: 1,
           fallasAbiertasExcluidas: 0,
           fallasInvalidasExcluidas: 0,
+          estado: "CALCULABLE" as const,
+          advertencias: [],
+        },
+        tiempoRespuesta: {
+          valorPromedioMinutos: 10,
+          sumaMinutos: 10,
+          fallasUsadas: 1,
+          estado: "CALCULABLE" as const,
+          advertencias: [],
+        },
+        restauracionCalendario: {
+          valorPromedioMinutos: 120,
+          sumaMinutos: 120,
+          fallasUsadas: 1,
           estado: "CALCULABLE" as const,
           advertencias: [],
         },
@@ -30,12 +45,16 @@ describe("Agregación de Grupo - Cálculos puros", () => {
           intervalosValidos: 1,
           intervalosInvalidos: 0,
           maquinasConIntervalos: 1,
+          frecuenciaBase: 1,
+          minutosOperativosProgramados: 1320,
+          censurado: false,
           estado: "CALCULABLE" as const,
           advertencias: [],
         },
         disponibilidad: {
           valorPorcentaje: 91.666, // 120 min de paro
           disponibilidadConDatosConocidosPorcentaje: 91.666,
+          minutosProgramados: 1440,
           minutosParoEquivalentes: 120,
           minutosParcialesSinPorcentaje: 0,
           minutosParoPlanificado: 0,
@@ -66,10 +85,25 @@ describe("Agregación de Grupo - Cálculos puros", () => {
         },
         mttr: {
           valorMinutos: 120, // total 240 min para 2 fallas
+          sumaMinutosTrabajoTecnico: 240,
           sumaMinutosRestauracion: 240,
           fallasRestauradasUsadas: 2,
           fallasAbiertasExcluidas: 0,
           fallasInvalidasExcluidas: 0,
+          estado: "CALCULABLE" as const,
+          advertencias: [],
+        },
+        tiempoRespuesta: {
+          valorPromedioMinutos: 20,
+          sumaMinutos: 40,
+          fallasUsadas: 2,
+          estado: "CALCULABLE" as const,
+          advertencias: [],
+        },
+        restauracionCalendario: {
+          valorPromedioMinutos: 300,
+          sumaMinutos: 600,
+          fallasUsadas: 2,
           estado: "CALCULABLE" as const,
           advertencias: [],
         },
@@ -80,12 +114,16 @@ describe("Agregación de Grupo - Cálculos puros", () => {
           intervalosValidos: 1,
           intervalosInvalidos: 0,
           maquinasConIntervalos: 1,
+          frecuenciaBase: 2,
+          minutosOperativosProgramados: 1200,
+          censurado: false,
           estado: "CALCULABLE" as const,
           advertencias: [],
         },
         disponibilidad: {
           valorPorcentaje: 83.333, // 240 min de paro
           disponibilidadConDatosConocidosPorcentaje: 83.333,
+          minutosProgramados: 1440,
           minutosParoEquivalentes: 240,
           minutosParcialesSinPorcentaje: 0,
           minutosParoPlanificado: 0,
@@ -114,13 +152,17 @@ describe("Agregación de Grupo - Cálculos puros", () => {
     // MTTR Grupal: (60 + 240) / (1 + 2) = 300 / 3 = 100 min
     expect(res.mttr.valorMinutos).toBe(100);
     expect(res.mttr.sumaMinutosRestauracion).toBe(300);
+    expect(res.mttr.sumaMinutosTrabajoTecnico).toBe(300);
+    expect(res.tiempoRespuesta.valorPromedioMinutos).toBeCloseTo(50 / 3);
+    expect(res.restauracionCalendario.valorPromedioMinutos).toBe(240);
 
-    // MTBF Grupal: (2880 + 4320) / (1 + 1) = 7200 / 2 = 3600 min = 2.5 días
-    expect(res.mtbf.valorDias).toBe(2.5);
-    expect(res.mtbf.sumaMinutosIntervalos).toBe(7200);
+    // MTBF Grupal programado: ((1440 + 1440) - (120 + 240)) / 3 / 540.
+    expect(res.mtbf.valorDias).toBeCloseTo(2520 / 3 / 540);
+    expect(res.mtbf.sumaMinutosIntervalos).toBe(2520);
 
     // Disponibilidad Grupal: bases de dos máquinas con paro equivalente total de 120 + 240 min.
     expect(res.disponibilidad.valorPorcentaje).toBe(87.5);
     expect(res.disponibilidad.minutosMaquinaObservados).toBe(2880);
+    expect(res.disponibilidad.minutosProgramados).toBe(2880);
   });
 });

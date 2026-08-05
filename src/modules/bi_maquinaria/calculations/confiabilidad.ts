@@ -17,25 +17,39 @@ export interface ConfiabilidadResult {
 
 export function calcularConfiabilidad(
   mtbfDias: number | null,
-  mtbfEstado: string
+  mtbfEstado: string,
+  frecuencia?: number,
 ): ConfiabilidadResult {
+  const frecuenciaBase = frecuencia ?? (mtbfDias === null ? 0 : 1);
   const result: ConfiabilidadResult = {
-    r1DiaPorcentaje: null,
-    r7DiasPorcentaje: null,
-    r30DiasPorcentaje: null,
-    r90DiasPorcentaje: null,
+    r1DiaPorcentaje: 100,
+    r7DiasPorcentaje: 100,
+    r30DiasPorcentaje: 100,
+    r90DiasPorcentaje: 100,
     mtbfBaseDias: mtbfDias,
     modelo: "EXPONENCIAL",
-    estado: "SIN_DATOS",
+    estado: "CALCULABLE",
     advertencias: [],
   };
 
+  if (frecuenciaBase === 0) {
+    return result;
+  }
+
   if (mtbfDias === null) {
+    result.r1DiaPorcentaje = 0;
+    result.r7DiasPorcentaje = 0;
+    result.r30DiasPorcentaje = 0;
+    result.r90DiasPorcentaje = 0;
     result.estado = mtbfEstado as ConfiabilidadResult["estado"];
     return result;
   }
 
   if (mtbfDias <= 0) {
+    result.r1DiaPorcentaje = 0;
+    result.r7DiasPorcentaje = 0;
+    result.r30DiasPorcentaje = 0;
+    result.r90DiasPorcentaje = 0;
     result.estado = "NO_CALCULABLE";
     return result;
   }

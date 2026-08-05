@@ -6,7 +6,7 @@
  *   - Creación provisional de FallaMaquina al nacer una tarea correctiva.
  *   - Confirmación de la falla por el técnico (PENDIENTE_DE_DIAGNOSTICO → ABIERTA).
  *   - Descarte de la falla (PENDIENTE_DE_DIAGNOSTICO / ABIERTA → DESCARTADA).
- *   - Resolución técnica: graba fechaRestauracion + crea/cierra IntervaloParoMaquina.
+ *   - Resolución técnica: graba fechaRestauracion + crea o actualiza IntervaloParoMaquina.
  *   - La aprobación o rechazo del cliente NO modifica ningún campo de FallaMaquina.
  *
  * Reglas de negocio críticas:
@@ -222,7 +222,7 @@ export async function descartarFallaEnTransaccion(
  *
  * Acciones atómicas:
  *  1. Actualiza FallaMaquina → REHABILITADA + fechaRestauracion + impactoConfirmado.
- *  2. Si PARO_PARCIAL o PARO_TOTAL: crea IntervaloParoMaquina con inicio=inicioParo, fin=fechaRestauracion.
+ *  2. Si PARO_PARCIAL o PARO_TOTAL: crea o actualiza IntervaloParoMaquina con inicio=inicioParo, fin=fechaRestauracion.
  *  3. Si SIN_PARO: no crea ningún IntervaloParoMaquina.
  *
  * Validaciones:
@@ -312,7 +312,9 @@ export async function resolverFallaEnTransaccion(input: ResolverFallaInput) {
   });
 
   // ---------------------------------------------------------------------------
-  // 2. Crear IntervaloParoMaquina (solo si hubo paro físico)
+  // 2. Crear o actualizar IntervaloParoMaquina (solo si hubo paro físico).
+  // Si un flujo futuro crea un intervalo provisional para la misma falla, la
+  // resolución técnica debe confirmar ese mismo intervalo y no duplicarlo.
   // ---------------------------------------------------------------------------
   let intervalo = null;
   if (
@@ -339,20 +341,33 @@ export async function resolverFallaEnTransaccion(input: ResolverFallaInput) {
         ? CalidadDato.DATO_INCOMPLETO
         : CalidadDato.CONFIRMADO;
 
-    intervalo = await tx.intervaloParoMaquina.create({
-      data: {
-        maquinaId,
+    const intervaloExistente = await tx.intervaloParoMaquina.findFirst({
+      where: {
         fallaId,
-        tareaId:             falla.tareaId ?? null,
-        tipo:                TipoParo.NO_PLANIFICADO,
-        impacto:             impactoConfirmado,
-        porcentajeAfectacion: porcentajeFinal,
-        calidadDato,
-        inicio:              inicioParo,
-        fin:                 fechaRestauracion,
-        confirmadoPorId:     tecnicoId,
+        tipo: TipoParo.NO_PLANIFICADO,
       },
+      orderBy: { createdAt: "asc" },
     });
+
+    const data = {
+      maquinaId,
+      fallaId,
+      tareaId:             falla.tareaId ?? null,
+      tipo:                TipoParo.NO_PLANIFICADO,
+      impacto:             impactoConfirmado,
+      porcentajeAfectacion: porcentajeFinal,
+      calidadDato,
+      inicio:              inicioParo,
+      fin:                 fechaRestauracion,
+      confirmadoPorId:     tecnicoId,
+    };
+
+    intervalo = intervaloExistente
+      ? await tx.intervaloParoMaquina.update({
+          where: { id: intervaloExistente.id },
+          data,
+        })
+      : await tx.intervaloParoMaquina.create({ data });
   }
 
   return { falla: fallaActualizada, intervalo };

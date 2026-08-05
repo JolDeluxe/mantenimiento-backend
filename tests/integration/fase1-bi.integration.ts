@@ -166,6 +166,84 @@ describe("BI Maquinaria - Fase 1 Integración (mantenimiento_test)", () => {
     expect(falla).not.toBeNull();
     expect(falla?.estado).toBe(EstadoFalla.PENDIENTE_DE_DIAGNOSTICO);
     expect(falla?.calidadDato).toBe(CalidadDato.PROVISIONAL);
+
+    const paros = await prisma.intervaloParoMaquina.count({
+      where: { tareaId: tarea!.id },
+    });
+    expect(paros).toBe(0);
+  });
+
+  it("reporte provisional con paro y confirmación técnica producen un único intervalo físico", async () => {
+    const fechaParoCliente = new Date(Date.now() - 90 * 60 * 1000);
+    const fechaFallaConfirmada = new Date(Date.now() - 80 * 60 * 1000);
+    const inicioParo = new Date(Date.now() - 70 * 60 * 1000);
+
+    const resCreate = mockRes();
+    await createTicketCliente(
+      mockReq({ id: usuarioId, departamentoId: deptoId }),
+      resCreate,
+      {
+        titulo: "Falla con paro visible sin duplicar intervalo",
+        descripcion: "El cliente reporta paro visible",
+        categoria: "Mecanico",
+        planta: "Planta Test",
+        area: "General",
+        prioridad: "CRITICA" as any,
+        maquinaId,
+        paroProduccion: true,
+        fechaParoProduccion: fechaParoCliente,
+        incidenteId: "",
+      },
+    );
+    expect(resCreate.statusCode).toBe(201);
+
+    const tarea = await prisma.tarea.findFirstOrThrow({
+      where: { titulo: "Falla con paro visible sin duplicar intervalo" },
+    });
+    const fallaPrevia = await prisma.fallaMaquina.findUniqueOrThrow({
+      where: { tareaId: tarea.id },
+    });
+    expect(fallaPrevia.fechaFallaReportada.getTime()).toBe(fechaParoCliente.getTime());
+    expect(await prisma.intervaloParoMaquina.count({ where: { tareaId: tarea.id } })).toBe(0);
+
+    const resResolve = mockRes();
+    await ejecutarCambioEstado({
+      ticketId: tarea.id,
+      ticket: { ...tarea, responsables: [] } as any,
+      nuevoEstado: EstadoTarea.RESUELTO,
+      nota: "Resolución técnica",
+      imagenesFinales: [],
+      fechaVencimiento: undefined,
+      refacciones: undefined,
+      registroTiempoManual: undefined,
+      maquinaOperativaAlResolver: true,
+      fallaResolucion: {
+        descartar: false,
+        impactoConfirmado: ImpactoProduccionConfirmado.PARO_TOTAL,
+        fechaFallaConfirmada,
+        inicioParo,
+      },
+      user: { id: usuarioId, rol: "SUPER_ADMIN", departamentoId: deptoId } as any,
+      req: mockReq({ id: usuarioId }),
+      res: resResolve,
+      autoCloseInspeccion: false,
+      manejarIntervalos: false,
+    });
+    expect(resResolve.statusCode).toBe(200);
+
+    const fallaFinal = await prisma.fallaMaquina.findUniqueOrThrow({
+      where: { tareaId: tarea.id },
+    });
+    const paros = await prisma.intervaloParoMaquina.findMany({
+      where: { tareaId: tarea.id },
+    });
+    expect(paros).toHaveLength(1);
+    expect(paros[0]!.fallaId).toBe(fallaFinal.id);
+    expect(paros[0]!.maquinaId).toBe(maquinaId);
+    expect(paros[0]!.impacto).toBe(ImpactoProduccionConfirmado.PARO_TOTAL);
+    expect(paros[0]!.porcentajeAfectacion).toBe(100);
+    expect(paros[0]!.inicio.getTime()).toBe(inicioParo.getTime());
+    expect(paros[0]!.fin).not.toBeNull();
   });
 
   // 2. Creación provisional desde create_admin

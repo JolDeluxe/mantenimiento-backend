@@ -3,6 +3,7 @@ import { EstadoTarea, TipoEvento } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../utils/logger";
 import { notificarCambioEstatus, notificarAdvertenciaTurno, notificarAutoPausa } from "../notificaciones/services";
 import { getIO } from "../../utils/socket";
+import { getFinOficialTurno, getTipoJornadaTurno, type TipoJornadaTurno } from "./turno-config";
 
 const DIAS_PARA_CIERRE_AUTOMATICO = 2;
 
@@ -126,17 +127,39 @@ export const enviarAdvertenciasFinTurno = async () => {
   }
 };
 
-export const ejecutarAutoPausaFinTurno = async () => {
+interface AutoPausaFinTurnoOptions {
+  ahora?: Date;
+  tipoJornada?: TipoJornadaTurno;
+}
+
+export const calcularFinAutoPausaIntervalo = (inicio: Date, ahora: Date, finOficial: Date) => {
+  if (inicio.getTime() < finOficial.getTime()) {
+    return {
+      fin: finOficial,
+      advertencia: null as string | null,
+    };
+  }
+
+  return {
+    fin: ahora,
+    advertencia: "INTERVALO_INICIADO_FUERA_DE_TURNO",
+  };
+};
+
+export const ejecutarAutoPausaFinTurno = async (options: AutoPausaFinTurnoOptions = {}) => {
   try {
-    const ahora = new Date();
-    const horaCorte = new Date(ahora);
-    
-    // Si es sábado (getDay() === 6), el turno oficial termina a las 14:00.
-    // De lunes a viernes termina a las 17:30.
-    if (ahora.getDay() === 6) {
-      horaCorte.setHours(14, 0, 0, 0);
-    } else {
-      horaCorte.setHours(17, 30, 0, 0);
+    const ahora = options.ahora ?? new Date();
+    const tipoJornada = options.tipoJornada ?? getTipoJornadaTurno(ahora);
+
+    if (!tipoJornada) {
+      await registrarAccion("CRON_AUTOPAUSA_OMITIDA", null, "Auto-pausa omitida: no hay jornada ordinaria para la fecha local.");
+      return;
+    }
+
+    const horaCorte = getFinOficialTurno(ahora, tipoJornada);
+    if (!horaCorte) {
+      await registrarAccion("CRON_AUTOPAUSA_OMITIDA", null, "Auto-pausa omitida: no se pudo resolver fin oficial de turno.");
+      return;
     }
 
     const tareasActivas = await prisma.tarea.findMany({
@@ -161,40 +184,46 @@ export const ejecutarAutoPausaFinTurno = async () => {
     }
 
     const idsTecnicosNotificar = new Set<number>();
+    let pausadas = 0;
+    let sinIntervalo = 0;
+    let fueraDeTurno = 0;
 
     for (const tarea of tareasActivas) {
-      const intervaloAbierto = await prisma.intervaloTiempo.findFirst({
+      const intervalosAbiertos = await prisma.intervaloTiempo.findMany({
         where: { tareaId: tarea.id, fin: null },
-        orderBy: { inicio: 'desc' }
+        orderBy: { inicio: "asc" }
       });
 
-      if (!intervaloAbierto) continue;
+      const cierres = intervalosAbiertos.map((intervalo) => {
+        const { fin, advertencia } = calcularFinAutoPausaIntervalo(intervalo.inicio, ahora, horaCorte);
+        const duracionMin = Math.max(0, Math.floor((fin.getTime() - intervalo.inicio.getTime()) / 60000));
+        return { intervalo, fin, duracionMin, advertencia };
+      });
 
-      // REGLA DE RECORTE: Proteger horas extra, cortar tiempo fantasma
-      const inicioMs = intervaloAbierto.inicio.getTime();
-      const horaCorteMs = horaCorte.getTime();
-      
-      let finValidado: Date;
-      if (inicioMs < horaCorteMs) {
-        finValidado = horaCorte;
-      } else {
-        // Horas extra legítimas iniciadas después del corte oficial, pero dejadas activas.
-        // Recortar a inicio (duración 0) para evitar tiempo fantasma nocturno.
-        finValidado = new Date(inicioMs);
+      const duracionTotal = cierres.reduce((acc, cierre) => acc + cierre.duracionMin, 0);
+      const advertencias = new Set<string>();
+      cierres.forEach((cierre) => {
+        if (cierre.advertencia) advertencias.add(cierre.advertencia);
+      });
+      if (intervalosAbiertos.length === 0) {
+        advertencias.add("TAREA_EN_PROGRESO_SIN_INTERVALO");
+        sinIntervalo++;
       }
-      const duracionMin = Math.max(0, Math.floor((finValidado.getTime() - inicioMs) / 60000));
+      if (advertencias.has("INTERVALO_INICIADO_FUERA_DE_TURNO")) fueraDeTurno++;
 
       await prisma.$transaction(async (tx) => {
-        await tx.intervaloTiempo.update({
-          where: { id: intervaloAbierto.id },
-          data: { fin: finValidado, duracion: duracionMin }
-        });
+        for (const cierre of cierres) {
+          await tx.intervaloTiempo.update({
+            where: { id: cierre.intervalo.id },
+            data: { fin: cierre.fin, duracion: cierre.duracionMin }
+          });
+        }
 
         await tx.tarea.update({
           where: { id: tarea.id },
           data: { 
             estado: EstadoTarea.EN_PAUSA,
-            duracionReal: { increment: duracionMin }
+            ...(duracionTotal > 0 ? { duracionReal: { increment: duracionTotal } } : {})
           }
         });
 
@@ -205,17 +234,35 @@ export const ejecutarAutoPausaFinTurno = async () => {
             tipo: TipoEvento.CAMBIO_ESTADO,
             estadoAnterior: EstadoTarea.EN_PROGRESO,
             estadoNuevo: EstadoTarea.EN_PAUSA,
-            nota: "⏸️ [SISTEMA] Tarea pausada automáticamente por fin de turno."
+            nota: [
+              "[SISTEMA_FIN_TURNO] Tarea pausada automáticamente por fin de turno.",
+              `Corte oficial: ${horaCorte.toISOString()}.`,
+              `Ejecución: ${ahora.toISOString()}.`,
+              advertencias.size > 0 ? `Advertencias: ${Array.from(advertencias).join(", ")}.` : null,
+            ].filter(Boolean).join(" ")
           }
         });
       });
 
       tarea.responsables.forEach(r => idsTecnicosNotificar.add(r.id));
+      pausadas++;
+
+      if (advertencias.size > 0) {
+        await registrarAccion(
+          "CRON_AUTOPAUSA_ADVERTENCIA",
+          fallbackUserId,
+          `Ticket ${tarea.id}: ${Array.from(advertencias).join(", ")}`
+        );
+      }
     }
 
     if (idsTecnicosNotificar.size > 0) {
       await notificarAutoPausa(Array.from(idsTecnicosNotificar));
-      await registrarAccion("CRON_AUTOPAUSA", null, `Auto-Pausa aplicada a ${tareasActivas.length} tareas.`);
+      await registrarAccion(
+        "CRON_AUTOPAUSA",
+        null,
+        `Auto-pausa aplicada a ${pausadas} tareas. Sin intervalo: ${sinIntervalo}. Fuera de turno: ${fueraDeTurno}.`
+      );
       try {
         const io = getIO();
         io.to("global_updates").emit("datos_actualizados", { module: "tickets" });

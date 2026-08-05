@@ -53,11 +53,13 @@ export const metricsQuerySchema = z.object({
     estadoMaquina: z.string().trim().optional(),
     buscar: z.string().trim().optional(),
     incluirAreaNula: booleanWithDefaultFalse,
+    incluirHistoricos: booleanWithDefaultFalse,
     calidad: z.enum(["CONFIRMADOS", "CONFIRMADOS_E_INCOMPLETOS"]).default("CONFIRMADOS_E_INCOMPLETOS"),
     pagina: positiveIntWithDefault("pagina", 1),
     limite: positiveIntWithDefault("limite", 25, 100),
     ordenarPor: z.enum([
       "NOMBRE",
+      "RESTAURACION",
       "FRECUENCIA",
       "MTTR",
       "MTBF",
@@ -68,6 +70,7 @@ export const metricsQuerySchema = z.object({
       "CONFIABILIDAD_90D",
     ]).default("FRECUENCIA"),
     direccion: z.enum(["ASC", "DESC"]).default("DESC"),
+    _revision: z.string().optional(),
   }).strict().refine((data) => {
     try {
       return new Date(data.desde) < new Date(data.hasta);
@@ -90,6 +93,8 @@ export const machineDetailQuerySchema = z.object({
     hasta: isoDateWithOffset("hasta"),
     paginaEventos: positiveIntWithDefault("paginaEventos", 1),
     limiteEventos: positiveIntWithDefault("limiteEventos", 25, 100),
+    incluirHistoricos: booleanWithDefaultFalse,
+    _revision: z.string().optional(),
   }).strict().refine((data) => {
     try {
       return new Date(data.desde) < new Date(data.hasta);

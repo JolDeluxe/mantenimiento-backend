@@ -1,7 +1,10 @@
 import { prisma } from "../../../db";
 import type { Maquina } from "@prisma/client";
 import { BIQueryService } from "./bi_query_service";
-import { calcularMinutosObservadosMaquina } from "../calculations/periodos";
+import {
+  calcularDomingosConActividadPorMaquina,
+  calcularMinutosProgramadosMaquina,
+} from "../calculations/periodos";
 import { calcularFrecuencia } from "../calculations/frecuencia";
 import { calcularMTTR } from "../calculations/mttr";
 import { calcularMTBF } from "../calculations/mtbf";
@@ -31,19 +34,38 @@ export class BIMetricsService {
     desde: Date,
     hastaEfectivo: Date,
     calidad: "CONFIRMADOS" | "CONFIRMADOS_E_INCOMPLETOS",
-    ahora: Date
+    ahora: Date,
+    incluirHistoricos = false,
+    hastaSolicitado: Date = hastaEfectivo
   ): Promise<MaquinaCalculatedResult[]> {
     const maquinasIds = maquinas.map((m) => m.id);
 
     // 1. Obtener datos de base de datos de manera conjunta
-    const [fallasPeriodo, fallasAnteriores, paros] = await Promise.all([
-      BIQueryService.obtenerFallasConfirmadas(maquinasIds, { desde, hastaEfectivo, calidad }),
-      BIQueryService.obtenerFallasAnteriores(maquinasIds, desde, calidad),
+    const [fallasPeriodo, fallasAnteriores, paros, actividadesProgramacion] = await Promise.all([
+      BIQueryService.obtenerFallasConfirmadas(maquinasIds, { desde, hastaEfectivo, calidad, incluirHistoricos }),
+      BIQueryService.obtenerFallasAnteriores(maquinasIds, desde, calidad, incluirHistoricos),
       BIQueryService.obtenerIntervalosParo(maquinasIds, desde, hastaEfectivo),
+      BIQueryService.obtenerActividadesProgramacion(maquinasIds, desde, hastaSolicitado),
     ]);
+    const domingosConActividadPorMaquina = calcularDomingosConActividadPorMaquina(
+      actividadesProgramacion,
+      desde,
+      hastaSolicitado,
+      ahora,
+    );
 
     // Combinar fallas para cálculo de MTBF
     const todasFallasParaMTBF = [...fallasPeriodo, ...fallasAnteriores];
+    const tareaIdsFallasPeriodo = fallasPeriodo
+      .map((f) => f.tareaId)
+      .filter((id): id is number => id !== null);
+    const intervalosTecnicos = await BIQueryService.obtenerIntervalosTecnicos(tareaIdsFallasPeriodo);
+    const intervalosPorTareaId = new Map<number, typeof intervalosTecnicos>();
+    for (const intervalo of intervalosTecnicos) {
+      const list = intervalosPorTareaId.get(intervalo.tareaId) || [];
+      list.push(intervalo);
+      intervalosPorTareaId.set(intervalo.tareaId, list);
+    }
 
     // Cargar recuentos de calidad de datos para el reporte
     // Para contar provisionales/históricos/descartados excluidos, hacemos una consulta rápida por máquina
@@ -62,10 +84,12 @@ export class BIMetricsService {
     const resultados: MaquinaCalculatedResult[] = [];
 
     for (const maquina of maquinas) {
-      const minutosObservados = calcularMinutosObservadosMaquina({
+      const minutosProgramados = calcularMinutosProgramadosMaquina({
         maquinaCreatedAt: maquina.createdAt,
         desde,
-        hastaEfectivo,
+        hastaSolicitado,
+        ahora,
+        domingosConActividad: domingosConActividadPorMaquina.get(maquina.id),
       });
 
       // Filtrar fallas y paros de esta máquina
@@ -75,18 +99,25 @@ export class BIMetricsService {
 
       // Calcular indicadores individuales
       const frecuencia = calcularFrecuencia(fallasMaquinaPeriodo, desde, hastaEfectivo);
-      const mttr = calcularMTTR(fallasMaquinaPeriodo, desde, hastaEfectivo);
-      const mtbf = calcularMTBF(fallasMaquinaMTBF, [maquina.id], desde, hastaEfectivo);
-
+      const metricasTecnicas = calcularMTTR(fallasMaquinaPeriodo, intervalosPorTareaId, desde, hastaEfectivo);
+      const { mttr, tiempoRespuesta, restauracionCalendario } = metricasTecnicas;
       const disponibilidad = calcularDisponibilidadMaquina(
         parosMaquina,
-        minutosObservados,
+        minutosProgramados,
         desde,
         hastaEfectivo,
         maquina.createdAt
       );
+      const mtbf = calcularMTBF(
+        fallasMaquinaMTBF,
+        [maquina.id],
+        desde,
+        hastaEfectivo,
+        minutosProgramados,
+        disponibilidad.minutosParoEquivalentes
+      );
 
-      const confiabilidad = calcularConfiabilidad(mtbf.valorDias, mtbf.estado);
+      const confiabilidad = calcularConfiabilidad(mtbf.valorDias, mtbf.estado, frecuencia.valor);
 
       // Recuentos de calidad de datos
       let confirmados = 0;
@@ -94,6 +125,7 @@ export class BIMetricsService {
       let provisicionalesExcluidos = 0;
       let historicosExcluidos = 0;
       let invalidos = mttr.fallasInvalidasExcluidas + mtbf.intervalosInvalidos;
+      const tieneHistoricosEnPeriodo = fallasMaquinaPeriodo.some(f => f.calidadDato === "HISTORICO_ESTIMADO");
 
       const conteosMaquina = conteosExcluidosRaw.filter((c) => c.maquinaId === maquina.id);
       for (const c of conteosMaquina) {
@@ -109,7 +141,11 @@ export class BIMetricsService {
         if (c.calidadDato === "PROVISIONAL") {
           provisicionalesExcluidos += c._count.id;
         } else if (c.calidadDato === "HISTORICO_ESTIMADO") {
-          historicosExcluidos += c._count.id;
+          if (incluirHistoricos) {
+            historicosExcluidos = 0; // No se excluyen si el filtro está activo
+          } else {
+            historicosExcluidos += c._count.id;
+          }
         } else if (c.calidadDato === "CONFIRMADO") {
           confirmados += c._count.id;
         } else if (c.calidadDato === "DATO_INCOMPLETO") {
@@ -120,13 +156,8 @@ export class BIMetricsService {
       // Advertencias y estado general
       const advertenciasCalidad = new Set<string>();
       if (provisicionalesExcluidos > 0) advertenciasCalidad.add("DATOS_PROVISIONALES_EXCLUIDOS");
-      if (historicosExcluidos > 0) advertenciasCalidad.add("HISTORICO_ESTIMADO_EXCLUIDO");
+      if (!incluirHistoricos && historicosExcluidos > 0) advertenciasCalidad.add("HISTORICO_ESTIMADO_EXCLUIDO");
       if (maquina.createdAt.getTime() > desde.getTime()) advertenciasCalidad.add("MAQUINA_CREADA_DURANTE_PERIODO");
-
-      // Si hasta fue recortado
-      if (hastaEfectivo.getTime() < new Date(desde.getTime() + (hastaEfectivo.getTime() - desde.getTime())).getTime()) {
-        // En este contexto el recortado lo maneja el controlador, pero podemos agregarlo si aplica
-      }
 
       // Estado general de calidad
       let estadoGeneral = "SIN_DATOS";
@@ -136,15 +167,19 @@ export class BIMetricsService {
         estadoGeneral = "DATO_INCOMPLETO";
       } else if (provisicionalesExcluidos > 0 && confirmados === 0) {
         estadoGeneral = "PROVISIONAL";
+      } else if (incluirHistoricos && tieneHistoricosEnPeriodo) {
+        estadoGeneral = "HISTORICO_ESTIMADO";
       }
 
       resultados.push({
         maquina,
-        minutosObservados,
+        minutosObservados: minutosProgramados,
         frecuencia,
         mttr,
+        tiempoRespuesta,
+        restauracionCalendario,
         mtbf,
-        disponibilidad,
+        disponibilidad: disponibilidad as any,
         confiabilidad,
         calidadDatos: {
           confirmados,

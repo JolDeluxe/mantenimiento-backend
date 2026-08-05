@@ -5,9 +5,13 @@ export class BIFilterService {
    * Obtiene los catálogos de filtros disponibles basados en la población de máquinas.
    */
   static async obtenerFiltros() {
-    const [maquinasTotales, maquinasConAreaNula, maquinas] = await Promise.all([
+    const [maquinasTotales, maquinasConAreaNula, limitesMaquinas, maquinas] = await Promise.all([
       prisma.maquina.count(),
       prisma.maquina.count({ where: { area: null } }),
+      prisma.maquina.aggregate({
+        _min: { createdAt: true },
+        _max: { createdAt: true },
+      }),
       prisma.maquina.findMany({
         select: {
           proceso: true,
@@ -35,6 +39,8 @@ export class BIFilterService {
       metadata: {
         maquinasTotales,
         maquinasConAreaNula,
+        primerRegistroMaquina: limitesMaquinas._min.createdAt?.toISOString() ?? null,
+        ultimoRegistroMaquina: limitesMaquinas._max.createdAt?.toISOString() ?? null,
       },
       data: {
         procesos: Array.from(procesosSet).sort((a, b) => a.localeCompare(b)),
