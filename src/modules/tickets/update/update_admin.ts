@@ -10,6 +10,7 @@ import { processTicketImages } from "../create/helper_upload";
 import { deleteImageByUrl } from "../../../utils/cloudinary";
 import { notificarAsignacionTarea, notificarModificacionTarea } from "../../notificaciones/services";
 import type { UpdateTicketParams, UpdateTicketInput } from "../zod";
+import { recalcularEstadoMaquina } from "../../maquinas/helper";
 
 const ESTADOS_ACTIVOS_PARO: EstadoTarea[] = [
   EstadoTarea.PENDIENTE,
@@ -244,28 +245,8 @@ export const updateTicketAdmin = async (req: Request, res: Response) => {
         }
       }
 
-      if (finalMaquinaId && ESTADOS_ACTIVOS_PARO.includes(tareaActualizada.estado)) {
-        if (tareaActualizada.paroProduccion) {
-          await tx.maquina.update({
-            where: { id: finalMaquinaId },
-            data: { estado: "PARO_PRODUCCION" }
-          });
-        } else if (tareaActual.paroProduccion) {
-          const otrosParosActivos = await tx.tarea.count({
-            where: {
-              maquinaId: finalMaquinaId,
-              paroProduccion: true,
-              estado: { in: ESTADOS_ACTIVOS_PARO },
-              NOT: { id: ticketId }
-            }
-          });
-          if (otrosParosActivos === 0) {
-            await tx.maquina.update({
-              where: { id: finalMaquinaId },
-              data: { estado: "OPERATIVA" }
-            });
-          }
-        }
+      if (finalMaquinaId) {
+        await recalcularEstadoMaquina(finalMaquinaId, tx);
       }
 
       return tareaActualizada;

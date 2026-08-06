@@ -8,6 +8,7 @@ import { processTicketImages } from "./helper_upload";
 import { notificarAsignacionTarea } from "../../notificaciones/services";
 import { calcularMinutosProgramadosMX } from "../helper";
 import { crearFallaProvisional } from "../../bi_maquinaria/services/confirmacion_falla_service";
+import { recalcularEstadoMaquina } from "../../maquinas/helper";
 
 export const createTicketAdmin = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -170,10 +171,11 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
         });
       }
 
-      if (data.maquinaId && data.paroProduccion) {
-        await tx.maquina.update({
-          where: { id: data.maquinaId },
-          data: { estado: "PARO_PRODUCCION" }
+      if (data.maquinaId) {
+        await recalcularEstadoMaquina(data.maquinaId, tx, {
+          tareaId: nuevaTarea.id,
+          nuevoEstado: EstadoTarea.PENDIENTE,
+          paroProduccion: data.paroProduccion
         });
       }
 

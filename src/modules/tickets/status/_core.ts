@@ -15,6 +15,7 @@ import {
   confirmarFallaEnTransaccion,
   crearFallaProvisional,
 } from "../../bi_maquinaria/services/confirmacion_falla_service";
+import { recalcularEstadoMaquina } from "../../maquinas/helper";
 
 export type TicketConResponsables = Prisma.TareaGetPayload<{
   include: { responsables: true };
@@ -302,47 +303,63 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
         data: datosActualizacion
       });
 
-      // INTERLOCK: paro reportado → atención técnica
-      if (nuevoEstado === EstadoTarea.EN_PROGRESO && ticket.maquinaId && ticket.paroProduccion) {
-        await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "EN_REPARACION" } });
-      }
-
-      // INTERLOCK: rechazo de paro → vuelve a estado de paro reportado
-      if (nuevoEstado === EstadoTarea.RECHAZADO && ticket.maquinaId && ticket.paroProduccion) {
-        await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "PARO_PRODUCCION" } });
-      }
-
-      // INTERLOCK: resolución → fechaUltimoServicio + posible OPERATIVA
-      if (esEstadoResolucion && ticket.maquinaId) {
-        await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { fechaUltimoServicio: ahora } });
-
-        const otrosParosActivos = await tx.tarea.count({
-          where: {
-            maquinaId:      ticket.maquinaId,
-            paroProduccion: true,
-            estado: { in: [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA, EstadoTarea.RECHAZADO] },
-            NOT: { id: ticketId }
-          }
+      // ─── CANCELACIÓN Y DESCARTE DE FALLA ───
+      if (nuevoEstado === EstadoTarea.CANCELADA) {
+        const finVal = esCierreManualAtrasado ? fechaCierreReal : ahora;
+        const intervaloAbierto = await tx.intervaloTiempo.findFirst({
+          where: { tareaId: ticketId, fin: null }
         });
-
-        const puedeMarcarOperativa =
-          !ticket.paroProduccion ||
-          nuevoEstado === EstadoTarea.CERRADO ||
-          maquinaOperativaAlResolver === true;
-
-        if (otrosParosActivos === 0 && puedeMarcarOperativa) {
-          await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "OPERATIVA" } });
-        } else if (ticket.paroProduccion && nuevoEstado === EstadoTarea.RESUELTO && maquinaOperativaAlResolver !== true) {
-          await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "PARO_PRODUCCION" } });
+        if (intervaloAbierto) {
+          const duracionMin = Math.max(0, Math.floor((finVal.getTime() - intervaloAbierto.inicio.getTime()) / 60000));
+          await tx.intervaloTiempo.update({
+            where: { id: intervaloAbierto.id },
+            data: { fin: finVal, duracion: duracionMin }
+          });
+          await tx.tarea.update({
+            where: { id: ticketId },
+            data: { duracionReal: { increment: duracionMin } }
+          });
         }
 
-        // ─── BI MAQUINARIA FASE 1: Resolución de Falla ──────────────────────────
-        if (fallaResolucion) {
-          let fallaVinculada: FallaMaquina | null = await tx.fallaMaquina.findUnique({
+        const paroAbierto = await tx.intervaloParoMaquina.findFirst({
+          where: { tareaId: ticketId, fin: null }
+        });
+        if (paroAbierto) {
+          await tx.intervaloParoMaquina.update({
+            where: { id: paroAbierto.id },
+            data: { fin: ahora }
+          });
+        }
+
+        const fallaVinculada = await tx.fallaMaquina.findUnique({
+          where: { tareaId: ticketId }
+        });
+        if (fallaVinculada && (fallaVinculada.estado === "PENDIENTE_DE_DIAGNOSTICO" || fallaVinculada.estado === "ABIERTA")) {
+          await tx.fallaMaquina.update({
+            where: { id: fallaVinculada.id },
+            data: {
+              estado: "DESCARTADA",
+              contabilizaComoFalla: false
+            }
+          });
+        }
+      }
+
+      // ─── INTERLOCKS DE MÁQUINA ───
+      if (ticket.maquinaId) {
+        if (esEstadoResolucion) {
+          await tx.maquina.update({
+            where: { id: ticket.maquinaId },
+            data: { fechaUltimoServicio: ahora }
+          });
+        }
+
+        // Resolución de falla si aplica
+        if (esEstadoResolucion && fallaResolucion) {
+          let fallaVinculada = await tx.fallaMaquina.findUnique({
             where: { tareaId: ticketId }
           });
 
-          // Si es un ticket legacy que no tiene FallaMaquina, la creamos al vuelo.
           if (!fallaVinculada) {
             fallaVinculada = await crearFallaProvisional(tx, {
               tareaId: ticketId,
@@ -351,35 +368,39 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
             });
           }
 
-          // Validación estricta del tipo no nulo
-          if (!fallaVinculada) {
-            throw new Error(`No se pudo cargar ni crear la falla de maquinaria para la tarea ${ticketId}`);
-          }
+          if (fallaVinculada) {
+            if (fallaResolucion.descartar === true) {
+              throw new Error("El cierre técnico de correctivos de maquinaria no permite descartar el reporte.");
+            } else if (fallaResolucion.impactoConfirmado) {
+              if (fallaVinculada.estado === "PENDIENTE_DE_DIAGNOSTICO" || fallaVinculada.estado === "ABIERTA") {
+                await confirmarFallaEnTransaccion(tx, {
+                  fallaId: fallaVinculada.id,
+                  tecnicoId: user.id,
+                  fechaFallaConfirmada: new Date(fallaResolucion.fechaFallaConfirmada!),
+                });
+              }
 
-          if (fallaResolucion.descartar === true) {
-            throw new Error("El cierre técnico de correctivos de maquinaria no permite descartar el reporte.");
-          } else if (fallaResolucion.impactoConfirmado) {
-            // Si la falla sigue en PENDIENTE_DE_DIAGNOSTICO o ABIERTA, le confirmamos la fecha definitiva
-            if (fallaVinculada.estado === "PENDIENTE_DE_DIAGNOSTICO" || fallaVinculada.estado === "ABIERTA") {
-              await confirmarFallaEnTransaccion(tx, {
-                fallaId: fallaVinculada.id,
-                tecnicoId: user.id,
-                fechaFallaConfirmada: new Date(fallaResolucion.fechaFallaConfirmada!),
+              await resolverFallaEnTransaccion({
+                tx,
+                fallaId:              fallaVinculada.id,
+                maquinaId:            ticket.maquinaId,
+                tecnicoId:            user.id,
+                fechaRestauracion:    esCierreManualAtrasado ? fechaCierreReal : ahora,
+                impactoConfirmado:    fallaResolucion.impactoConfirmado,
+                inicioParo:           fallaResolucion.inicioParo,
+                porcentajeAfectacion: fallaResolucion.porcentajeAfectacion,
               });
             }
-
-            await resolverFallaEnTransaccion({
-              tx,
-              fallaId:              fallaVinculada.id,
-              maquinaId:            ticket.maquinaId,
-              tecnicoId:            user.id,
-              fechaRestauracion:    esCierreManualAtrasado ? fechaCierreReal : ahora,
-              impactoConfirmado:    fallaResolucion.impactoConfirmado,
-              inicioParo:           fallaResolucion.inicioParo,
-              porcentajeAfectacion: fallaResolucion.porcentajeAfectacion,
-            });
           }
         }
+
+        // Recalcular estado final de la máquina de forma centralizada
+        await recalcularEstadoMaquina(ticket.maquinaId, tx, {
+          tareaId: ticketId,
+          nuevoEstado,
+          paroProduccion: ticket.paroProduccion,
+          maquinaOperativaAlResolver
+        });
       }
 
       // CANCELADA → limpiar imágenes

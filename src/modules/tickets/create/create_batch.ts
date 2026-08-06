@@ -4,6 +4,7 @@ import { EstadoTarea, TipoEvento, ClasificacionTarea } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { calcularMinutosProgramadosMX } from "../helper";
 import { crearFallaProvisional } from "../../bi_maquinaria/services/confirmacion_falla_service";
+import { recalcularEstadoMaquina } from "../../maquinas/helper";
 
 export const createBatchTickets = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -109,10 +110,11 @@ export const createBatchTickets = async (req: Request, res: Response) => {
           });
         }
 
-        if (tarea.maquinaId && tarea.paroProduccion) {
-          await tx.maquina.update({
-            where: { id: tarea.maquinaId },
-            data: { estado: "PARO_PRODUCCION" }
+        if (tarea.maquinaId) {
+          await recalcularEstadoMaquina(tarea.maquinaId, tx, {
+            tareaId: nuevoTicket.id,
+            nuevoEstado: EstadoTarea.PENDIENTE,
+            paroProduccion: tarea.paroProduccion
           });
         }
 

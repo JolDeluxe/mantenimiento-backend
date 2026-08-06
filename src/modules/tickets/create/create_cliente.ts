@@ -6,6 +6,7 @@ import { processTicketImages } from "./helper_upload";
 import { notificarNuevoReporte } from "../../notificaciones/services";
 import type { CreateTicketClientResolvedDTO } from "../types";
 import { crearFallaProvisional } from "../../bi_maquinaria/services/confirmacion_falla_service";
+import { recalcularEstadoMaquina } from "../../maquinas/helper";
 
 export const createTicketCliente = async (
   req: Request,
@@ -81,10 +82,11 @@ export const createTicketCliente = async (
         });
       }
 
-      if (resolvedDTO.maquinaId && resolvedDTO.paroProduccion) {
-        await tx.maquina.update({
-          where: { id: resolvedDTO.maquinaId },
-          data: { estado: "PARO_PRODUCCION" }
+      if (resolvedDTO.maquinaId) {
+        await recalcularEstadoMaquina(resolvedDTO.maquinaId, tx, {
+          tareaId: nuevaTarea.id,
+          nuevoEstado: EstadoTarea.PENDIENTE,
+          paroProduccion: resolvedDTO.paroProduccion
         });
       }
 
