@@ -18,6 +18,8 @@ export interface AggregatedRow {
   area: string | null;
   cantidadMaquinas: number;
   metricas: GroupMetricsResult;
+  /** Posición global (1-based) calculada sobre la población completa antes de paginar. */
+  ranking: number;
   calidadDatos: {
     confirmados: number;
     incompletos: number;
@@ -111,6 +113,7 @@ export class BIAggregationService {
         area: agrupacion === "AREA" ? (key === "null_area" ? null : key) : null,
         cantidadMaquinas: maquinasGrupo.length,
         metricas: aggregatedMetrics,
+        ranking: 0, // se asigna después del ordenamiento
         calidadDatos: {
           confirmados,
           incompletos,
@@ -125,44 +128,97 @@ export class BIAggregationService {
       aggregatedRows.push(row);
     }
 
-    // Ordenamiento con nulls al final
+    // ─── Ordenamiento con nulls al final ───────────────────────────────────
     aggregatedRows.sort((a, b) => {
       const valA = getSortValue(a, ordenarPor);
       const valB = getSortValue(b, ordenarPor);
 
-      if (valA === null && valB === null) return 0;
-      if (valA === null) return 1; // null al final
-      if (valB === null) return -1; // null al final
+      // nulls siempre al final
+      if (valA === null && valB === null) {
+        return tiebreaker(a, b);
+      }
+      if (valA === null) return 1;
+      if (valB === null) return -1;
 
       if (typeof valA === "string" && typeof valB === "string") {
-        return direccion === "ASC"
-          ? valA.localeCompare(valB)
-          : valB.localeCompare(valA);
+        const cmp = valA.localeCompare(valB);
+        return direccion === "ASC" ? cmp : -cmp;
       }
 
       // Comparación numérica
-      return direccion === "ASC"
-        ? (valA as number) - (valB as number)
-        : (valB as number) - (valA as number);
+      const numCmp = (valA as number) - (valB as number);
+      const directedCmp = direccion === "ASC" ? numCmp : -numCmp;
+
+      // Desempate cuando los valores principales son iguales
+      if (directedCmp === 0) {
+        return tiebreaker(a, b);
+      }
+      return directedCmp;
+    });
+
+    // ─── Asignar ranking global (1-based, antes de paginar) ───────────────
+    aggregatedRows.forEach((row, i) => {
+      row.ranking = i + 1;
     });
 
     return aggregatedRows;
   }
 }
 
+/**
+ * Desempate secundario cuando el criterio principal produce empate.
+ *
+ * Orden:
+ *   1. minutosParoEquivalentes DESC
+ *   2. frecuencia DESC
+ *   3. MTTR DESC
+ *   4. tiempoReparacion (sumaMinutosTrabajoTecnico) DESC
+ *   5. código ASC
+ */
+function tiebreaker(a: AggregatedRow, b: AggregatedRow): number {
+  // 1. minutosParoEquivalentes DESC
+  const paroA = a.metricas.disponibilidad.minutosParoEquivalentes;
+  const paroB = b.metricas.disponibilidad.minutosParoEquivalentes;
+  if (paroB !== paroA) return paroB - paroA;
+
+  // 2. frecuencia DESC
+  const freqA = a.metricas.frecuencia.valor;
+  const freqB = b.metricas.frecuencia.valor;
+  if (freqB !== freqA) return freqB - freqA;
+
+  // 3. MTTR DESC
+  const mttrA = a.metricas.mttr.valorMinutos ?? 0;
+  const mttrB = b.metricas.mttr.valorMinutos ?? 0;
+  if (mttrB !== mttrA) return mttrB - mttrA;
+
+  // 4. tiempoReparacion DESC
+  const trA = a.metricas.mttr.sumaMinutosTrabajoTecnico;
+  const trB = b.metricas.mttr.sumaMinutosTrabajoTecnico;
+  if (trB !== trA) return trB - trA;
+
+  // 5. código ASC
+  const codigoA = getIdentifierLabel(a);
+  const codigoB = getIdentifierLabel(b);
+  return codigoA.localeCompare(codigoB);
+}
+
+function getIdentifierLabel(row: AggregatedRow): string {
+  if (row.agrupacion === "EQUIPO" && row.equipo) {
+    return row.equipo.codigo;
+  }
+  if (row.agrupacion === "PROCESO") return row.proceso ?? "";
+  return row.area ?? "";
+}
+
 function getSortValue(row: AggregatedRow, key: string): string | number | null {
   switch (key) {
     case "NOMBRE":
-      if (row.agrupacion === "EQUIPO" && row.equipo) {
-        return row.equipo.codigo + " - " + row.equipo.nombre;
-      }
-      if (row.agrupacion === "PROCESO") {
-        return row.proceso;
-      }
-      return row.area;
+    case "CODIGO":
+      return getIdentifierLabel(row);
     case "FRECUENCIA":
       return row.metricas.frecuencia.valor;
     case "RESTAURACION":
+    case "TIEMPO_REPARACION":
       return row.metricas.mttr.sumaMinutosTrabajoTecnico;
     case "MTTR":
       return row.metricas.mttr.valorMinutos;

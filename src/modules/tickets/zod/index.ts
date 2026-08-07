@@ -251,6 +251,12 @@ export const changeStatusSchema = z.object({
           (val) => (val === "" || val === null || val === "null" ? null : val),
           z.number().int().min(1).max(99).nullable().optional()
         ),
+        /**
+         * Cuando true, el backend derivará inicio/fin del paro productivo
+         * a partir de los IntervaloTiempo de la tarea.
+         * Solo válido cuando impactoConfirmado = PARO_TOTAL y paroProduccion original = false.
+         */
+        usarTiempoTecnicoComoParo: z.preprocess(preprocessBoolean, z.boolean().optional()),
       }).optional()
     ),
   }).strict()

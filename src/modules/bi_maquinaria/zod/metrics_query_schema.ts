@@ -58,18 +58,20 @@ export const metricsQuerySchema = z.object({
     pagina: positiveIntWithDefault("pagina", 1),
     limite: positiveIntWithDefault("limite", 25, 100),
     ordenarPor: z.enum([
+      "DISPONIBILIDAD",
       "NOMBRE",
+      "CODIGO",
+      "TIEMPO_REPARACION",
       "RESTAURACION",
       "FRECUENCIA",
       "MTTR",
       "MTBF",
-      "DISPONIBILIDAD",
       "CONFIABILIDAD_1D",
       "CONFIABILIDAD_7D",
       "CONFIABILIDAD_30D",
       "CONFIABILIDAD_90D",
-    ]).default("FRECUENCIA"),
-    direccion: z.enum(["ASC", "DESC"]).default("DESC"),
+    ]).default("DISPONIBILIDAD"),
+    direccion: z.enum(["ASC", "DESC"]).default("ASC"),
     _revision: z.string().optional(),
   }).strict().refine((data) => {
     try {

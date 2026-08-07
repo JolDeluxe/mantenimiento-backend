@@ -45,6 +45,12 @@ export interface CambioEstadoOptions {
     fechaFallaConfirmada?: Date;
     inicioParo?: Date;
     porcentajeAfectacion?: number | null;
+    /**
+     * Cuando true, el sistema calcula el intervalo de paro (inicio/fin) a partir
+     * de los IntervaloTiempo de la tarea, en lugar de recibir inicioParo manual.
+     * Solo válido con impactoConfirmado = PARO_TOTAL y ticket.paroProduccion = false.
+     */
+    usarTiempoTecnicoComoParo?: boolean;
   };
 }
 
@@ -175,15 +181,25 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
         }
 
         const imp = fallaResolucion.impactoConfirmado;
+        const usarTiempoTecnico = fallaResolucion.usarTiempoTecnicoComoParo === true;
+
         if (imp === "PARO_PARCIAL" || imp === "PARO_TOTAL") {
-          if (!fallaResolucion.inicioParo) {
+          // Si usa tiempo técnico, no se exige inicioParo manual
+          if (!usarTiempoTecnico && !fallaResolucion.inicioParo) {
             return res.status(400).json({
               error: `El inicio del paro es obligatorio para el impacto ${imp}.`
             });
           }
-          if (new Date(fallaResolucion.inicioParo) >= fechaLimiteParo) {
+          if (!usarTiempoTecnico && new Date(fallaResolucion.inicioParo!) >= fechaLimiteParo) {
             return res.status(400).json({
               error: "El inicio del paro debe ser anterior a la restauración de la máquina."
+            });
+          }
+          // usarTiempoTecnicoComoParo solo aplica a PARO_TOTAL (flujo sin-paro-reportado).
+          // No debe combinarse con PARO_PARCIAL para evitar imprecisión de porcentaje.
+          if (usarTiempoTecnico && imp === "PARO_PARCIAL") {
+            return res.status(400).json({
+              error: "El modo de tiempo técnico automático no es compatible con PARO_PARCIAL."
             });
           }
         }
@@ -380,14 +396,43 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
                 });
               }
 
+              // ── Calcular inicioParo desde IntervaloTiempo si se solicitó ──────────
+              let inicioParo = fallaResolucion.inicioParo;
+              let fechaRestauracionEfectiva = esCierreManualAtrasado ? fechaCierreReal : ahora;
+
+              if (fallaResolucion.usarTiempoTecnicoComoParo === true) {
+                // Agregar todos los IntervaloTiempo con fin no nulo de esta tarea
+                const intervalos = await tx.intervaloTiempo.findMany({
+                  where: { tareaId: ticketId, fin: { not: null } },
+                  orderBy: { inicio: "asc" },
+                  select: { inicio: true, fin: true },
+                });
+
+                if (intervalos.length > 0) {
+                  // El paro comienza cuando el técnico comenzó a trabajar (primer intervalo)
+                  // y termina cuando finalizó (último fin de intervalo).
+                  // Esto refleja exactamente el tiempo técnico real registrado por el sistema.
+                  const primerInicio = intervalos[0]!.inicio;
+                  const ultimoFin = intervalos[intervalos.length - 1]!.fin as Date;
+                  inicioParo = primerInicio;
+                  fechaRestauracionEfectiva = ultimoFin;
+                } else {
+                  // Sin intervalos registrados: usar createdAt → ahora como fallback
+                  // (caso extremamente raro; el técnico debió haber iniciado la tarea).
+                  inicioParo = ticket.createdAt;
+                  // fechaRestauracionEfectiva ya es ahora
+                }
+              }
+              // ──────────────────────────────────────────────────────────────────────
+
               await resolverFallaEnTransaccion({
                 tx,
                 fallaId:              fallaVinculada.id,
                 maquinaId:            ticket.maquinaId,
                 tecnicoId:            user.id,
-                fechaRestauracion:    esCierreManualAtrasado ? fechaCierreReal : ahora,
+                fechaRestauracion:    fechaRestauracionEfectiva,
                 impactoConfirmado:    fallaResolucion.impactoConfirmado,
-                inicioParo:           fallaResolucion.inicioParo,
+                inicioParo,
                 porcentajeAfectacion: fallaResolucion.porcentajeAfectacion,
               });
             }
