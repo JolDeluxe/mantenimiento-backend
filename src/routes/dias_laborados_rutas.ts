@@ -7,7 +7,7 @@ import { DiasLaboradosController } from "../modules/dias_laborados/controllers/d
 const router = Router();
 
 router.use(authenticate);
-router.use(authorize([Rol.SUPER_ADMIN]));
+router.use(authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO]));
 
 router.get("/dias-laborados", DiasLaboradosController.obtener);
 
