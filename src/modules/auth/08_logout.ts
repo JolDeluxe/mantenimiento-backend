@@ -2,11 +2,32 @@ import { type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../db";
 import { registrarAccion } from "../../utils/logger";
-import type { RefreshTokenInput } from "./zod";
+import type { LogoutInput } from "./zod";
+
+type PushSubscriptionDeleteRepo = {
+  pushSubscription: {
+    deleteMany: (args: { where: { usuarioId: number; endpoint: string } }) => Promise<unknown>;
+  };
+};
+
+export const desasociarEndpointPushUsuario = async (
+  usuarioId: number | undefined,
+  endpoint: string | undefined,
+  db: PushSubscriptionDeleteRepo = prisma
+) => {
+  if (!usuarioId || !endpoint) return null;
+
+  return db.pushSubscription.deleteMany({
+    where: {
+      usuarioId,
+      endpoint,
+    },
+  });
+};
 
 export const logout = async (req: Request, res: Response) => {
   try {
-    const { refreshToken } = req.body as RefreshTokenInput;
+    const { refreshToken, endpoint } = req.body as LogoutInput;
     const usuarioId = req.user?.id;
 
     // Buscar los tokens activos del usuario
@@ -33,6 +54,8 @@ export const logout = async (req: Request, res: Response) => {
         data: { revoked: true }
       });
     }
+
+    await desasociarEndpointPushUsuario(usuarioId, endpoint);
 
     // Registrar la salida en la bitácora
     if (usuarioId) {

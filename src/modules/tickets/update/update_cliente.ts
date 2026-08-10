@@ -9,7 +9,7 @@ import { EstadoTarea, TipoEvento } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "../create/helper_upload";
 import { deleteImageByUrl } from "../../../utils/cloudinary";
-import { notificarModificacionTarea } from "../../notificaciones/services";
+import { ejecutarNotificacionEnSegundoPlano, notificarModificacionTarea } from "../../notificaciones/services";
 import type { UpdateTicketParams, UpdateTicketInput } from "../zod";
 import { recalcularEstadoMaquina } from "../../maquinas/helper";
 
@@ -149,7 +149,10 @@ export const updateTicketCliente = async (req: Request, res: Response) => {
       return tareaActualizada;
     });
 
-    void notificarModificacionTarea(result, user.id);
+    ejecutarNotificacionEnSegundoPlano(
+      "NOTIF_ASYNC_MODIFICACION_CLIENTE",
+      notificarModificacionTarea(result, user.id)
+    );
 
     await registrarAccion("UPDATE_TAREA", user.id, `Actualización Tarea ID: ${ticketId}. Usuario: ${user.email}`);
     return res.json({ message: "Actualización correcta", data: result });

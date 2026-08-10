@@ -7,7 +7,7 @@ import { prisma } from "../../../db";
 import { EstadoTarea, TipoEvento, Rol, Prisma } from "@prisma/client";
 import type { FallaMaquina } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
-import { notificarCambioEstatus } from "../../notificaciones/services";
+import { ejecutarNotificacionEnSegundoPlano, notificarCambioEstatus } from "../../notificaciones/services";
 import { deleteImageByUrl } from "../../../utils/cloudinary";
 import { getIO } from "../../../utils/socket";
 import {
@@ -499,7 +499,10 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
     });
 
     // ─── Post-transacción ──────────────────────────────────────────────────────
-    void notificarCambioEstatus(ticket, nuevoEstado, user.id, user.rol);
+    ejecutarNotificacionEnSegundoPlano(
+      "NOTIF_ASYNC_CAMBIO_ESTATUS",
+      notificarCambioEstatus(ticket, nuevoEstado, user.id, user.rol)
+    );
 
     await registrarAccion(
       "CAMBIO_ESTATUS",

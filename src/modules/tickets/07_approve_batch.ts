@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { EstadoTarea, TipoEvento } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../utils/logger";
-import { notificarCambioEstatus } from "../notificaciones/services";
+import { ejecutarNotificacionEnSegundoPlano, notificarCambioEstatus } from "../notificaciones/services";
 import { getIO } from "../../utils/socket";
 import { recalcularEstadoMaquina } from "../maquinas/helper";
 
@@ -67,7 +67,10 @@ export const approveTicketsBatch = async (req: Request, res: Response) => {
         }
 
         // Notificar cambio de estatus de forma asíncrona
-        void notificarCambioEstatus(ticket, EstadoTarea.CERRADO, user.id, user.rol);
+        ejecutarNotificacionEnSegundoPlano(
+          "NOTIF_ASYNC_APROBACION_MASIVA",
+          notificarCambioEstatus(ticket, EstadoTarea.CERRADO, user.id, user.rol)
+        );
 
         updatedTickets.push(updated);
       }

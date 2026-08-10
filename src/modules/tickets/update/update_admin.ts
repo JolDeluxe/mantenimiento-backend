@@ -8,7 +8,11 @@ import { EstadoTarea, TipoEvento, Rol, ClasificacionTarea } from "@prisma/client
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "../create/helper_upload";
 import { deleteImageByUrl } from "../../../utils/cloudinary";
-import { notificarAsignacionTarea, notificarModificacionTarea } from "../../notificaciones/services";
+import {
+  ejecutarNotificacionEnSegundoPlano,
+  notificarAsignacionTarea,
+  notificarModificacionTarea,
+} from "../../notificaciones/services";
 import type { UpdateTicketParams, UpdateTicketInput } from "../zod";
 import { recalcularEstadoMaquina } from "../../maquinas/helper";
 
@@ -253,9 +257,15 @@ export const updateTicketAdmin = async (req: Request, res: Response) => {
     });
 
     if (cambioDeResponsables && data.responsables && data.responsables.length > 0) {
-      void notificarAsignacionTarea(result, data.responsables);
+      ejecutarNotificacionEnSegundoPlano(
+        "NOTIF_ASYNC_ASIGNACION_UPDATE",
+        notificarAsignacionTarea(result, data.responsables)
+      );
     } else if (!cambioDeResponsables) {
-      void notificarModificacionTarea(result, user.id);
+      ejecutarNotificacionEnSegundoPlano(
+        "NOTIF_ASYNC_MODIFICACION_ADMIN",
+        notificarModificacionTarea(result, user.id)
+      );
     }
 
     await registrarAccion("UPDATE_TAREA", user.id, `Actualización Tarea ID: ${ticketId}. Usuario: ${user.email}`);

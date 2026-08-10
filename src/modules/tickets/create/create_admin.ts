@@ -5,7 +5,7 @@ import { createTicketAdminSchema } from "../zod";
 import { EstadoTarea, TipoEvento, TipoTarea, ClasificacionTarea, Prioridad } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "./helper_upload";
-import { notificarAsignacionTarea } from "../../notificaciones/services";
+import { ejecutarNotificacionEnSegundoPlano, notificarAsignacionTarea } from "../../notificaciones/services";
 import { calcularMinutosProgramadosMX } from "../helper";
 import { crearFallaProvisional } from "../../bi_maquinaria/services/confirmacion_falla_service";
 import { recalcularEstadoMaquina } from "../../maquinas/helper";
@@ -183,7 +183,10 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
     });
 
     if (data.responsables && data.responsables.length > 0) {
-      void notificarAsignacionTarea(result, data.responsables);
+      ejecutarNotificacionEnSegundoPlano(
+        "NOTIF_ASYNC_ASIGNACION_CREACION",
+        notificarAsignacionTarea(result, data.responsables)
+      );
     }
 
     await registrarAccion(

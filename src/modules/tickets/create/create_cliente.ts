@@ -3,7 +3,7 @@ import { prisma } from "../../../db";
 import { EstadoTarea, TipoEvento, TipoTarea, ClasificacionTarea } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "./helper_upload";
-import { notificarNuevoReporte } from "../../notificaciones/services";
+import { ejecutarNotificacionEnSegundoPlano, notificarNuevoReporte } from "../../notificaciones/services";
 import type { CreateTicketClientResolvedDTO } from "../types";
 import { crearFallaProvisional } from "../../bi_maquinaria/services/confirmacion_falla_service";
 import { recalcularEstadoMaquina } from "../../maquinas/helper";
@@ -93,7 +93,10 @@ export const createTicketCliente = async (
       return nuevaTarea;
     });
 
-    void notificarNuevoReporte(result, result.creador);
+    ejecutarNotificacionEnSegundoPlano(
+      "NOTIF_ASYNC_NUEVO_REPORTE",
+      notificarNuevoReporte(result, result.creador)
+    );
 
     await registrarAccion(
       "CREAR_TICKET_CLIENTE",

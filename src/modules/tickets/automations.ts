@@ -1,7 +1,12 @@
 import { prisma } from "../../db";
 import { EstadoTarea, TipoEvento } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../utils/logger";
-import { notificarCambioEstatus, notificarAdvertenciaTurno, notificarAutoPausa } from "../notificaciones/services";
+import {
+  ejecutarNotificacionEnSegundoPlano,
+  notificarCambioEstatus,
+  notificarAdvertenciaTurno,
+  notificarAutoPausa,
+} from "../notificaciones/services";
 import { getIO } from "../../utils/socket";
 import { getFinOficialTurno, getTipoJornadaTurno, type TipoJornadaTurno } from "./turno-config";
 
@@ -82,7 +87,10 @@ export const autoCloseResolvedTickets = async () => {
         });
 
         // Notificar y registrar en bitácora de servidor fuera de la transacción
-        void notificarCambioEstatus(ticket, EstadoTarea.CERRADO, actorId);
+        ejecutarNotificacionEnSegundoPlano(
+          "NOTIF_ASYNC_CIERRE_AUTOMATICO",
+          notificarCambioEstatus(ticket, EstadoTarea.CERRADO, actorId)
+        );
         await registrarAccion(
           "CIERRE_AUTOMATICO",
           null,
