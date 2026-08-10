@@ -37,7 +37,7 @@ export class DiasLaboradosService {
     ahora?: Date;
   }): Promise<DiasLaboradosResponse> {
     const ahora = query.ahora || new Date();
-    
+
     // 1. Resolver el periodo de tiempo en local de México
     const periodoCalculado = calcularPeriodo(query);
     const { desde, hastaExclusivo, desdeFecha, hastaFecha, granularidad } = periodoCalculado;

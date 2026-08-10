@@ -115,17 +115,17 @@ export function calcularPlanTareas(
 
   // 2. Simulación de preventivos recurrentes para días futuros
   const hoyStr = fechaKeyMX(new Date());
-  
+
   for (const prev of preventivos) {
     const cursor = new Date(desde.getTime());
     while (cursor < hastaExclusivo) {
       const cursorStr = fechaKeyMX(cursor);
-      
+
       if (cursorStr > hoyStr) {
         inicializarDia(cursorStr);
         const ultimoMs = prev.ultimoMantenimiento?.getTime() || desde.getTime();
         const diffDias = Math.floor((cursor.getTime() - ultimoMs) / (24 * 60 * 60 * 1000));
-        
+
         if (diffDias > 0 && diffDias % prev.frecuenciaDias === 0) {
           planPorDia[cursorStr]! += prev.tiempoEstimadoMinutos;
         }

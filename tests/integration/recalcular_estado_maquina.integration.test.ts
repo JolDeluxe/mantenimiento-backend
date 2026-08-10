@@ -94,7 +94,7 @@ describe("BI Maquinaria - Recalcular Estado Maquina Integration Tests", () => {
 
   it("1. crear reporte sin paro no cambia a EN_REPARACION (permanece OPERATIVA)", async () => {
     const mId = await crearMaquina("T1");
-    
+
     // Crear tarea sin paro
     const tarea = await prisma.tarea.create({
       data: {
@@ -120,7 +120,7 @@ describe("BI Maquinaria - Recalcular Estado Maquina Integration Tests", () => {
 
   it("2. crear reporte con paro cambia a PARO_PRODUCCION", async () => {
     const mId = await crearMaquina("T2");
-    
+
     // Crear tarea con paro
     const tarea = await prisma.tarea.create({
       data: {
@@ -379,7 +379,7 @@ describe("BI Maquinaria - Recalcular Estado Maquina Integration Tests", () => {
 
   it("9. cancelar una tarea no afecta otra tarea activa en la misma máquina", async () => {
     const mId = await crearMaquina("T9");
-    
+
     const tarea1 = await prisma.tarea.create({
       data: {
         titulo: "Tarea Activa M9",

@@ -15,6 +15,6 @@ export function clasificarTrabajo(tarea: TareaClasificable): BucketTrabajo | nul
   if (tarea.tipo === TipoTarea.TICKET) return "ACTIVIDAD_REPORTE";
   if (tarea.tipo === TipoTarea.PLANEADA) return "ACTIVIDAD_PLANEADA";
   if (tarea.tipo === TipoTarea.EXTRAORDINARIA) return "ACTIVIDAD_EXTRAORDINARIA";
-  
+
   return null;
 }

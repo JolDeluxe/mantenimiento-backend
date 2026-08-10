@@ -17,7 +17,7 @@ export function calcularTiempoReal(
 ): ResultadoTiempoReal {
   const tiempoRealPorDia: Record<string, AcumuladoBuckets> = {};
   const fechasConIntervaloAbierto = new Set<string>();
-  
+
   const calidadDatos: Omit<CalidadDatosDiasLaborados, "tiempoProgramado" | "tareasSinTiempoProgramado"> = {
     calendarioFestivos: "NO_CONFIGURADO",
     intervalosInvalidos: 0,

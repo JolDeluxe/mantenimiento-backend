@@ -2,7 +2,7 @@
  * backend/tests/integration/fase1-bi.integration.ts
  *
  * Suite de Pruebas de Integración de FASE 1 - Métricas de Maquinaria y BI.
- * 
+ *
  * REGLAS OBLIGATORIAS:
  *   1. Ejecuta exclusivamente contra una base de datos de pruebas que termine en '_test' (mantenimiento_test).
  *   2. Aborta inmediatamente si la conexión apunta a una base normal.
@@ -423,7 +423,7 @@ describe("BI Maquinaria - Fase 1 Integración (mantenimiento_test)", () => {
     });
 
     const fConf = await prisma.fallaMaquina.findUniqueOrThrow({ where: { tareaId: tConf.id } });
-    
+
     const resConf = mockRes();
     const ahora = new Date();
     await ejecutarCambioEstado({
@@ -469,7 +469,7 @@ describe("BI Maquinaria - Fase 1 Integración (mantenimiento_test)", () => {
     });
 
     const fDesc = await prisma.fallaMaquina.findUniqueOrThrow({ where: { tareaId: tDesc.id } });
-    
+
     const resDesc = mockRes();
     await ejecutarCambioEstado({
       ticketId: tDesc.id,
@@ -1330,7 +1330,7 @@ describe("BI Maquinaria - Fase 1 Integración (mantenimiento_test)", () => {
   it("debe permitir que fechaFallaConfirmada e inicioParo difieran", async () => {
     const cuatroDias = 4 * 24 * 60 * 60 * 1000;
     const fechaReportada = new Date(Date.now() - cuatroDias);
-    
+
     // El técnico determina que:
     // - El reporte (ruido) comenzó hace 3 días (fechaFallaConfirmada).
     // - Pero el paro total (interrupción de producción) inició hace 2 días (inicioParo).
