@@ -8,7 +8,8 @@ import {
   forgotPasswordSchema, 
   resetPasswordSchema,
   changePasswordSchema, 
-  refreshTokenSchema
+  refreshTokenSchema,
+  logoutSchema
 } from "../modules/auth/zod";
 
 import { login } from "../modules/auth/01_login";
@@ -80,7 +81,7 @@ router.post(
 router.post(
   "/logout",
   authenticate, 
-  validate(refreshTokenSchema),
+  validate(logoutSchema),
   logout
 );
 

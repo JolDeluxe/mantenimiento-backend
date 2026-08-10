@@ -5,10 +5,17 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../../db";
 import { EstadoTarea, TipoEvento, Rol, Prisma } from "@prisma/client";
+import type { FallaMaquina } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
-import { notificarCambioEstatus } from "../../notificaciones/services";
+import { ejecutarNotificacionEnSegundoPlano, notificarCambioEstatus } from "../../notificaciones/services";
 import { deleteImageByUrl } from "../../../utils/cloudinary";
 import { getIO } from "../../../utils/socket";
+import {
+  resolverFallaEnTransaccion,
+  confirmarFallaEnTransaccion,
+  crearFallaProvisional,
+} from "../../bi_maquinaria/services/confirmacion_falla_service";
+import { recalcularEstadoMaquina } from "../../maquinas/helper";
 
 export type TicketConResponsables = Prisma.TareaGetPayload<{
   include: { responsables: true };
@@ -31,13 +38,27 @@ export interface CambioEstadoOptions {
   // Flags de comportamiento por rol
   autoCloseInspeccion:   boolean; // técnico y admin auto-cierran INSPECCION
   manejarIntervalos:     boolean; // técnico y admin abren/cierran IntervaloTiempo
+  // BI Maquinaria FASE 1: datos de resolución de falla (opcional)
+  fallaResolucion?: {
+    descartar?: boolean;
+    impactoConfirmado?: import("@prisma/client").ImpactoProduccionConfirmado;
+    fechaFallaConfirmada?: Date;
+    inicioParo?: Date;
+    porcentajeAfectacion?: number | null;
+    /**
+     * Cuando true, el sistema calcula el intervalo de paro (inicio/fin) a partir
+     * de los IntervaloTiempo de la tarea, en lugar de recibir inicioParo manual.
+     * Solo válido con impactoConfirmado = PARO_TOTAL y ticket.paroProduccion = false.
+     */
+    usarTiempoTecnicoComoParo?: boolean;
+  };
 }
 
 export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<Response> => {
   const {
     ticketId, ticket, imagenesFinales, fechaVencimiento, refacciones,
     registroTiempoManual, maquinaOperativaAlResolver, cierreAdministrativo = false, user, req, res,
-    autoCloseInspeccion, manejarIntervalos,
+    autoCloseInspeccion, manejarIntervalos, fallaResolucion,
   } = opts;
 
   let nuevoEstado = opts.nuevoEstado;
@@ -65,6 +86,7 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
 
     const ahora = new Date();
     const esEstadoResolucion = nuevoEstado === EstadoTarea.RESUELTO || nuevoEstado === EstadoTarea.CERRADO;
+    const esCorrectivoDeMaquina = ticket.clasificacion === "CORRECTIVO" && ticket.maquinaId !== null;
 
     // ─── Registro de tiempo manual ─────────────────────────────────────────────
     let fechaCierreReal        = ahora;
@@ -99,6 +121,112 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
         minutosManualesDirectos = duracionManual;
         finTiempoManual = ahora;
         inicioTiempoManual = new Date(ahora.getTime() - duracionManual * 60000);
+      }
+    }
+
+    // ─── BI MAQUINARIA FASE 1: VALIDACIÓN OBLIGATORIA AL RESOLVER CORRECTIVOS DE MÁQUINA ───
+    if (esEstadoResolucion && esCorrectivoDeMaquina && !cierreAdministrativo) {
+      // 1. Buscar la FallaMaquina vinculada
+      let fallaVinculada = await prisma.fallaMaquina.findUnique({
+        where: { tareaId: ticketId },
+        select: { id: true, estado: true }
+      });
+
+      const estadoFallaActual = fallaVinculada ? fallaVinculada.estado : "PENDIENTE_DE_DIAGNOSTICO";
+      const requiereDecision = estadoFallaActual === "PENDIENTE_DE_DIAGNOSTICO" || estadoFallaActual === "ABIERTA";
+
+      if (requiereDecision) {
+        if (!fallaResolucion) {
+          return res.status(400).json({
+            error: "Debes completar los datos de cierre de la falla antes de marcar la tarea como resuelta."
+          });
+        }
+
+        if (fallaResolucion.descartar === true) {
+          return res.status(400).json({
+            error: "El cierre técnico de correctivos de maquinaria no permite descartar el reporte."
+          });
+        }
+
+        if (!fallaResolucion.fechaFallaConfirmada) {
+          return res.status(400).json({
+            error: "La hora real de inicio de la falla es obligatoria."
+          });
+        }
+
+        const fechaConf = new Date(fallaResolucion.fechaFallaConfirmada);
+        if (fechaConf > ahora) {
+          return res.status(400).json({
+            error: "La hora real de inicio de la falla no puede ser futura."
+          });
+        }
+
+        const fechaLimiteParo = esCierreManualAtrasado ? fechaCierreReal : ahora;
+        if (fechaConf > fechaLimiteParo) {
+          return res.status(400).json({
+            error: "La hora real de inicio de la falla no puede ser posterior a la restauración de la máquina."
+          });
+        }
+
+        if (!maquinaOperativaAlResolver) {
+          return res.status(400).json({
+            error: "Para finalizar, debes confirmar que se realizaron pruebas y la máquina quedó operativa."
+          });
+        }
+
+        if (!fallaResolucion.impactoConfirmado || fallaResolucion.impactoConfirmado === "NO_CONFIRMADO") {
+          return res.status(400).json({
+            error: "Debes indicar si hubo paro de producción real y su impacto cuando corresponda."
+          });
+        }
+
+        const imp = fallaResolucion.impactoConfirmado;
+        const usarTiempoTecnico = fallaResolucion.usarTiempoTecnicoComoParo === true;
+
+        if (imp === "PARO_PARCIAL" || imp === "PARO_TOTAL") {
+          // Si usa tiempo técnico, no se exige inicioParo manual
+          if (!usarTiempoTecnico && !fallaResolucion.inicioParo) {
+            return res.status(400).json({
+              error: `El inicio del paro es obligatorio para el impacto ${imp}.`
+            });
+          }
+          if (!usarTiempoTecnico && new Date(fallaResolucion.inicioParo!) >= fechaLimiteParo) {
+            return res.status(400).json({
+              error: "El inicio del paro debe ser anterior a la restauración de la máquina."
+            });
+          }
+          // usarTiempoTecnicoComoParo solo aplica a PARO_TOTAL (flujo sin-paro-reportado).
+          // No debe combinarse con PARO_PARCIAL para evitar imprecisión de porcentaje.
+          if (usarTiempoTecnico && imp === "PARO_PARCIAL") {
+            return res.status(400).json({
+              error: "El modo de tiempo técnico automático no es compatible con PARO_PARCIAL."
+            });
+          }
+        }
+
+        if (imp === "PARO_PARCIAL") {
+          const pct = fallaResolucion.porcentajeAfectacion;
+          if (pct !== undefined && pct !== null) {
+            if (pct < 1 || pct > 99) {
+              return res.status(400).json({
+                error: "El porcentaje de afectación para PARO_PARCIAL debe estar entre 1 y 99%."
+              });
+            }
+          }
+        }
+
+        if (imp === "SIN_PARO") {
+          if (fallaResolucion.inicioParo) {
+            return res.status(400).json({
+              error: "No debes proporcionar inicio de paro si seleccionaste SIN_PARO."
+            });
+          }
+          if (fallaResolucion.porcentajeAfectacion !== undefined && fallaResolucion.porcentajeAfectacion !== null) {
+            return res.status(400).json({
+              error: "No debes proporcionar porcentaje de afectación si seleccionaste SIN_PARO."
+            });
+          }
+        }
       }
     }
 
@@ -191,39 +319,133 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
         data: datosActualizacion
       });
 
-      // INTERLOCK: paro reportado → atención técnica
-      if (nuevoEstado === EstadoTarea.EN_PROGRESO && ticket.maquinaId && ticket.paroProduccion) {
-        await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "EN_REPARACION" } });
-      }
-
-      // INTERLOCK: rechazo de paro → vuelve a estado de paro reportado
-      if (nuevoEstado === EstadoTarea.RECHAZADO && ticket.maquinaId && ticket.paroProduccion) {
-        await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "PARO_PRODUCCION" } });
-      }
-
-      // INTERLOCK: resolución → fechaUltimoServicio + posible OPERATIVA
-      if (esEstadoResolucion && ticket.maquinaId) {
-        await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { fechaUltimoServicio: ahora } });
-
-        const otrosParosActivos = await tx.tarea.count({
-          where: {
-            maquinaId:      ticket.maquinaId,
-            paroProduccion: true,
-            estado: { in: [EstadoTarea.PENDIENTE, EstadoTarea.ASIGNADA, EstadoTarea.EN_PROGRESO, EstadoTarea.EN_PAUSA, EstadoTarea.RECHAZADO] },
-            NOT: { id: ticketId }
-          }
+      // ─── CANCELACIÓN Y DESCARTE DE FALLA ───
+      if (nuevoEstado === EstadoTarea.CANCELADA) {
+        const finVal = esCierreManualAtrasado ? fechaCierreReal : ahora;
+        const intervaloAbierto = await tx.intervaloTiempo.findFirst({
+          where: { tareaId: ticketId, fin: null }
         });
-
-        const puedeMarcarOperativa =
-          !ticket.paroProduccion ||
-          nuevoEstado === EstadoTarea.CERRADO ||
-          maquinaOperativaAlResolver === true;
-
-        if (otrosParosActivos === 0 && puedeMarcarOperativa) {
-          await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "OPERATIVA" } });
-        } else if (ticket.paroProduccion && nuevoEstado === EstadoTarea.RESUELTO && maquinaOperativaAlResolver !== true) {
-          await tx.maquina.update({ where: { id: ticket.maquinaId }, data: { estado: "PARO_PRODUCCION" } });
+        if (intervaloAbierto) {
+          const duracionMin = Math.max(0, Math.floor((finVal.getTime() - intervaloAbierto.inicio.getTime()) / 60000));
+          await tx.intervaloTiempo.update({
+            where: { id: intervaloAbierto.id },
+            data: { fin: finVal, duracion: duracionMin }
+          });
+          await tx.tarea.update({
+            where: { id: ticketId },
+            data: { duracionReal: { increment: duracionMin } }
+          });
         }
+
+        const paroAbierto = await tx.intervaloParoMaquina.findFirst({
+          where: { tareaId: ticketId, fin: null }
+        });
+        if (paroAbierto) {
+          await tx.intervaloParoMaquina.update({
+            where: { id: paroAbierto.id },
+            data: { fin: ahora }
+          });
+        }
+
+        const fallaVinculada = await tx.fallaMaquina.findUnique({
+          where: { tareaId: ticketId }
+        });
+        if (fallaVinculada && (fallaVinculada.estado === "PENDIENTE_DE_DIAGNOSTICO" || fallaVinculada.estado === "ABIERTA")) {
+          await tx.fallaMaquina.update({
+            where: { id: fallaVinculada.id },
+            data: {
+              estado: "DESCARTADA",
+              contabilizaComoFalla: false
+            }
+          });
+        }
+      }
+
+      // ─── INTERLOCKS DE MÁQUINA ───
+      if (ticket.maquinaId) {
+        if (esEstadoResolucion) {
+          await tx.maquina.update({
+            where: { id: ticket.maquinaId },
+            data: { fechaUltimoServicio: ahora }
+          });
+        }
+
+        // Resolución de falla si aplica
+        if (esEstadoResolucion && fallaResolucion) {
+          let fallaVinculada = await tx.fallaMaquina.findUnique({
+            where: { tareaId: ticketId }
+          });
+
+          if (!fallaVinculada) {
+            fallaVinculada = await crearFallaProvisional(tx, {
+              tareaId: ticketId,
+              maquinaId: ticket.maquinaId,
+              fechaFallaReportada: ticket.fechaParoProduccion || ticket.createdAt,
+            });
+          }
+
+          if (fallaVinculada) {
+            if (fallaResolucion.descartar === true) {
+              throw new Error("El cierre técnico de correctivos de maquinaria no permite descartar el reporte.");
+            } else if (fallaResolucion.impactoConfirmado) {
+              if (fallaVinculada.estado === "PENDIENTE_DE_DIAGNOSTICO" || fallaVinculada.estado === "ABIERTA") {
+                await confirmarFallaEnTransaccion(tx, {
+                  fallaId: fallaVinculada.id,
+                  tecnicoId: user.id,
+                  fechaFallaConfirmada: new Date(fallaResolucion.fechaFallaConfirmada!),
+                });
+              }
+
+              // ── Calcular inicioParo desde IntervaloTiempo si se solicitó ──────────
+              let inicioParo = fallaResolucion.inicioParo;
+              let fechaRestauracionEfectiva = esCierreManualAtrasado ? fechaCierreReal : ahora;
+
+              if (fallaResolucion.usarTiempoTecnicoComoParo === true) {
+                // Agregar todos los IntervaloTiempo con fin no nulo de esta tarea
+                const intervalos = await tx.intervaloTiempo.findMany({
+                  where: { tareaId: ticketId, fin: { not: null } },
+                  orderBy: { inicio: "asc" },
+                  select: { inicio: true, fin: true },
+                });
+
+                if (intervalos.length > 0) {
+                  // El paro comienza cuando el técnico comenzó a trabajar (primer intervalo)
+                  // y termina cuando finalizó (último fin de intervalo).
+                  // Esto refleja exactamente el tiempo técnico real registrado por el sistema.
+                  const primerInicio = intervalos[0]!.inicio;
+                  const ultimoFin = intervalos[intervalos.length - 1]!.fin as Date;
+                  inicioParo = primerInicio;
+                  fechaRestauracionEfectiva = ultimoFin;
+                } else {
+                  // Sin intervalos registrados: usar createdAt → ahora como fallback
+                  // (caso extremamente raro; el técnico debió haber iniciado la tarea).
+                  inicioParo = ticket.createdAt;
+                  // fechaRestauracionEfectiva ya es ahora
+                }
+              }
+              // ──────────────────────────────────────────────────────────────────────
+
+              await resolverFallaEnTransaccion({
+                tx,
+                fallaId:              fallaVinculada.id,
+                maquinaId:            ticket.maquinaId,
+                tecnicoId:            user.id,
+                fechaRestauracion:    fechaRestauracionEfectiva,
+                impactoConfirmado:    fallaResolucion.impactoConfirmado,
+                inicioParo,
+                porcentajeAfectacion: fallaResolucion.porcentajeAfectacion,
+              });
+            }
+          }
+        }
+
+        // Recalcular estado final de la máquina de forma centralizada
+        await recalcularEstadoMaquina(ticket.maquinaId, tx, {
+          tareaId: ticketId,
+          nuevoEstado,
+          paroProduccion: ticket.paroProduccion,
+          maquinaOperativaAlResolver
+        });
       }
 
       // CANCELADA → limpiar imágenes
@@ -277,7 +499,10 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
     });
 
     // ─── Post-transacción ──────────────────────────────────────────────────────
-    void notificarCambioEstatus(ticket, nuevoEstado, user.id, user.rol);
+    ejecutarNotificacionEnSegundoPlano(
+      "NOTIF_ASYNC_CAMBIO_ESTATUS",
+      notificarCambioEstatus(ticket, nuevoEstado, user.id, user.rol)
+    );
 
     await registrarAccion(
       "CAMBIO_ESTATUS",

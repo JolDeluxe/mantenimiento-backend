@@ -46,6 +46,9 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "seed": "bun prisma/seed.ts",
-    "reset:calidad-dev": "bun scripts/reset-calidad-dev.ts --confirm"
+    "reset:calidad-dev": "bun scripts/reset-calidad-dev.ts --confirm",
+    "test": "bun test",
+    "test:integration:bi": "bun test ./tests/integration/fase1-bi.integration.ts",
+    "test:integration:bi:fase2": "bun test ./tests/integration/fase2-bi.integration.ts"
   }
 }

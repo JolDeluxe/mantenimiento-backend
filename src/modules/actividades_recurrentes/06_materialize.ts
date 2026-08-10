@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { formatearFechaLogica, normalizarFechaLogica } from "../../utils/recurrencia-temporal";
-import { notificarAsignacionTarea } from "../notificaciones/services";
+import { ejecutarNotificacionEnSegundoPlano, notificarAsignacionTarea } from "../notificaciones/services";
 import { registrarAccion } from "../../utils/logger";
 import { ActividadRecurrenteError } from "./helper";
 import { esErrorConcurrenciaDeCiclo, materializarActividadEnTransaccion, type MaterializacionActividadResultado } from "./materialize-core";
@@ -54,7 +54,10 @@ export async function materializarReglaActividad(req: Request, res: Response) {
     }
 
     if (!result.yaExistia && result.tarea && result.responsablesIds.length > 0) {
-      void notificarAsignacionTrasCommit(result.tarea, result.responsablesIds);
+      ejecutarNotificacionEnSegundoPlano(
+        "NOTIF_ASYNC_ACTIVIDAD_RECURRENTE_MATERIALIZADA",
+        notificarAsignacionTrasCommit(result.tarea, result.responsablesIds)
+      );
     }
     await registrarAccion(
       "MATERIALIZAR_ACTIVIDAD_RECURRENTE",

@@ -34,3 +34,11 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 /src/generated/prisma
+
+# Data and backups
+backups/
+data/imports/
+
+# Temporary and test outputs
+tmp/
+test-results/

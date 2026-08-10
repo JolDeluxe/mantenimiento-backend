@@ -22,7 +22,7 @@ export const changeStatusAdmin = async (req: Request, res: Response) => {
     const urlsImagenes = await processTicketImages(files);
     if (urlsImagenes.length > 0) data.imagenes = urlsImagenes;
 
-    let { estado: nuevoEstado, nota, imagenes: imagenesFinales = [], fechaVencimiento, refacciones, maquinaOperativaAlResolver, cierreAdministrativo } = data;
+    let { estado: nuevoEstado, nota, imagenes: imagenesFinales = [], fechaVencimiento, refacciones, maquinaOperativaAlResolver, cierreAdministrativo, fallaResolucion } = data;
     let { registroTiempoManual } = data;
 
     if (typeof registroTiempoManual === "string") {
@@ -76,6 +76,7 @@ export const changeStatusAdmin = async (req: Request, res: Response) => {
       registroTiempoManual,
       maquinaOperativaAlResolver,
       cierreAdministrativo,
+      fallaResolucion,
       user,
       req,
       res,

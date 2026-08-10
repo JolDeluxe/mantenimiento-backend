@@ -2,8 +2,9 @@ import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { EstadoTarea, TipoEvento } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../utils/logger";
-import { notificarCambioEstatus } from "../notificaciones/services";
+import { ejecutarNotificacionEnSegundoPlano, notificarCambioEstatus } from "../notificaciones/services";
 import { getIO } from "../../utils/socket";
+import { recalcularEstadoMaquina } from "../maquinas/helper";
 
 export const approveTicketsBatch = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -52,41 +53,24 @@ export const approveTicketsBatch = async (req: Request, res: Response) => {
           }
         });
 
-        // Interlock de máquina si aplica
         if (ticket.maquinaId) {
           await tx.maquina.update({ 
             where: { id: ticket.maquinaId }, 
             data: { fechaUltimoServicio: ahora } 
           });
 
-          // Verificar si quedan otros paros activos
-          const otrosParosActivos = await tx.tarea.count({
-            where: {
-              maquinaId: ticket.maquinaId,
-              paroProduccion: true,
-              estado: { 
-                in: [
-                  EstadoTarea.PENDIENTE, 
-                  EstadoTarea.ASIGNADA, 
-                  EstadoTarea.EN_PROGRESO, 
-                  EstadoTarea.EN_PAUSA, 
-                  EstadoTarea.RECHAZADO
-                ] 
-              },
-              NOT: { id }
-            }
+          await recalcularEstadoMaquina(ticket.maquinaId, tx, {
+            tareaId: id,
+            nuevoEstado: EstadoTarea.CERRADO,
+            paroProduccion: ticket.paroProduccion
           });
-
-          if (otrosParosActivos === 0) {
-            await tx.maquina.update({ 
-              where: { id: ticket.maquinaId }, 
-              data: { estado: "OPERATIVA" } 
-            });
-          }
         }
 
         // Notificar cambio de estatus de forma asíncrona
-        void notificarCambioEstatus(ticket, EstadoTarea.CERRADO, user.id, user.rol);
+        ejecutarNotificacionEnSegundoPlano(
+          "NOTIF_ASYNC_APROBACION_MASIVA",
+          notificarCambioEstatus(ticket, EstadoTarea.CERRADO, user.id, user.rol)
+        );
 
         updatedTickets.push(updated);
       }

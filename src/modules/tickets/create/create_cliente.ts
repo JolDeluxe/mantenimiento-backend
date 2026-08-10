@@ -3,8 +3,10 @@ import { prisma } from "../../../db";
 import { EstadoTarea, TipoEvento, TipoTarea, ClasificacionTarea } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "./helper_upload";
-import { notificarNuevoReporte } from "../../notificaciones/services";
+import { ejecutarNotificacionEnSegundoPlano, notificarNuevoReporte } from "../../notificaciones/services";
 import type { CreateTicketClientResolvedDTO } from "../types";
+import { crearFallaProvisional } from "../../bi_maquinaria/services/confirmacion_falla_service";
+import { recalcularEstadoMaquina } from "../../maquinas/helper";
 
 export const createTicketCliente = async (
   req: Request,
@@ -60,6 +62,15 @@ export const createTicketCliente = async (
         }
       });
 
+      // BI MAQUINARIA FASE 1: Falla provisional
+      if (nuevaTarea.maquinaId) {
+        await crearFallaProvisional(tx, {
+          tareaId: nuevaTarea.id,
+          maquinaId: nuevaTarea.maquinaId,
+          fechaFallaReportada: nuevaTarea.fechaParoProduccion || nuevaTarea.createdAt,
+        });
+      }
+
       if (urlsImagenes.length > 0) {
         await tx.imagen.createMany({
           data: urlsImagenes.map(url => ({
@@ -71,17 +82,21 @@ export const createTicketCliente = async (
         });
       }
 
-      if (resolvedDTO.maquinaId && resolvedDTO.paroProduccion) {
-        await tx.maquina.update({
-          where: { id: resolvedDTO.maquinaId },
-          data: { estado: "PARO_PRODUCCION" }
+      if (resolvedDTO.maquinaId) {
+        await recalcularEstadoMaquina(resolvedDTO.maquinaId, tx, {
+          tareaId: nuevaTarea.id,
+          nuevoEstado: EstadoTarea.PENDIENTE,
+          paroProduccion: resolvedDTO.paroProduccion
         });
       }
 
       return nuevaTarea;
     });
 
-    void notificarNuevoReporte(result, result.creador);
+    ejecutarNotificacionEnSegundoPlano(
+      "NOTIF_ASYNC_NUEVO_REPORTE",
+      notificarNuevoReporte(result, result.creador)
+    );
 
     await registrarAccion(
       "CREAR_TICKET_CLIENTE",

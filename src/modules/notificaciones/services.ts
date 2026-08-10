@@ -31,6 +31,15 @@ const distribuirNotificacion = async (
   }
 };
 
+export const ejecutarNotificacionEnSegundoPlano = (
+  contexto: string,
+  tarea: Promise<unknown>
+) => {
+  void tarea.catch((error) => {
+    void registrarError(contexto, null, error).catch(() => undefined);
+  });
+};
+
 export const persistirNotificaciones = async (
   usuarioIds: number[],
   tipo: TipoNotificacion,
@@ -89,7 +98,7 @@ export const notificarNuevoReporte = async (
       persistirNotificaciones(destinatarios, TipoNotificacion.NUEVO_REPORTE, titulo, cuerpo, reporte.id),
     ]);
   } catch (error) {
-    await registrarError("NOTIF_NEW_REPORT_FAIL", null, error);
+    await registrarError("NOTIF_NEW_REPORT_FAIL", null, error).catch(() => undefined);
   }
 };
 
@@ -126,7 +135,7 @@ export const notificarAsignacionTarea = async (
       }
     }
   } catch (error) {
-    await registrarError("NOTIF_ASSIGN_FAIL", null, error);
+    await registrarError("NOTIF_ASSIGN_FAIL", null, error).catch(() => undefined);
   }
 };
 
@@ -149,7 +158,7 @@ export const notificarModificacionTarea = async (
       persistirNotificaciones(idsTecnicos, TipoNotificacion.TAREA_MODIFICADA, titulo, cuerpo, tarea.id),
     ]);
   } catch (error) {
-    await registrarError("NOTIF_MODIFICATION_FAIL", null, error);
+    await registrarError("NOTIF_MODIFICATION_FAIL", null, error).catch(() => undefined);
   }
 };
 
@@ -282,7 +291,7 @@ export const notificarCambioEstatus = async (
     }
 
   } catch (error) {
-    await registrarError("NOTIF_STATUS_CHANGE_FAIL", null, error);
+    await registrarError("NOTIF_STATUS_CHANGE_FAIL", null, error).catch(() => undefined);
   }
 };
 
@@ -297,7 +306,7 @@ export const notificarAdvertenciaTurno = async (idsTecnicos: number[]) => {
       persistirNotificaciones(idsTecnicos, TipoNotificacion.TAREA_MODIFICADA, titulo, cuerpo)
     ]);
   } catch (error) {
-    await registrarError("NOTIF_ADVERTENCIA_TURNO", null, error);
+    await registrarError("NOTIF_ADVERTENCIA_TURNO", null, error).catch(() => undefined);
   }
 };
 
@@ -312,6 +321,6 @@ export const notificarAutoPausa = async (idsTecnicos: number[]) => {
       persistirNotificaciones(idsTecnicos, TipoNotificacion.TAREA_PAUSADA, titulo, cuerpo)
     ]);
   } catch (error) {
-    await registrarError("NOTIF_AUTOPAUSA_TURNO", null, error);
+    await registrarError("NOTIF_AUTOPAUSA_TURNO", null, error).catch(() => undefined);
   }
 };

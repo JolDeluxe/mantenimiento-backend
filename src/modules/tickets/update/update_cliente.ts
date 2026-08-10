@@ -9,8 +9,9 @@ import { EstadoTarea, TipoEvento } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "../create/helper_upload";
 import { deleteImageByUrl } from "../../../utils/cloudinary";
-import { notificarModificacionTarea } from "../../notificaciones/services";
+import { ejecutarNotificacionEnSegundoPlano, notificarModificacionTarea } from "../../notificaciones/services";
 import type { UpdateTicketParams, UpdateTicketInput } from "../zod";
+import { recalcularEstadoMaquina } from "../../maquinas/helper";
 
 const ESTADOS_ACTIVOS_PARO: EstadoTarea[] = [
   EstadoTarea.PENDIENTE,
@@ -141,34 +142,17 @@ export const updateTicketCliente = async (req: Request, res: Response) => {
         }
       }
 
-      if (finalMaquinaId && ESTADOS_ACTIVOS_PARO.includes(tareaActualizada.estado)) {
-        if (tareaActualizada.paroProduccion) {
-          await tx.maquina.update({
-            where: { id: finalMaquinaId },
-            data: { estado: "PARO_PRODUCCION" }
-          });
-        } else if (tareaActual.paroProduccion) {
-          const otrosParosActivos = await tx.tarea.count({
-            where: {
-              maquinaId: finalMaquinaId,
-              paroProduccion: true,
-              estado: { in: ESTADOS_ACTIVOS_PARO },
-              NOT: { id: ticketId }
-            }
-          });
-          if (otrosParosActivos === 0) {
-            await tx.maquina.update({
-              where: { id: finalMaquinaId },
-              data: { estado: "OPERATIVA" }
-            });
-          }
-        }
+      if (finalMaquinaId) {
+        await recalcularEstadoMaquina(finalMaquinaId, tx);
       }
 
       return tareaActualizada;
     });
 
-    void notificarModificacionTarea(result, user.id);
+    ejecutarNotificacionEnSegundoPlano(
+      "NOTIF_ASYNC_MODIFICACION_CLIENTE",
+      notificarModificacionTarea(result, user.id)
+    );
 
     await registrarAccion("UPDATE_TAREA", user.id, `Actualización Tarea ID: ${ticketId}. Usuario: ${user.email}`);
     return res.json({ message: "Actualización correcta", data: result });

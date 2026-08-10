@@ -4,20 +4,21 @@ import { autoCloseResolvedTickets, enviarAdvertenciasFinTurno, ejecutarAutoPausa
 import { procesarRecurrenciasProgramadas } from "../modules/recurrencias/automations";
 import { procesarIngestaMaquinariaCsv } from "./maquinaria-csv-ingest";
 import { env } from "../env";
+import { TURNO_TIMEZONE } from "../modules/tickets/turno-config";
 
 export const iniciarTareasProgramadas = () => {
   // CRON 0: Mantenimientos recurrentes automáticos (Frecuencias del módulo de preventivos)
-  // Ejecuta todos los días a las 02:00 AM (hora del servidor)
+  // Ejecuta todos los días a las 02:00 AM (America/Mexico_City)
   cron.schedule("0 2 * * *", async () => {
     try {
       await procesarRecurrenciasProgramadas();
     } catch (error) {
       console.error("[CRON ERROR] Falló la automatización de recurrencias:", error);
     }
-  });
+  }, { timezone: TURNO_TIMEZONE });
 
   // CRON 1: Cierre automático de tickets resueltos inactivos
-  // Ejecuta todos los días a la 01:00 AM (hora del servidor)
+  // Ejecuta todos los días a la 01:00 AM (America/Mexico_City)
   cron.schedule("0 1 * * *", async () => {
   // cron.schedule("* * * * *", async () => { // Los 5 asteriscos significan "cada minuto"
 
@@ -28,10 +29,10 @@ export const iniciarTareasProgramadas = () => {
     } catch (error) {
       console.error("[CRON ERROR] Falló el cierre automático de tickets:", error);
     }
-  });
+  }, { timezone: TURNO_TIMEZONE });
 
   // CRON 2: Ingesta diaria de maquinaria ERP
-  // Ejecuta todos los días a las 03:00 AM (hora del servidor)
+  // Ejecuta todos los días a las 03:00 AM (America/Mexico_City)
   cron.schedule("0 3 * * *", async () => {
     if (!env.MAQUINARIA_CSV_FILE_PATH) {
       console.warn("[CRON] Ingesta maquinaria omitida: MAQUINARIA_CSV_FILE_PATH no está configurado.");
@@ -45,10 +46,10 @@ export const iniciarTareasProgramadas = () => {
     } catch (error) {
       console.error("[CRON ERROR] Falló la ingesta diaria de maquinaria ERP:", error);
     }
-  });
+  }, { timezone: TURNO_TIMEZONE });
 
   // CRON 3: Limpieza de bitácora antigua
-  // Ejecuta todos los días a las 03:30 AM (hora del servidor)
+  // Ejecuta todos los días a las 03:30 AM (America/Mexico_City)
   cron.schedule("30 3 * * *", async () => {
     console.log("[CRON] Iniciando limpieza de bitácora antigua...");
     
@@ -73,24 +74,29 @@ export const iniciarTareasProgramadas = () => {
     } catch (error) {
       console.error("[CRON ERROR] Falló la limpieza de bitácora:", error);
     }
-  });
+  }, { timezone: TURNO_TIMEZONE });
 
-  // CRON 4: Advertencia de fin de turno a las 17:45 (Lunes a Viernes) y 14:15 (Sábados)
-  cron.schedule("45 17 * * 1-5", async () => {
-    console.log("[CRON] Ejecutando advertencia de fin de turno de Lunes a Viernes (17:45)...");
+  // CRON 4: Advertencia de fin de turno a las 17:15 (Lunes a Viernes) y 13:45 (Sábados)
+  cron.schedule("15 17 * * 1-5", async () => {
+    console.log("[CRON] Ejecutando advertencia de fin de turno de Lunes a Viernes (17:15)...");
     await enviarAdvertenciasFinTurno();
-  });
+  }, { timezone: TURNO_TIMEZONE });
+
+  cron.schedule("45 13 * * 6", async () => {
+    console.log("[CRON] Ejecutando advertencia de fin de turno de Sábados (13:45)...");
+    await enviarAdvertenciasFinTurno();
+  }, { timezone: TURNO_TIMEZONE });
+
+  // CRON 5: Auto-pausa de fin de turno. Ejecuta 15 minutos después del fin oficial.
+  cron.schedule("45 17 * * 1-5", async () => {
+    console.log("[CRON] Ejecutando auto-pausa de fin de turno de Lunes a Viernes (17:45, corte 17:30)...");
+    await ejecutarAutoPausaFinTurno({ tipoJornada: "SEMANA" });
+  }, { timezone: TURNO_TIMEZONE });
 
   cron.schedule("15 14 * * 6", async () => {
-    console.log("[CRON] Ejecutando advertencia de fin de turno de Sábados (14:15)...");
-    await enviarAdvertenciasFinTurno();
-  });
-
-  // CRON 5: Auto-Pausa y recorte de tiempo a las 22:00 (Lunes a Sábado) - Tiempo de colchón
-  cron.schedule("0 22 * * 1-6", async () => {
-    console.log("[CRON] Ejecutando Auto-Pausa implacable con colchón (22:00)...");
-    await ejecutarAutoPausaFinTurno();
-  });
+    console.log("[CRON] Ejecutando auto-pausa de fin de turno de Sábados (14:15, corte 14:00)...");
+    await ejecutarAutoPausaFinTurno({ tipoJornada: "SABADO" });
+  }, { timezone: TURNO_TIMEZONE });
   
-  console.log("[SYSTEM] Tareas programadas (CRON) inicializadas: Tickets (01:00 AM) | Recurrentes (02:00 AM) | Maquinaria ERP (03:00 AM) | Bitácora (03:30 AM) | Turno (17:45/14:15/22:00).");
+  console.log("[SYSTEM] Tareas programadas (CRON) inicializadas: Tickets (01:00) | Recurrentes (02:00) | Maquinaria ERP (03:00) | Bitácora (03:30) | Advertencia (17:15 / 13:45) | Auto-pausa (17:45 / 14:15).");
 };

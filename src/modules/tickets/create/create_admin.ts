@@ -5,8 +5,10 @@ import { createTicketAdminSchema } from "../zod";
 import { EstadoTarea, TipoEvento, TipoTarea, ClasificacionTarea, Prioridad } from "@prisma/client";
 import { registrarError, registrarAccion } from "../../../utils/logger";
 import { processTicketImages } from "./helper_upload";
-import { notificarAsignacionTarea } from "../../notificaciones/services";
+import { ejecutarNotificacionEnSegundoPlano, notificarAsignacionTarea } from "../../notificaciones/services";
 import { calcularMinutosProgramadosMX } from "../helper";
+import { crearFallaProvisional } from "../../bi_maquinaria/services/confirmacion_falla_service";
+import { recalcularEstadoMaquina } from "../../maquinas/helper";
 
 export const createTicketAdmin = async (req: Request, res: Response) => {
   const user = req.user!;
@@ -149,6 +151,15 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
         }
       });
 
+      // BI MAQUINARIA FASE 1: Falla provisional
+      if (nuevaTarea.clasificacion === ClasificacionTarea.CORRECTIVO && nuevaTarea.maquinaId) {
+        await crearFallaProvisional(tx, {
+          tareaId: nuevaTarea.id,
+          maquinaId: nuevaTarea.maquinaId,
+          fechaFallaReportada: nuevaTarea.createdAt,
+        });
+      }
+
       if (urlsImagenes.length > 0) {
         await tx.imagen.createMany({
           data: urlsImagenes.map(url => ({
@@ -160,10 +171,11 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
         });
       }
 
-      if (data.maquinaId && data.paroProduccion) {
-        await tx.maquina.update({
-          where: { id: data.maquinaId },
-          data: { estado: "PARO_PRODUCCION" }
+      if (data.maquinaId) {
+        await recalcularEstadoMaquina(data.maquinaId, tx, {
+          tareaId: nuevaTarea.id,
+          nuevoEstado: EstadoTarea.PENDIENTE,
+          paroProduccion: data.paroProduccion
         });
       }
 
@@ -171,7 +183,10 @@ export const createTicketAdmin = async (req: Request, res: Response) => {
     });
 
     if (data.responsables && data.responsables.length > 0) {
-      void notificarAsignacionTarea(result, data.responsables);
+      ejecutarNotificacionEnSegundoPlano(
+        "NOTIF_ASYNC_ASIGNACION_CREACION",
+        notificarAsignacionTarea(result, data.responsables)
+      );
     }
 
     await registrarAccion(

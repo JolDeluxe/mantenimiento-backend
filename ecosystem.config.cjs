@@ -9,6 +9,7 @@ module.exports = {
       // Le decimos a PM2 que no use ningún intérprete externo (ya definimos el exe arriba)
       interpreter: "none",
       exec_mode: "fork",
+      shutdown_with_message: true,
       watch: false,
       env_production: {
         NODE_ENV: "production",
@@ -17,6 +18,7 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 3000,
+      kill_timeout: 8000,
       // Registro de eventos del sistema
       out_file: "./logs/out.log",
       error_file: "./logs/error.log",

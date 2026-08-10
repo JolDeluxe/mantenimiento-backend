@@ -79,6 +79,52 @@ enum EstadoIdempotencia {
   FAILED
 }
 
+// --- ENUMS BI MAQUINARIA (FASE 1) ---
+
+// Impacto de producción confirmado explícitamente por el técnico al resolver.
+// NO_CONFIRMADO → dato provisional; no alimenta métricas confirmadas.
+// SIN_PARO      → falla real pero sin detención de línea; no genera IntervaloParoMaquina.
+// PARO_PARCIAL  → detención parcial; genera IntervaloParoMaquina con porcentaje opcional 1-99.
+// PARO_TOTAL    → detención total; genera IntervaloParoMaquina con porcentaje = 100.
+enum ImpactoProduccionConfirmado {
+  NO_CONFIRMADO
+  SIN_PARO
+  PARO_PARCIAL
+  PARO_TOTAL
+}
+
+// Ciclo de vida de una FallaMaquina.
+// PENDIENTE_DE_DIAGNOSTICO → creada provisionalmente (aún sin confirmación técnica).
+// ABIERTA                  → falla confirmada por el técnico; en atención.
+// REHABILITADA             → técnico confirmó máquina funcional (RESUELTO en Tarea).
+// CERRADA                  → cierre administrativo posterior.
+// DESCARTADA               → técnico determinó que no hubo falla real.
+enum EstadoFalla {
+  PENDIENTE_DE_DIAGNOSTICO
+  ABIERTA
+  REHABILITADA
+  CERRADA
+  DESCARTADA
+}
+
+// Clasifica si el intervalo de paro fue planeado (preventivo) o no.
+enum TipoParo {
+  PLANIFICADO
+  NO_PLANIFICADO
+}
+
+// Calidad del dato para consumo BI.
+// PROVISIONAL        → dato aún sin confirmación técnica.
+// CONFIRMADO         → datos explícitamente confirmados por el técnico.
+// HISTORICO_ESTIMADO → datos anteriores a la Fase 1, derivados de campos legacy.
+// DATO_INCOMPLETO    → PARO_PARCIAL registrado sin porcentaje de afectación.
+enum CalidadDato {
+  PROVISIONAL
+  CONFIRMADO
+  HISTORICO_ESTIMADO
+  DATO_INCOMPLETO
+}
+
 // --- MODELOS ---
 
 model Departamento {
@@ -134,6 +180,9 @@ model Usuario {
   reglasActividadResponsable        ReglaActividadRecurrente[]       @relation("ReglaActividadResponsables")
   ajustesActividadRecurrenteCreados ReglaActividadRecurrenteAjuste[] @relation("ReglaActividadAjusteCreador")
   idempotencyRecords        IdempotencyRecord[]
+  // BI Maquinaria — técnico que confirmó fallas o paros
+  fallasConfirmadas         FallaMaquina[]           @relation("FallaConfirmadaPor")
+  parosConfirmados          IntervaloParoMaquina[]   @relation("ParoConfirmadoPor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -191,6 +240,8 @@ model Tarea {
   imagenes       Imagen[]
   intervalos     IntervaloTiempo[]
   notificaciones Notificacion[]
+  fallaMaquina   FallaMaquina?          // Relación 1-1 opcional: una tarea puede generar una falla confirmada
+  intervalosParo IntervaloParoMaquina[] // Relación 1-N: paros físicos vinculados a esta tarea
 
   incidenteId         String?   @db.VarChar(80)
   fechaParoProduccion DateTime?
@@ -260,8 +311,10 @@ model Maquina {
   departamento   Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
   tareas             Tarea[]
-  reglasRecurrencia  ReglaRecurrencia[] // Reglas de mantenimiento preventivo recurrente
+  reglasRecurrencia  ReglaRecurrencia[]       // Reglas de mantenimiento preventivo recurrente
   plantillasRevision PlantillaRevisionMaquina[]
+  fallas             FallaMaquina[]            // Historial de fallas confirmadas del equipo
+  intervalosParo     IntervaloParoMaquina[]    // Historial de paros físicos del equipo
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -633,4 +686,117 @@ enum TipoUsoPlantilla {
   AUTONOMO
   PREVENTIVO
   AMBOS
+}
+
+// --- MODELOS BI MAQUINARIA (FASE 1) ---
+
+// FallaMaquina: representa una avería confirmada (o pendiente de confirmación) en un equipo.
+// Una Tarea correctiva puede estar vinculada como máximo a una FallaMaquina (relación 1-1).
+// Reglas de Negocio:
+//   - Nace en PENDIENTE_DE_DIAGNOSTICO con calidad PROVISIONAL.
+//   - El técnico la mueve a ABIERTA al confirmar la falla (fechaFallaConfirmada + confirmadoPorId).
+//   - Al pasar la tarea a RESUELTO, se graba fechaRestauracion atómicamente y pasa a REHABILITADA.
+//   - Si el técnico descarta la falla → DESCARTADA, contabilizaComoFalla = false.
+//   - Solo las fallas ABIERTA/REHABILITADA/CERRADA con contabilizaComoFalla=true
+//     alimentan las métricas de Frecuencia, MTTR, MTBF y Confiabilidad.
+model FallaMaquina {
+  id Int @id @default(autoincrement())
+
+  // Equipo afectado — no borrar historia aunque el equipo sea dado de baja
+  maquinaId Int
+  maquina   Maquina @relation(fields: [maquinaId], references: [id], onDelete: Restrict)
+
+  // Tarea correctiva que originó la falla — opcional para permitir fallas sin tarea asociada
+  tareaId Int?    @unique // 1 tarea → máximo 1 falla; sin @unique no habría integridad 1-1
+  tarea   Tarea?  @relation(fields: [tareaId], references: [id], onDelete: SetNull)
+
+  // Estado y calidad del registro
+  estado              EstadoFalla             @default(PENDIENTE_DE_DIAGNOSTICO)
+  calidadDato         CalidadDato             @default(PROVISIONAL)
+  contabilizaComoFalla Boolean               @default(true)
+  impactoConfirmado   ImpactoProduccionConfirmado @default(NO_CONFIRMADO)
+
+  // Fechas de la falla — reportada viene del cliente; confirmada la graba el técnico
+  fechaFallaReportada  DateTime
+  fechaFallaConfirmada DateTime?  // Nullable: aún no confirmada en PENDIENTE_DE_DIAGNOSTICO
+  fechaRestauracion    DateTime?  // Se graba atómicamente cuando la tarea pasa a RESUELTO
+
+  // Técnico que confirmó — nullable en PENDIENTE_DE_DIAGNOSTICO
+  confirmadoPorId Int?
+  confirmadoPor   Usuario? @relation("FallaConfirmadaPor", fields: [confirmadoPorId], references: [id], onDelete: Restrict)
+
+  // Snapshots de dimensiones para BI histórico inalterable
+  // Se copian en el momento de confirmación para que futuros cambios en Maquina no alteren el historial.
+  snapshotCodigo     String  @db.VarChar(50)
+  snapshotPlanta     String? @db.VarChar(100)
+  snapshotArea       String? @db.VarChar(100)
+  snapshotProceso    String  @db.VarChar(150)
+  snapshotCriticidad String? @db.VarChar(10)
+
+  intervalosParo IntervaloParoMaquina[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([maquinaId, estado])
+  @@index([fechaFallaConfirmada])              // Consultas por periodo de frecuencia
+  @@index([maquinaId, fechaFallaConfirmada])   // MTBF: secuencia de fallas por equipo
+  @@index([calidadDato, contabilizaComoFalla]) // Filtro rápido de datos BI válidos
+}
+
+// IntervaloParoMaquina: intervalo de tiempo en que la máquina estuvo físicamente detenida.
+// Es independiente de IntervaloTiempo (que mide el esfuerzo del técnico, no el paro de la máquina).
+// Reglas de Negocio:
+//   - Solo se crea cuando impactoConfirmado = PARO_PARCIAL o PARO_TOTAL.
+//   - SIN_PARO → no se crea ningún registro.
+//   - PARO_PARCIAL → porcentajeAfectacion es opcional (null si el técnico no puede estimarlo).
+//   - PARO_TOTAL   → porcentajeAfectacion = 100 siempre.
+//   - duracionMinutos se calcula de forma atómica en el servicio (Math.round((fin-inicio)/60000)).
+//     NO se almacena como columna para evitar desincronización con inicio/fin.
+//   - La Disponibilidad usa minutosEquivalentes = duraciónParo × (porcentaje/100).
+//     Si porcentaje es null → se muestra por separado con DATO_INCOMPLETO.
+model IntervaloParoMaquina {
+  id Int @id @default(autoincrement())
+
+  // Equipo que estuvo detenido
+  maquinaId Int
+  maquina   Maquina @relation(fields: [maquinaId], references: [id], onDelete: Restrict)
+
+  // Falla que generó el paro — opcional para cubrir paros preventivos sin falla
+  fallaId Int?
+  falla   FallaMaquina? @relation(fields: [fallaId], references: [id], onDelete: SetNull)
+
+  // Tarea asociada al paro — opcional
+  tareaId Int?
+  tarea   Tarea? @relation(fields: [tareaId], references: [id], onDelete: SetNull)
+
+  // Clasificación del paro
+  tipo   TipoParo                    // Obligatorio y explícito — sin default para evitar suposiciones
+  impacto ImpactoProduccionConfirmado // Obligatorio y explícito — solo PARO_PARCIAL o PARO_TOTAL
+
+  // Porcentaje de afectación — validado en servicio:
+  //   SIN_PARO: no existe fila → no aplica
+  //   PARO_PARCIAL: null | entero 1-99
+  //   PARO_TOTAL:   100
+  porcentajeAfectacion Int?
+
+  // Calidad — afecta si el dato es usable en disponibilidad
+  calidadDato CalidadDato @default(CONFIRMADO)
+
+  // Ventana temporal del paro
+  inicio DateTime
+  fin    DateTime? // Null = paro todavía abierto
+  // duracionMinutos NO se persiste; se calcula siempre desde inicio y fin en el servicio.
+
+  // Técnico que confirmó el paro
+  confirmadoPorId Int
+  confirmadoPor   Usuario @relation("ParoConfirmadoPor", fields: [confirmadoPorId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([maquinaId, inicio])  // Consultas de disponibilidad por equipo y periodo
+  @@index([fallaId])            // Navegación desde FallaMaquina
+  @@index([tareaId])            // Navegación desde Tarea
+  @@index([tipo, calidadDato])  // Filtro por tipo de paro y calidad
 }
