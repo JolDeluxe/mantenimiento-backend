@@ -24,6 +24,7 @@ import actividadesRecurrentes from "./routes/actividades_recurrentes_rutas";
 import configuracion from "./routes/configuracion_rutas";
 import public_rutas from "./routes/public_rutas";
 import biMaquinaria from "./routes/bi_maquinaria_rutas";
+import diasLaborados from "./routes/dias_laborados_rutas";
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -55,6 +56,7 @@ app.use("/api/actividades-recurrentes", actividadesRecurrentes);
 app.use("/api/configuracion", configuracion);
 app.use("/api/public", public_rutas);
 app.use("/api/bi/maquinaria", biMaquinaria);
+app.use("/api", diasLaborados);
 
 // --- ARRANQUE DEL SERVIDOR ---
 

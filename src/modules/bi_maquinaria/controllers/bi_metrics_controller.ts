@@ -7,6 +7,7 @@ import { BIAggregationService } from "../services/bi_aggregation_service";
 import { BIDetailService } from "../services/bi_detail_service";
 import { BIFilterService } from "../services/bi_filter_service";
 import { validarYCalcularPeriodo } from "../calculations/periodos";
+import { agregarMetricasGrupo } from "../calculations/aggregation";
 
 export const getBIKPISController = async (req: Request, res: Response) => {
   const user = req.user;
@@ -93,6 +94,48 @@ export const getBIKPISController = async (req: Request, res: Response) => {
     };
 
     // 6. Calcular Resumen Global
+    const metricasGlobales = agregarMetricasGrupo(individualResults);
+    const hayFiltroParticipacion = Boolean(
+      queryParams.maquinaId ||
+      queryParams.proceso ||
+      queryParams.area ||
+      queryParams.criticidad ||
+      queryParams.estadoMaquina ||
+      queryParams.buscar
+    );
+    let solicitudesTotalBase = metricasGlobales.frecuencia.valor;
+    if (hayFiltroParticipacion) {
+      const { maquinas: maquinasBaseParticipacion } = await BIQueryService.obtenerMaquinas({
+        agrupacion: queryParams.agrupacion,
+        incluirAreaNula: queryParams.incluirAreaNula,
+        hastaEfectivo,
+      });
+      const metricasBaseParticipacion = await BIMetricsService.calcularMetricasMaquinas(
+        maquinasBaseParticipacion,
+        desde,
+        hastaEfectivo,
+        queryParams.calidad,
+        ahora,
+        queryParams.incluirHistoricos,
+        hasta
+      );
+      solicitudesTotalBase = agregarMetricasGrupo(metricasBaseParticipacion).frecuencia.valor;
+    }
+    const participacionSolicitudesPorcentaje = solicitudesTotalBase > 0
+      ? (metricasGlobales.frecuencia.valor / solicitudesTotalBase) * 100
+      : 0;
+    const topRows = aggregatedData.slice(0, Math.min(10, aggregatedData.length));
+    const topMinutosProgramados = topRows.reduce(
+      (total, row) => total + row.metricas.disponibilidad.minutosProgramados,
+      0
+    );
+    const topMinutosParoEquivalentes = topRows.reduce(
+      (total, row) => total + row.metricas.disponibilidad.minutosParoEquivalentes,
+      0
+    );
+    const topDisponibilidadPorcentaje = topMinutosProgramados > 0
+      ? Math.max(0, Math.min(100, ((topMinutosProgramados - topMinutosParoEquivalentes) / topMinutosProgramados) * 100))
+      : null;
     let maquinasObservadas = maquinas.length;
     let maquinasConFallas = 0;
     let frecuenciaTotal = 0;
@@ -158,6 +201,39 @@ export const getBIKPISController = async (req: Request, res: Response) => {
       minutosProgramados: minutosMaquinaObservados,
       minutosParoEquivalentesConfirmados,
       minutosParcialesSinPorcentaje,
+      },
+      summary: {
+        correctivos: {
+          total: metricasGlobales.frecuencia.valor,
+          abiertos: metricasGlobales.frecuencia.fallasAbiertas,
+          restaurados: metricasGlobales.frecuencia.fallasRestauradas,
+        },
+        participacionSolicitudes: {
+          porcentaje: participacionSolicitudesPorcentaje,
+          solicitudesFiltro: metricasGlobales.frecuencia.valor,
+          solicitudesTotal: solicitudesTotalBase,
+        },
+        metaDisponibilidadPorcentaje: 98,
+        frecuencia: metricasGlobales.frecuencia,
+        mttr: metricasGlobales.mttr,
+        mtbf: metricasGlobales.mtbf,
+        disponibilidad: {
+          ...metricasGlobales.disponibilidad,
+          porcentaje: metricasGlobales.disponibilidad.valorPorcentaje,
+          general: {
+            porcentaje: metricasGlobales.disponibilidad.valorPorcentaje,
+            minutosProgramados: metricasGlobales.disponibilidad.minutosProgramados,
+            minutosParoEquivalentes: metricasGlobales.disponibilidad.minutosParoEquivalentes,
+          },
+          top: {
+            cantidadEquipos: topRows.length,
+            porcentaje: topDisponibilidadPorcentaje,
+            minutosProgramados: topMinutosProgramados,
+            minutosParoEquivalentes: topMinutosParoEquivalentes,
+          },
+        },
+        minutosReparacion: metricasGlobales.mttr.sumaMinutosTrabajoTecnico,
+        minutosParoProduccion: metricasGlobales.disponibilidad.minutosParoEquivalentes,
       },
       data: dataPaginada,
     });
