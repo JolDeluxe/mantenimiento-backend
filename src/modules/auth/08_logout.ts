@@ -38,7 +38,7 @@ export const logout = async (req: Request, res: Response) => {
 
     if (!sessionId) {
       clearAuthCookies(req, res);
-      return res.status(401).json({ status: "error", message: "Sesión no disponible" });
+      return res.status(200).json({ status: "success", message: "Sesión cerrada localmente" });
     }
 
     const session = await prisma.refreshToken.findUnique({
@@ -53,7 +53,7 @@ export const logout = async (req: Request, res: Response) => {
 
     if (!session || session.revoked || session.revokedAt) {
       clearAuthCookies(req, res);
-      return res.status(401).json({ status: "error", message: "Sesión inválida o revocada" });
+      return res.status(200).json({ status: "success", message: "Sesión cerrada localmente" });
     }
 
     await revokeSession(sessionId);

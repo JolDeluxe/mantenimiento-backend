@@ -42,9 +42,14 @@ export const changePasswordSchema = z.object({
   })
 });
 
+const optionalLegacyRefreshToken = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() ? value : undefined),
+  z.string().min(1, "El token de refresco es requerido").optional()
+);
+
 export const refreshTokenSchema = z.object({
   body: z.object({
-    refreshToken: z.string().min(1, "El token de refresco es requerido").optional()
+    refreshToken: optionalLegacyRefreshToken
   }).optional().default({})
 });
 

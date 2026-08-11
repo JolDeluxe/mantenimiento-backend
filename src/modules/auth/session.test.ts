@@ -8,6 +8,7 @@ import {
   isPersistentSessionActive,
   sessionTokenHashForTest,
 } from "./session";
+import { refreshTokenSchema } from "./zod";
 
 describe("Auth refresh session helpers", () => {
   it("extrae sessionId desde refresh token opaco", () => {
@@ -94,5 +95,10 @@ describe("Auth refresh session helpers", () => {
     expect(seed).not.toContain("prisma.refreshToken.deleteMany({})");
     expect(seed).toContain('nodeEnv === "production"');
     expect(seed).toContain("ABORTANDO SEED");
+  });
+
+  it("normaliza refresh legacy vacío o nulo para que el controller devuelva 401 y no un 400 de validación", () => {
+    expect(refreshTokenSchema.parse({ body: { refreshToken: "" } }).body.refreshToken).toBeUndefined();
+    expect(refreshTokenSchema.parse({ body: { refreshToken: null } }).body.refreshToken).toBeUndefined();
   });
 });
