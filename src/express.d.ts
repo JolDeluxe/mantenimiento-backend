@@ -10,6 +10,7 @@ declare global {
         email: string;
         rol: Rol;
         departamentoId: number | null; 
+        sessionId: string;
       };
     }
   }

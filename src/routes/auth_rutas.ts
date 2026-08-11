@@ -19,7 +19,7 @@ import { changePassword } from "../modules/auth/04_change_password";
 import { forgotPassword } from "../modules/auth/05_forgot_password";
 import { resetPassword } from "../modules/auth/06_reset_password";
 import { refreshSession } from "../modules/auth/07_refresh";
-import { logout } from "../modules/auth/08_logout";
+import { logout, logoutAll } from "../modules/auth/08_logout";
 
 const router = Router();
 
@@ -80,9 +80,14 @@ router.post(
 // POST /api/auth/logout
 router.post(
   "/logout",
-  authenticate, 
   validate(logoutSchema),
   logout
+);
+
+router.post(
+  "/logout-all",
+  authenticate,
+  logoutAll
 );
 
 export default router;

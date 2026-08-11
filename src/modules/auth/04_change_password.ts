@@ -6,6 +6,7 @@ import type { ChangePasswordInput } from "./zod";
 
 export const changePassword = async (req: Request, res: Response) => {
   const usuarioId = req.user?.id; 
+  const sessionIdActual = req.user?.sessionId;
 
   try {
     if (!usuarioId) return res.status(401).json({ error: "No autenticado" });
@@ -23,9 +24,20 @@ export const changePassword = async (req: Request, res: Response) => {
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    await prisma.usuario.update({
-        where: { id: usuarioId },
-        data: { password: hashedPassword }
+    await prisma.$transaction(async (tx) => {
+        await tx.usuario.update({
+            where: { id: usuarioId },
+            data: { password: hashedPassword }
+        });
+
+        await tx.refreshToken.updateMany({
+            where: {
+              usuarioId,
+              revoked: false,
+              ...(sessionIdActual ? { id: { not: sessionIdActual } } : {}),
+            },
+            data: { revoked: true, revokedAt: new Date() },
+        });
     });
 
     await registrarAccion('CAMBIO_PASS_EXITOSO', usuarioId, 'El usuario cambió su contraseña');

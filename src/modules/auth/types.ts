@@ -5,12 +5,13 @@ export interface TokenPayload {
   rol: string;
   nombre: string;
   departamentoId: number | null;
+  sid?: string;
 }
 
 export interface LoginResponse {
   status: "success";
-  accessToken: string;
-  refreshToken: string;
+  accessToken?: string;
+  refreshToken?: string;
   user: {
     id: number;
     nombre: string;

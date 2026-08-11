@@ -32,7 +32,8 @@ DATABASE_URL="mysql://USUARIO:PASSWORD@localhost:3306/mantenimiento"
 
 # Autenticación
 JWT_SECRET="tu_llave_secreta_aqui"
-JWT_EXPIRES="1y"
+JWT_ACCESS_EXPIRES="8h"
+JWT_REFRESH_EXPIRES="30d" # Solo compatibilidad legacy; las sesiones nuevas no expiran por inactividad.
 
 # Configuración de Sistema
 SYS_DEPTO_CRITICO="Mantenimiento"

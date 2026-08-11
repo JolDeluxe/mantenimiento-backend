@@ -442,9 +442,15 @@ model RefreshToken {
   usuarioId Int
   usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
-  revoked   Boolean  @default(false)
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  revoked   Boolean   @default(false)
+  revokedAt DateTime?
+  expiresAt DateTime?
+  lastUsedAt DateTime?
+  userAgent String?   @db.VarChar(500)
+  ip        String?   @db.VarChar(64)
+  createdAt DateTime  @default(now())
+
+  @@index([usuarioId, revoked, expiresAt])
 }
 
 model PasswordResetToken {

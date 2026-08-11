@@ -31,6 +31,11 @@ export const resetPassword = async (req: Request, res: Response) => {
         data: { password: hashedPassword, mustChangePassword: false },
       });
 
+      await tx.refreshToken.updateMany({
+        where: { usuarioId: resetTokenRecord.usuarioId, revoked: false },
+        data: { revoked: true, revokedAt: new Date() },
+      });
+
       await tx.passwordResetToken.delete({ where: { id: resetTokenRecord.id } });
     });
 

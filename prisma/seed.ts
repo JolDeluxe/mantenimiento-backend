@@ -297,7 +297,21 @@ const randomInt = (min: number, max: number): number => Math.floor(Math.random()
 const addMinutes = (date: Date, minutes: number): Date => new Date(date.getTime() + minutes * 60000);
 const addHours = (date: Date, hours: number): Date => new Date(date.getTime() + hours * 3600000);
 
+const assertSeedSeguro = () => {
+  const databaseUrl = process.env.DATABASE_URL || "";
+  const nodeEnv = process.env.NODE_ENV || "development";
+
+  if (nodeEnv === "production") {
+    throw new Error("ABORTANDO SEED: NODE_ENV=production no puede ejecutar limpieza destructiva.");
+  }
+
+  if (!/localhost|127\.0\.0\.1|_test|_dev/i.test(databaseUrl)) {
+    throw new Error("ABORTANDO SEED: DATABASE_URL no parece ser una base local/dev/test segura.");
+  }
+};
+
 async function main() {
+  assertSeedSeguro();
   console.log("🚀 Iniciando limpieza de base de datos...");
   DEFAULT_HASH = await bcrypt.hash("123456", 10);
 
@@ -308,7 +322,6 @@ async function main() {
   await prisma.notificacion.deleteMany({});
   await prisma.notificacionLog.deleteMany({});
   await prisma.pushSubscription.deleteMany({});
-  await prisma.refreshToken.deleteMany({});
   await prisma.passwordResetToken.deleteMany({});
   await prisma.bitacora.deleteMany({});
   await prisma.tarea.deleteMany({});

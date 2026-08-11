@@ -44,15 +44,15 @@ export const changePasswordSchema = z.object({
 
 export const refreshTokenSchema = z.object({
   body: z.object({
-    refreshToken: z.string().min(1, "El token de refresco es requerido")
-  })
+    refreshToken: z.string().min(1, "El token de refresco es requerido").optional()
+  }).optional().default({})
 });
 
 export const logoutSchema = z.object({
   body: z.object({
-    refreshToken: z.string().min(1, "El token de refresco es requerido"),
+    refreshToken: z.string().min(1, "El token de refresco es requerido").optional(),
     endpoint: z.string().url("El endpoint push debe ser una URL válida").optional(),
-  })
+  }).optional().default({})
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>['body'];

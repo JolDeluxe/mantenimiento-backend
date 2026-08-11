@@ -36,6 +36,7 @@ const PUSH_SHUTDOWN_TIMEOUT_MS = 5500;
 const FORCE_SHUTDOWN_TIMEOUT_MS = 7000;
 
 // --- MIDDLEWARES ---
+app.set("trust proxy", 1);
 app.use(corsMiddleware); 
 app.use(express.json());
 app.use(morgan('dev'));

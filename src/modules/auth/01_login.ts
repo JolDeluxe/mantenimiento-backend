@@ -3,9 +3,9 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../../db"; 
 import { Estatus } from "@prisma/client"; 
 import { registrarAccion, registrarError } from "../../utils/logger";
-import { generateAccessToken, generateRefreshToken } from "./utils/tokenGenerator";
 import type { LoginInput } from "./zod";
 import type { TokenPayload } from "./types";
+import { createPersistentSession, issueAccessForSession, setAccessCookie, setRefreshCookie } from "./session";
 
 export const login = async (req: Request, res: Response) => {
   try {
@@ -49,26 +49,20 @@ export const login = async (req: Request, res: Response) => {
       departamentoId: usuario.departamentoId 
     };
 
-    const accessToken = generateAccessToken(payload);
-    const refreshToken = generateRefreshToken({ id: usuario.id });
+    const session = await createPersistentSession(req, usuario.id);
+    const accessToken = issueAccessForSession(payload, session.sessionId);
 
-    const expiresAt = new Date();
-    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-
-    await prisma.refreshToken.create({
-      data: {
-        hashedToken: await bcrypt.hash(refreshToken, 10),
-        usuarioId: usuario.id,
-        expiresAt
-      }
-    });
+    setAccessCookie(req, res, accessToken);
+    setRefreshCookie(req, res, session.refreshToken);
 
     await registrarAccion('LOGIN_EXITOSO', usuario.id, 'Inicio de sesión exitoso');
 
     return res.status(200).json({
       status: "success",
+      // LEGACY COMPATIBILITY: los frontends nuevos ignoran estos tokens.
+      // Se retiran cuando ya no existan clientes cacheados con Bearer/localStorage.
       accessToken,
-      refreshToken,
+      refreshToken: session.refreshToken,
       user: {
         id: usuario.id,
         nombre: usuario.nombre,

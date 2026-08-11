@@ -3,76 +3,132 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../db";
 import { env } from "../../env";
-import { generateAccessToken } from "./utils/tokenGenerator";
 import type { TokenPayload } from "./types";
-import type { RefreshTokenInput } from "./zod";
+import {
+  clearAuthCookies,
+  createPersistentSession,
+  getRefreshTokenFromRequest,
+  getSessionIdFromRefreshToken,
+  issueAccessForSession,
+  validatePersistentSession,
+  setAccessCookie,
+  setRefreshCookie,
+} from "./session";
+
+const isTokenError = (error: unknown) => (
+  error instanceof Error &&
+  ["JsonWebTokenError", "TokenExpiredError", "NotBeforeError"].includes(error.name)
+);
+
+const buildPayload = (usuario: {
+  id: number;
+  username: string;
+  email: string | null;
+  rol: string;
+  nombre: string;
+  departamentoId: number | null;
+}): TokenPayload => ({
+  id: usuario.id,
+  username: usuario.username,
+  email: usuario.email,
+  rol: usuario.rol,
+  nombre: usuario.nombre,
+  departamentoId: usuario.departamentoId,
+});
+
+const migrateLegacyRefreshToken = async (req: Request, refreshToken: string) => {
+  const decoded = jwt.verify(refreshToken, env.JWT_SECRET) as { id: number };
+
+  const storedTokens = await prisma.refreshToken.findMany({
+    where: {
+      usuarioId: decoded.id,
+      revoked: false,
+      OR: [
+        { expiresAt: null },
+        { expiresAt: { gt: new Date() } },
+      ],
+    },
+    include: {
+      usuario: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          rol: true,
+          nombre: true,
+          departamentoId: true,
+          estado: true,
+        },
+      },
+    },
+  });
+
+  for (const token of storedTokens) {
+    const match = await bcrypt.compare(refreshToken, token.hashedToken).catch(() => false);
+    if (!match) continue;
+
+    if (token.usuario.estado !== "ACTIVO") return null;
+
+    await prisma.refreshToken.update({
+      where: { id: token.id },
+      data: { revoked: true, revokedAt: new Date() },
+    });
+
+    const session = await createPersistentSession(req, token.usuarioId);
+
+    return {
+      usuario: token.usuario,
+      sessionId: session.sessionId,
+      refreshToken: session.refreshToken,
+    };
+  }
+
+  return null;
+};
 
 export const refreshSession = async (req: Request, res: Response) => {
   try {
-    const { refreshToken } = req.body as RefreshTokenInput;
-
-    // a) Verificar validez del JWT (firma y expiración física)
-    const decoded = jwt.verify(refreshToken, env.JWT_SECRET) as { id: number };
-
-    // b) Buscar tokens activos del usuario en BD
-    const storedTokens = await prisma.refreshToken.findMany({
-      where: { 
-        usuarioId: decoded.id, 
-        revoked: false,
-        expiresAt: { gt: new Date() } // Que no haya expirado en BD
-      }
-    });
-
-    // c) Validar el hash para encontrar el token exacto
-    let tokenValido = null;
-    for (const token of storedTokens) {
-      const match = await bcrypt.compare(refreshToken, token.hashedToken);
-      if (match) {
-        tokenValido = token;
-        break;
-      }
-    }
-
-    if (!tokenValido) {
+    const refreshToken = getRefreshTokenFromRequest(req);
+    if (!refreshToken) {
+      clearAuthCookies(req, res);
       return res.status(401).json({ status: "error", message: "Sesión inválida o expirada" });
     }
 
-    // d) Obtener datos actualizados del usuario para el nuevo payload
-    const usuario = await prisma.usuario.findUnique({
-      where: { id: decoded.id },
-      select: { 
-        id: true, 
-        username: true, 
-        email: true, 
-        rol: true, 
-        nombre: true, 
-        departamentoId: true,
-        estado: true 
-      }
-    });
+    const sessionId = getSessionIdFromRefreshToken(refreshToken);
+    const session = sessionId
+      ? await validatePersistentSession(req, sessionId, refreshToken)
+      : await migrateLegacyRefreshToken(req, refreshToken);
 
-    if (!usuario || usuario.estado !== "ACTIVO") {
-      return res.status(401).json({ status: "error", message: "Usuario no disponible" });
+    if (!session) {
+      clearAuthCookies(req, res);
+      return res.status(401).json({ status: "error", message: "Sesión inválida o expirada" });
     }
 
-    // e) Generar nuevo Access Token
-    const payload: TokenPayload = {
-      id: usuario.id,
-      username: usuario.username,
-      email: usuario.email,
-      rol: usuario.rol,
-      nombre: usuario.nombre,
-      departamentoId: usuario.departamentoId
-    };
+    const accessToken = issueAccessForSession(buildPayload(session.usuario), session.sessionId);
 
-    const accessToken = generateAccessToken(payload);
+    setAccessCookie(req, res, accessToken);
+    setRefreshCookie(req, res, session.refreshToken);
 
     return res.status(200).json({
       status: "success",
-      accessToken
+      user: {
+        id: session.usuario.id,
+        nombre: session.usuario.nombre,
+        username: session.usuario.username,
+        rol: session.usuario.rol,
+        departamentoId: session.usuario.departamentoId,
+        email: session.usuario.email || undefined,
+      },
     });
-
   } catch (error) {
-    return res.status(401).json({ status: "error", message: "Sesión caducada" });
+    if (isTokenError(error)) {
+      clearAuthCookies(req, res);
+      return res.status(401).json({ status: "error", message: "Sesión caducada" });
+    }
+
+    return res.status(503).json({
+      status: "error",
+      message: "Servicio de autenticación temporalmente no disponible",
+    });
   }
 };

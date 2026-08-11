@@ -6,8 +6,8 @@ export const env = createEnv({
     PORT: z.coerce.number().default(3000),
     DATABASE_URL: z.string().url({ message: "URL de BD inválida" }), 
     JWT_SECRET: z.string().min(1),
-    JWT_ACCESS_EXPIRES: z.string().default("15d"),
-    JWT_REFRESH_EXPIRES: z.string().default("1y"),
+    JWT_ACCESS_EXPIRES: z.string().default("8h"),
+    JWT_REFRESH_EXPIRES: z.string().default("30d"),
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
     
     SYS_DEPTO_CRITICO: z.string().min(1).default("Mantenimiento"),
