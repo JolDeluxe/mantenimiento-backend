@@ -1,11 +1,12 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { registrarError } from "../../../utils/logger";
-import { agregarMetricasGrupo } from "../calculations/aggregation";
 import { validarYCalcularPeriodo, ISO_WITH_OFFSET_REGEX } from "../calculations/periodos";
 import { BIAggregationService, type AggregatedRow } from "../services/bi_aggregation_service";
 import { BIMetricsService } from "../services/bi_metrics_service";
 import { BIQueryService } from "../services/bi_query_service";
+
+const BI_REPORT_TOP_LIMIT = 10;
 
 const reportBoolean = z.union([z.boolean(), z.literal("true"), z.literal("false"), z.literal("")])
   .optional()
@@ -294,14 +295,15 @@ const obtenerDatosReporte = async (input: ReportInput, ahora: Date) => {
     hasta,
   );
 
+  const rowsOrdenadas = BIAggregationService.agruparYAgregar(
+    individualResults,
+    input.agrupacion,
+    input.ordenarPor,
+    input.direccion,
+  );
+
   return {
-    rows: BIAggregationService.agruparYAgregar(
-      individualResults,
-      input.agrupacion,
-      input.ordenarPor,
-      input.direccion,
-    ),
-    summary: agregarMetricasGrupo(individualResults),
+    rows: rowsOrdenadas.slice(0, BI_REPORT_TOP_LIMIT),
   };
 };
 
@@ -355,12 +357,44 @@ export const generarBIMaquinariaReporteController = async (req: Request, res: Re
 };
 
 export const enviarBIMaquinariaReporteController = async (req: Request, res: Response) => {
-  void req;
-  return res.status(501).json({
-    success: false,
-    error: {
-      code: "BI_REPORT_EMAIL_NOT_CONFIGURED",
-      message: "El envío por correo de reportes BI aún no está configurado.",
-    },
-  });
+  const user = req.user;
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      error: { code: "UNAUTHENTICATED", message: "Autenticación requerida." },
+    });
+  }
+
+  const validation = reportSchema.safeParse({ body: req.body });
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: "BI_REPORT_INVALID_PARAMS",
+        message: "Los parámetros del reporte son inválidos.",
+        details: validation.error.issues,
+      },
+    });
+  }
+
+  try {
+    await obtenerDatosReporte(validation.data.body, new Date());
+    return res.status(501).json({
+      success: false,
+      error: {
+        code: "BI_REPORT_EMAIL_NOT_CONFIGURED",
+        message: "El envío por correo de reportes BI aún no está configurado.",
+      },
+    });
+  } catch (error) {
+    await registrarError("ENVIAR_BI_MAQUINARIA_REPORTE", user.id, error);
+    const msg = error instanceof Error ? error.message : "Error al preparar el reporte.";
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: "BI_REPORT_SEND_ERROR",
+        message: msg,
+      },
+    });
+  }
 };
