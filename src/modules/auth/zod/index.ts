@@ -10,9 +10,13 @@ export const loginSchema = z.object({
 export const registerSchema = z.object({
   body: z.object({
     nombre: z.string().min(3, "El nombre es muy corto"),
-    email: z.string()
-      .email("Formato de correo inválido")
-      .endsWith("@cuadra.com.mx", { message: "Solo se permiten correos corporativos" }),
+    email: z.union([
+      z.string().trim().email("Formato de correo inválido").endsWith("@cuadra.com.mx", { message: "Solo se permiten correos corporativos" }),
+      z.literal(""),
+      z.null(),
+      z.undefined()
+    ]).optional().transform(val => val === "" ? null : val),
+    telefono: z.string().optional().nullable(),
     password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
     cargo: z.string().optional(),
     departamentoId: z.number().int().nullable().optional(),
