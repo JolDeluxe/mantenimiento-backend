@@ -1,11 +1,13 @@
 import { type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
-import { prisma } from "../../db"; 
-import { Estatus } from "@prisma/client"; 
+import { prisma } from "../../db";
+import { Estatus } from "@prisma/client";
 import { registrarAccion, registrarError } from "../../utils/logger";
 import { generateAccessToken, generateRefreshToken } from "./utils/tokenGenerator";
 import type { LoginInput } from "./zod";
 import type { TokenPayload } from "./types";
+import { env } from "../../env";
+import { calculateTokenExpirationDate } from "./helper";
 
 export const login = async (req: Request, res: Response) => {
   try {
@@ -27,9 +29,9 @@ export const login = async (req: Request, res: Response) => {
 
     if (usuario.estado !== Estatus.ACTIVO) {
       await registrarAccion('LOGIN_BLOQUEADO', usuario.id, 'Intento de acceso usuario inactivo');
-      return res.status(403).json({ 
-        status: "error", 
-        message: "Usuario desactivado o suspendido. Contacte a soporte." 
+      return res.status(403).json({
+        status: "error",
+        message: "Usuario desactivado o suspendido. Contacte a soporte."
       });
     }
 
@@ -42,18 +44,17 @@ export const login = async (req: Request, res: Response) => {
 
     const payload: TokenPayload = {
       id: usuario.id,
-      username: usuario.username, 
-      email: usuario.email, 
+      username: usuario.username,
+      email: usuario.email,
       rol: usuario.rol,
       nombre: usuario.nombre,
-      departamentoId: usuario.departamentoId 
+      departamentoId: usuario.departamentoId
     };
 
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken({ id: usuario.id });
 
-    const expiresAt = new Date();
-    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    const expiresAt = calculateTokenExpirationDate(env.JWT_REFRESH_EXPIRES);
 
     await prisma.refreshToken.create({
       data: {

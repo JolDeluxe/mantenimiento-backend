@@ -5,9 +5,10 @@ import { Rol } from "@prisma/client";
 import { type RegisterInput } from "./zod";
 import { generarUsername } from "../usuarios/utils/userGenerator";
 import { registrarAccion, registrarError } from "../../utils/logger";
-import { validarDepartamentoRegistro } from "./helper";
+import { validarDepartamentoRegistro, calculateTokenExpirationDate } from "./helper";
 import { generateAccessToken, generateRefreshToken } from "./utils/tokenGenerator";
 import type { TokenPayload } from "./types";
+import { env } from "../../env";
 
 export const register = async (req: Request, res: Response) => {
   try {
@@ -79,8 +80,7 @@ export const register = async (req: Request, res: Response) => {
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken({ id: nuevoUsuario.id });
 
-    const expiresAt = new Date();
-    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    const expiresAt = calculateTokenExpirationDate(env.JWT_REFRESH_EXPIRES);
 
     await prisma.refreshToken.create({
       data: {
