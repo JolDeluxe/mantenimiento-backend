@@ -135,7 +135,7 @@ export const createTicketClientRequestSchema = z.object({
   incidenteId: commonString.min(1).max(80),
   titulo: commonString.min(3).max(255),
   prioridad: z.enum(["BAJA", "MEDIA", "ALTA"]),
-  descripcion: commonString.min(10, "La descripción debe tener al menos 10 caracteres").max(2000),
+  descripcion: commonString.min(5, "La descripción debe tener al menos 5 caracteres").max(2000),
   planta: z.preprocess(preprocessEmpty, z.string().optional().nullable()),
   area: commonString.max(100).optional(),
   maquinaId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
