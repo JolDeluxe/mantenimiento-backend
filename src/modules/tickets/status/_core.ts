@@ -465,12 +465,14 @@ export const ejecutarCambioEstado = async (opts: CambioEstadoOptions): Promise<R
       }
 
       // Historial
-      let notaHistorial = nota ? nota.trim() : "Sin observaciones";
+      let notaBase = nota && nota.trim() ? nota.trim() : "";
+      let notaHistorial = notaBase;
       if (nuevoEstado === EstadoTarea.CERRADO && ((ticket.clasificacion as unknown as string) === "RUTINA" || ticket.categoria === "RUTINA")) {
-        notaHistorial += " [RUTINA]";
+        notaHistorial += notaHistorial ? " [RUTINA]" : "[RUTINA]";
       }
-      if (cierreAdministrativo) notaHistorial += " ||[META:CIERRE_ADMINISTRATIVO]||";
-      if (minutosManualesDirectos > 0) notaHistorial += " ||[META:TIEMPO_MANUAL]||";
+      if (cierreAdministrativo) notaHistorial += notaHistorial ? " ||[META:CIERRE_ADMINISTRATIVO]||" : "||[META:CIERRE_ADMINISTRATIVO]||";
+      if (minutosManualesDirectos > 0) notaHistorial += notaHistorial ? " ||[META:TIEMPO_MANUAL]||" : "||[META:TIEMPO_MANUAL]||";
+      notaHistorial = notaHistorial.trim() || (null as any);
 
       const historial = await tx.historialTarea.create({
         data: {

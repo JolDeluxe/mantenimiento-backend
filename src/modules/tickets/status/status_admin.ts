@@ -47,9 +47,6 @@ export const changeStatusAdmin = async (req: Request, res: Response) => {
       if (nuevoEstado !== EstadoTarea.CERRADO) {
         return res.status(400).json({ error: "El cierre administrativo solo puede mover la tarea a CERRADO." });
       }
-      if (!nota?.trim()) {
-        return res.status(400).json({ error: "La nota es obligatoria para el cierre administrativo." });
-      }
     }
 
     if (!esResponsable && esOperacionTecnica) {

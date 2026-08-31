@@ -1,8 +1,11 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
 import { registrarAccion } from "../../utils/logger";
-import { esDomingo, minutosDesdeHora, normalizarFechaLogica, siguienteCicloOperativo } from "../../utils/recurrencia-temporal";
+import { esDomingo, minutosDesdeHora, normalizarFechaLogica, siguienteCicloOperativo, ZONA_HORARIA_MX } from "../../utils/recurrencia-temporal";
 import { ActividadRecurrenteError, dtoReglaActividad, validarResponsablesActivos } from "./helper";
+import { materializarActividadEnTransaccion } from "./materialize-core";
+import { notificarAsignacionTrasCommit } from "./06_materialize";
+import { ejecutarNotificacionEnSegundoPlano } from "../notificaciones/services";
 import { reglaActividadInclude } from "./types";
 import type { CreateReglaActividadInput } from "./zod";
 
@@ -23,27 +26,72 @@ export async function crearReglaActividad(req: Request, res: Response) {
       ? siguienteCicloOperativo({ fechaInicio, fechaFin: null, unidad: body.unidad, intervalo: body.intervalo }, fechaInicio)
       : fechaInicio;
 
-    const regla = await prisma.reglaActividadRecurrente.create({
-      data: {
-        titulo: body.titulo,
-        descripcion: body.descripcion ?? null,
-        categoria: body.categoria,
-        planta: body.planta ?? null,
-        area: body.area,
-        prioridad: body.prioridad,
-        fechaInicio,
-        fechaFin: body.fechaFin ? normalizarFechaLogica(body.fechaFin) : null,
-        horaInicioMinutos,
-        horaFinMinutos,
-        tiempoEstimado,
-        unidad: body.unidad,
-        intervalo: body.intervalo,
-        proximaFechaEjecucion,
-        creadorId: req.user!.id,
-        responsables: { connect: responsables.map((id) => ({ id })) },
-      },
-      include: reglaActividadInclude,
+    const hoyMX = normalizarFechaLogica(new Date().toLocaleDateString("en-CA", { timeZone: ZONA_HORARIA_MX }));
+    const notifsToDispatch: Array<{ tarea: any; responsablesIds: number[] }> = [];
+
+    const regla = await prisma.$transaction(async (tx) => {
+      let reglaCreada = await tx.reglaActividadRecurrente.create({
+        data: {
+          titulo: body.titulo,
+          descripcion: body.descripcion ?? null,
+          categoria: body.categoria,
+          planta: body.planta ?? null,
+          area: body.area,
+          prioridad: body.prioridad,
+          fechaInicio,
+          fechaFin: body.fechaFin ? normalizarFechaLogica(body.fechaFin) : null,
+          horaInicioMinutos,
+          horaFinMinutos,
+          tiempoEstimado,
+          unidad: body.unidad,
+          intervalo: body.intervalo,
+          proximaFechaEjecucion,
+          creadorId: req.user!.id,
+          responsables: { connect: responsables.map((id) => ({ id })) },
+        },
+        include: reglaActividadInclude,
+      });
+
+      let proxima = normalizarFechaLogica(reglaCreada.proximaFechaEjecucion);
+      let maxCiclos = 100;
+
+      while (proxima <= hoyMX && maxCiclos > 0) {
+        maxCiclos--;
+        if (reglaCreada.fechaFin && proxima > normalizarFechaLogica(reglaCreada.fechaFin)) {
+          break;
+        }
+
+        const resMat = await materializarActividadEnTransaccion({
+          tx,
+          regla: reglaCreada,
+          fechaCicloLogica: proxima,
+          creadorId: req.user!.id,
+        });
+
+        if (!resMat.yaExistia && resMat.tarea && resMat.responsablesIds.length > 0) {
+          notifsToDispatch.push({ tarea: resMat.tarea, responsablesIds: resMat.responsablesIds });
+        }
+
+        const reglaActualizada = await tx.reglaActividadRecurrente.findUnique({
+          where: { id: reglaCreada.id },
+          include: reglaActividadInclude,
+        });
+
+        if (!reglaActualizada) break;
+        reglaCreada = reglaActualizada;
+        proxima = normalizarFechaLogica(reglaCreada.proximaFechaEjecucion);
+      }
+
+      return reglaCreada;
     });
+
+    for (const n of notifsToDispatch) {
+      ejecutarNotificacionEnSegundoPlano(
+        "NOTIF_ASYNC_ACTIVIDAD_RECURRENTE_MATERIALIZADA",
+        notificarAsignacionTrasCommit(n.tarea, n.responsablesIds)
+      );
+    }
+
     await registrarAccion("CREAR_ACTIVIDAD_RECURRENTE", req.user!.id, `Regla ${regla.id} creada`);
     return res.status(201).json({ success: true, data: dtoReglaActividad(regla) });
   } catch (error) {

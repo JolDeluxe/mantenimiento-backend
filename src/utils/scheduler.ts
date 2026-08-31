@@ -2,18 +2,25 @@ import cron from "node-cron";
 import { prisma } from "../db";
 import { autoCloseResolvedTickets, enviarAdvertenciasFinTurno, ejecutarAutoPausaFinTurno } from "../modules/tickets/automations";
 import { procesarRecurrenciasProgramadas } from "../modules/recurrencias/automations";
+import { procesarActividadesRecurrentesProgramadas } from "../modules/actividades_recurrentes/automations";
 import { procesarIngestaMaquinariaCsv } from "./maquinaria-csv-ingest";
 import { env } from "../env";
 import { TURNO_TIMEZONE } from "../modules/tickets/turno-config";
 
 export const iniciarTareasProgramadas = () => {
-  // CRON 0: Mantenimientos recurrentes automáticos (Frecuencias del módulo de preventivos)
+  // CRON 0: Mantenimientos y actividades recurrentes automáticas
   // Ejecuta todos los días a las 02:00 AM (America/Mexico_City)
   cron.schedule("0 2 * * *", async () => {
+    console.log("[CRON] Ejecutando automatización de las 02:00 AM...");
     try {
       await procesarRecurrenciasProgramadas();
     } catch (error) {
-      console.error("[CRON ERROR] Falló la automatización de recurrencias:", error);
+      console.error("[CRON ERROR] Falló la automatización de recurrencias de maquinaria:", error);
+    }
+    try {
+      await procesarActividadesRecurrentesProgramadas();
+    } catch (error) {
+      console.error("[CRON ERROR] Falló la automatización de actividades recurrentes:", error);
     }
   }, { timezone: TURNO_TIMEZONE });
 
@@ -98,5 +105,5 @@ export const iniciarTareasProgramadas = () => {
     await ejecutarAutoPausaFinTurno({ tipoJornada: "SABADO" });
   }, { timezone: TURNO_TIMEZONE });
   
-  console.log("[SYSTEM] Tareas programadas (CRON) inicializadas: Tickets (01:00) | Recurrentes (02:00) | Maquinaria ERP (03:00) | Bitácora (03:30) | Advertencia (17:15 / 13:45) | Auto-pausa (17:45 / 14:15).");
+  console.log("[SYSTEM] Tareas programadas (CRON) inicializadas: Tickets (01:00) | Recurrencias Maquinaria (02:00) | Actividades Recurrentes (02:00) | Maquinaria ERP (03:00) | Bitácora (03:30) | Advertencia (17:15 / 13:45) | Auto-pausa (17:45 / 14:15).");
 };

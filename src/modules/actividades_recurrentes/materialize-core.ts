@@ -97,6 +97,12 @@ export async function materializarActividadEnTransaccion(params: {
     include: { responsables: true },
   });
   if (existente) {
+    if (normalizarFechaLogica(regla.proximaFechaEjecucion).getTime() === fechaCicloLogica.getTime()) {
+      await tx.reglaActividadRecurrente.update({
+        where: { id: regla.id },
+        data: { proximaFechaEjecucion: siguienteCicloOperativo({ ...patron, fechaFin: null }, fechaCicloLogica) },
+      });
+    }
     return { tarea: existente, yaExistia: true, omitida: false, fechaCicloLogica, fechaEfectiva: resolved.fechaProgramada, responsablesIds: existente.responsables.map((responsable) => responsable.id) };
   }
   const responsablesIds = (await tx.usuario.findMany({
