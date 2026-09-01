@@ -7,9 +7,13 @@
 //   - Error P2002 (unique violation) se trata como caso esperado, no como crash.
 import type { Request, Response } from "express";
 import { prisma } from "../../db";
-import { normalizarFechaLogica } from "./helper";
+import { calcularSiguienteFechaLogica, normalizarFechaLogica } from "./helper";
 import { materializarCicloInterno } from "./02_create";
 import { resolverOcurrenciaConAjuste } from "./ajustes-helper";
+import {
+  esCicloProgramadoRecurrencia,
+  resolverPoliticaMaterializacionRecurrencia,
+} from "./materialization-policy";
 
 const ESTADOS_MAQUINA_NO_OPERATIVOS = new Set(["BAJA", "BAJA", "DESUSO", "INACTIVA"]);
 
@@ -35,10 +39,37 @@ export const materializeRegla = async (req: Request, res: Response) => {
     }
 
     // --- 2. Resolver la fecha lógica del ciclo ---
-    // Si el cliente envía fechaCicloLogica, usarla; si no, usar proximaFechaEjecucion de la regla.
+    // Si se omite fechaCicloLogica, aplica la misma política anti-backlog del cron.
+    const hoyLogico = normalizarFechaLogica(new Date());
+    const fechaExplicita = Boolean(fechaBodyRaw);
+    const decision = resolverPoliticaMaterializacionRecurrencia(regla, hoyLogico);
     const fechaCicloLogica = normalizarFechaLogica(
-      fechaBodyRaw ? new Date(fechaBodyRaw) : regla.proximaFechaEjecucion
+      fechaBodyRaw ? new Date(fechaBodyRaw) : decision.fechaCicloLogica ?? decision.proximaFechaEjecucion
     );
+
+    if (!fechaExplicita && !decision.fechaCicloLogica) {
+      if (decision.requiereActualizarCursor) {
+        await prisma.reglaRecurrencia.update({
+          where: { id },
+          data: { proximaFechaEjecucion: decision.proximaFechaEjecucion },
+        });
+      }
+      return res.status(200).json({
+        ticket: null,
+        yaExistia: false,
+        mensaje: "No hay ciclo preventivo materializable hoy. La próxima fecha quedó alineada al siguiente ciclo válido.",
+      });
+    }
+
+    if (fechaExplicita) {
+      if (fechaCicloLogica < hoyLogico && decision.fechaCicloLogica?.getTime() !== fechaCicloLogica.getTime()) {
+        return res.status(400).json({ error: "Solo se permite recuperar la última ocurrencia vencida pendiente; no ciclos históricos anteriores" });
+      }
+      if (!esCicloProgramadoRecurrencia(regla, fechaCicloLogica)) {
+        return res.status(400).json({ error: "La fecha solicitada no pertenece al patrón de recurrencia" });
+      }
+    }
+
     const ocurrencia = await resolverOcurrenciaConAjuste(id, fechaCicloLogica);
 
     if (ocurrencia.omitida) {
@@ -47,10 +78,16 @@ export const materializeRegla = async (req: Request, res: Response) => {
       });
     }
 
-    const hoyLogico = normalizarFechaLogica(new Date());
     if (fechaCicloLogica > hoyLogico && !confirmarFuturo) {
       return res.status(400).json({
         error: "No se permite materializar ciclos futuros sin confirmación explícita",
+        requiereConfirmacion: true,
+      });
+    }
+    const fechaEfectiva = normalizarFechaLogica(ocurrencia.fechaProgramadaPreventiva ?? fechaCicloLogica);
+    if (fechaEfectiva > hoyLogico && !confirmarFuturo) {
+      return res.status(400).json({
+        error: "La ocurrencia está movida a una fecha futura y requiere confirmación explícita",
         requiereConfirmacion: true,
       });
     }
@@ -62,6 +99,12 @@ export const materializeRegla = async (req: Request, res: Response) => {
     });
 
     if (ticketExistente) {
+      if (decision.fechaCicloLogica?.getTime() === fechaCicloLogica.getTime()) {
+        await prisma.reglaRecurrencia.update({
+          where: { id },
+          data: { proximaFechaEjecucion: decision.proximaFechaEjecucion },
+        });
+      }
       return res.status(200).json({
         ticket: ticketExistente,
         yaExistia: true,
@@ -80,19 +123,20 @@ export const materializeRegla = async (req: Request, res: Response) => {
     });
 
     // --- 5. Avanzar proximaFechaEjecucion de la regla al siguiente ciclo ---
-    // Solo si estamos materializando el ciclo vigente (la proximaFechaEjecucion actual)
-    // No avanzar si se está materializando un ciclo pasado u otro ciclo específico.
+    // Solo si estamos materializando el ciclo vigente seguro.
     const esCicloVigente =
+      decision.fechaCicloLogica?.getTime() === fechaCicloLogica.getTime() ||
       fechaCicloLogica.getTime() === normalizarFechaLogica(regla.proximaFechaEjecucion).getTime();
 
     if (esCicloVigente) {
-      const { calcularSiguienteFechaLogica } = await import("./helper");
-      const siguienteFecha = calcularSiguienteFechaLogica(
-        fechaCicloLogica,
-        regla.frecuencia,
-        regla.intervaloDias,
-        regla.fechaInicio,
-      );
+      const siguienteFecha = decision.fechaCicloLogica?.getTime() === fechaCicloLogica.getTime()
+        ? decision.proximaFechaEjecucion
+        : calcularSiguienteFechaLogica(
+          fechaCicloLogica,
+          regla.frecuencia,
+          regla.intervaloDias,
+          regla.fechaInicio,
+        );
       await prisma.reglaRecurrencia.update({
         where: { id },
         data: { proximaFechaEjecucion: siguienteFecha },

@@ -5,6 +5,7 @@ import { prisma } from "../../db";
 import { Prisma, ClasificacionTarea, TipoTarea, EstadoTarea } from "@prisma/client";
 import type { CreateReglaInput } from "./zod";
 import { normalizarFechaLogica, finDeMesUTC } from "./helper";
+import { resolverPoliticaMaterializacionRecurrencia } from "./materialization-policy";
 
 const ESTADOS_MAQUINA_NO_OPERATIVOS = new Set(["BAJA", "BAJA", "DESUSO", "INACTIVA"]);
 
@@ -61,23 +62,41 @@ export const createRegla = async (req: Request, res: Response) => {
       },
     });
 
-    // --- 5. Materializar el primer ticket automáticamente ---
-    // Solo si la proximaFechaEjecucion es hoy o pasada (el ciclo ya venció)
+    // --- 5. Materializar como máximo un ticket inicial vigente ---
     const hoyLogico = normalizarFechaLogica(new Date());
     let primerTicket = null;
+    const decisionInicial = resolverPoliticaMaterializacionRecurrencia(regla, hoyLogico);
 
-    if (fechaCicloLogicaNormalizada <= hoyLogico) {
+    if (decisionInicial.fechaCicloLogica) {
       primerTicket = await materializarCicloInterno({
         regla,
-        fechaCicloLogica: fechaCicloLogicaNormalizada,
+        fechaCicloLogica: decisionInicial.fechaCicloLogica,
         maquinaPlanta: maquina.planta,
         maquinaArea: maquina.area,
         creadorId: req.user!.id,
       });
+
+      await prisma.reglaRecurrencia.update({
+        where: { id: regla.id },
+        data: { proximaFechaEjecucion: decisionInicial.proximaFechaEjecucion },
+      });
+    } else if (decisionInicial.requiereActualizarCursor) {
+      await prisma.reglaRecurrencia.update({
+        where: { id: regla.id },
+        data: { proximaFechaEjecucion: decisionInicial.proximaFechaEjecucion },
+      });
     }
 
+    const reglaRespuesta = await prisma.reglaRecurrencia.findUnique({
+      where: { id: regla.id },
+      include: {
+        maquina:             { select: { id: true, codigo: true, nombre: true, planta: true, area: true } },
+        tecnicoResponsable:  { select: { id: true, nombre: true, username: true, email: true } },
+      },
+    }) ?? regla;
+
     return res.status(201).json({
-      regla,
+      regla: reglaRespuesta,
       primerTicketCreado: primerTicket ?? null,
       mensaje: primerTicket
         ? "Regla creada y primer ticket materializado automáticamente"
@@ -99,13 +118,13 @@ export async function materializarCicloInterno(params: {
   maquinaPlanta: string | null;
   maquinaArea: string | null;
   creadorId: number;
-}) {
+}, db: Pick<typeof prisma, "tarea"> = prisma) {
   const { regla, fechaCicloLogica, fechaProgramadaPreventiva = null, maquinaPlanta, maquinaArea, creadorId } = params;
 
   const fechaVencimientoMensual = finDeMesUTC(fechaCicloLogica);
 
   try {
-    const ticket = await prisma.tarea.create({
+    const ticket = await db.tarea.create({
       data: {
         tipo:              TipoTarea.PLANEADA,
         clasificacion:     ClasificacionTarea.PREVENTIVO,
@@ -144,7 +163,7 @@ export async function materializarCicloInterno(params: {
       error.code === "P2002"
     ) {
       // Devolver el ticket existente
-      const existente = await prisma.tarea.findFirst({
+      const existente = await db.tarea.findFirst({
         where: { reglaRecurrenciaId: regla.id, fechaCicloLogica },
         select: {
           id: true, titulo: true, estado: true,

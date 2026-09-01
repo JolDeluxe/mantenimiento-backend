@@ -84,12 +84,24 @@ describe("materialización de actividades recurrentes", () => {
     expect(fake.tareas[0]).toMatchObject({
       tipo: "PLANEADA",
       clasificacion: null,
+      titulo: "Inspección de seguridad",
+      descripcion: "Revisión recurrente",
+      categoria: "GESTION",
+      planta: null,
+      area: "ACABADO",
+      prioridad: Prioridad.ALTA,
+      tiempoEstimado: 90,
       maquinaId: null,
+      creadorId: 9,
       reglaRecurrenciaId: null,
       reglaActividadRecurrenteId: 71,
       estado: EstadoTarea.PENDIENTE,
+      fechaProgramadaPreventiva: null,
     });
     expect((fake.tareas[0]!.fechaCicloLogica as Date).toISOString()).toBe("2026-01-03T00:00:00.000Z");
+    expect((fake.tareas[0]!.fechaVencimiento as Date).toISOString()).toBe("2026-01-03T06:00:00.000Z");
+    expect((fake.tareas[0]!.horaInicioProgramada as Date).toISOString()).toBe("2026-01-03T14:00:00.000Z");
+    expect((fake.tareas[0]!.horaFinProgramada as Date).toISOString()).toBe("2026-01-03T15:30:00.000Z");
     expect(fake.historial).toHaveLength(1);
     expect(fake.actualizacionesCursor).toHaveLength(1);
     expect((fake.actualizacionesCursor[0]!.proximaFechaEjecucion as Date).toISOString()).toBe("2026-01-05T00:00:00.000Z");

@@ -5,6 +5,7 @@ import { ejecutarNotificacionEnSegundoPlano, notificarAsignacionTarea } from "..
 import { registrarAccion } from "../../utils/logger";
 import { ActividadRecurrenteError } from "./helper";
 import { esErrorConcurrenciaDeCiclo, materializarActividadEnTransaccion, type MaterializacionActividadResultado } from "./materialize-core";
+import { resolverPoliticaMaterializacionActividad } from "./materialization-policy";
 import { reglaActividadInclude } from "./types";
 
 const hoyMX = () => normalizarFechaLogica(new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }));
@@ -31,12 +32,39 @@ export async function materializarReglaActividad(req: Request, res: Response) {
     if (!regla) return res.status(404).json({ error: "Actividad recurrente no encontrada" });
     if (regla.archivadoAt) return res.status(400).json({ error: "La regla está archivada y no puede materializar tareas" });
     if (!regla.activo) return res.status(400).json({ error: "La regla está pausada y no puede materializar tareas" });
-    const fechaCicloLogica = normalizarFechaLogica(body.fechaCicloLogica ?? regla.proximaFechaEjecucion);
+    const hoy = hoyMX();
+    const fechaExplicita = Boolean(body.fechaCicloLogica);
+    const decision = resolverPoliticaMaterializacionActividad(regla, hoy);
+    const fechaCicloLogica = normalizarFechaLogica(body.fechaCicloLogica ?? decision.fechaCicloLogica ?? decision.proximaFechaEjecucion);
     fechaSolicitada = fechaCicloLogica;
-    if (fechaCicloLogica > hoyMX() && !body.confirmarFuturo) {
+    if (fechaCicloLogica < hoy) {
+      if (decision.fechaCicloLogica?.getTime() !== fechaCicloLogica.getTime()) {
+        return res.status(400).json({ error: "Solo se permite recuperar la última ocurrencia vencida pendiente; no ciclos históricos anteriores" });
+      }
+    }
+    if (fechaCicloLogica > hoy && !body.confirmarFuturo) {
       return res.status(400).json({ error: "Materializar un ciclo futuro requiere confirmación explícita", requiereConfirmacion: true });
     }
-    const result = await prisma.$transaction((tx) => materializarActividadEnTransaccion({ tx, regla, fechaCicloLogica, creadorId: userId }));
+    if (!fechaExplicita && !decision.fechaCicloLogica) {
+      if (decision.requiereActualizarCursor) {
+        await prisma.reglaActividadRecurrente.update({
+          where: { id },
+          data: { proximaFechaEjecucion: decision.proximaFechaEjecucion },
+        });
+      }
+      return res.status(200).json({
+        success: true,
+        data: null,
+        yaExistia: false,
+        fechaCicloLogica: null,
+        fechaEfectiva: null,
+        mensaje: "No hay ciclo materializable hoy. La próxima fecha quedó alineada al siguiente ciclo válido.",
+      });
+    }
+    const reglaParaMaterializar = decision.fechaCicloLogica?.getTime() === fechaCicloLogica.getTime()
+      ? { ...regla, proximaFechaEjecucion: fechaCicloLogica }
+      : regla;
+    const result = await prisma.$transaction((tx) => materializarActividadEnTransaccion({ tx, regla: reglaParaMaterializar, fechaCicloLogica, creadorId: userId }));
     if (result.omitida) {
       await registrarAccion(
         "OMITIR_MATERIALIZACION_ACTIVIDAD_RECURRENTE",

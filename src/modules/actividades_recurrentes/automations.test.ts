@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { EstadoTarea, Estatus, Prisma, Prioridad, UnidadRecurrenciaActividad } from "@prisma/client";
-import { procesarActividadesRecurrentesProgramadas } from "./automations";
+import { Estatus, Prioridad, UnidadRecurrenciaActividad } from "@prisma/client";
 import { materializarActividadEnTransaccion } from "./materialize-core";
-import { normalizarFechaLogica, ZONA_HORARIA_MX } from "../../utils/recurrencia-temporal";
+import { resolverPoliticaMaterializacionActividad } from "./materialization-policy";
 import type { ReglaActividadConRelaciones } from "./types";
 
 const fecha = (value: string) => new Date(`${value}T00:00:00.000Z`);
@@ -96,7 +95,7 @@ describe("Pruebas obligatorias de automatización y recuperación", () => {
     ).rejects.toThrow();
   });
 
-  test("Caso 6 y 12: Backlog de varios ciclos avanza hasta quedar al corriente sin duplicados (Caso 5, 6, 7, 12)", async () => {
+  test("Caso 6 y 12: backlog de varios ciclos descarta histórico, crea máximo hoy y avanza sin duplicados", async () => {
     const regla = crearRegla({ proximaFechaEjecucion: fecha("2026-01-01") });
     const hoy = fecha("2026-01-03");
 
@@ -125,28 +124,71 @@ describe("Pruebas obligatorias de automatización y recuperación", () => {
       },
     } as any;
 
-    let ciclos = 0;
-    while (regla.proximaFechaEjecucion <= hoy && ciclos < 10) {
-      ciclos++;
-      await materializarActividadEnTransaccion({
-        tx,
-        regla,
-        fechaCicloLogica: regla.proximaFechaEjecucion,
-        creadorId: 5,
-      });
-    }
+    const decision = resolverPoliticaMaterializacionActividad(regla, hoy);
+    expect(decision.fechaCicloLogica?.toISOString()).toBe("2026-01-03T00:00:00.000Z");
+    expect(decision.ciclosDescartados).toBe(2);
 
-    expect(tareasMap.size).toBe(3);
+    await materializarActividadEnTransaccion({
+      tx,
+      regla: { ...regla, proximaFechaEjecucion: decision.fechaCicloLogica! },
+      fechaCicloLogica: decision.fechaCicloLogica!,
+      creadorId: 5,
+    });
+
+    expect(tareasMap.size).toBe(1);
     expect(regla.proximaFechaEjecucion.toISOString()).toBe("2026-01-05T00:00:00.000Z");
 
     const reIntento = await materializarActividadEnTransaccion({
       tx,
-      regla,
-      fechaCicloLogica: fecha("2026-01-01"),
+      regla: { ...regla, proximaFechaEjecucion: fecha("2026-01-03") },
+      fechaCicloLogica: fecha("2026-01-03"),
       creadorId: 5,
     });
     expect(reIntento.yaExistia).toBe(true);
-    expect(tareasMap.size).toBe(3);
+    expect(tareasMap.size).toBe(1);
+  });
+
+  test("ejecutar la decisión automática dos veces no duplica la misma ocurrencia", async () => {
+    const regla = crearRegla({ fechaInicio: fecha("2026-08-31"), proximaFechaEjecucion: fecha("2026-08-31") });
+    const hoy = fecha("2026-09-01");
+    const tareasMap = new Map<string, any>();
+    const tx = {
+      tarea: {
+        findFirst: async ({ where }: any) => {
+          const key = `${where.reglaActividadRecurrenteId}_${where.fechaCicloLogica.toISOString()}`;
+          return tareasMap.get(key) ?? null;
+        },
+        create: async ({ data }: any) => {
+          const key = `${data.reglaActividadRecurrenteId}_${data.fechaCicloLogica.toISOString()}`;
+          const t = { id: tareasMap.size + 1, ...data, responsables: [{ id: 10 }] };
+          tareasMap.set(key, t);
+          return t;
+        },
+      },
+      historialTarea: { create: async () => ({}) },
+      reglaActividadRecurrenteAjuste: { findUnique: async () => null },
+      usuario: { findMany: async () => [{ id: 10, estado: Estatus.ACTIVO }] },
+      reglaActividadRecurrente: {
+        update: async ({ data }: any) => {
+          regla.proximaFechaEjecucion = data.proximaFechaEjecucion;
+          return regla;
+        },
+      },
+    } as any;
+
+    for (let intento = 0; intento < 2; intento++) {
+      const decision = resolverPoliticaMaterializacionActividad(regla, hoy);
+      if (!decision.fechaCicloLogica) continue;
+      await materializarActividadEnTransaccion({
+        tx,
+        regla: { ...regla, proximaFechaEjecucion: decision.fechaCicloLogica },
+        fechaCicloLogica: decision.fechaCicloLogica,
+        creadorId: 5,
+      });
+    }
+
+    expect(tareasMap.size).toBe(1);
+    expect(regla.proximaFechaEjecucion.toISOString()).toBe("2026-09-02T00:00:00.000Z");
   });
 
   test("Caso 8, 9, 10: Reglas pausadas, archivadas o fuera de fechaFin", async () => {

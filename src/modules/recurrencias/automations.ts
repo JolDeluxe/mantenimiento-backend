@@ -1,31 +1,33 @@
 // src/modules/recurrencias/automations.ts
 import { prisma } from "../../db";
 import { Rol } from "@prisma/client";
-import { normalizarFechaLogica, calcularSiguienteFechaLogica, inicioMesUTC, finDeMesUTC } from "./helper";
+import { normalizarFechaLogica } from "./helper";
 import { materializarCicloInterno } from "./02_create";
 import { resolverOcurrenciaConAjuste } from "./ajustes-helper";
+import { resolverPoliticaMaterializacionRecurrencia } from "./materialization-policy";
 
 /**
- * Evalúa reglas activas y materializa ciclos del mes actual.
+ * Evalúa reglas activas y materializa como máximo un ciclo vigente por regla.
  * 
  * COMPORTAMIENTO PARA REGLAS ATRASADAS:
- * - No espera al día exacto: genera ciclos programados dentro del mes actual.
+ * - No recupera backlog histórico.
+ * - Frecuencias cortas: como máximo la última ocurrencia vencida del mes vigente.
+ * - Mensual: como máximo la ocurrencia vencida del mes vigente.
+ * - Trimestral: como máximo la ocurrencia vencida del trimestre vigente.
  * - Idempotente por (reglaRecurrenciaId + fechaCicloLogica).
- * - Avanza proximaFechaEjecucion al primer ciclo posterior al mes actual.
+ * - Avanza proximaFechaEjecucion al primer ciclo futuro posterior al candidato.
  */
 export async function procesarRecurrenciasProgramadas() {
-  console.log("[CRON RECURRENCIAS] Iniciando evaluación mensual de mantenimientos recurrentes...");
+  console.log("[CRON RECURRENCIAS] Iniciando evaluación segura de mantenimientos recurrentes...");
 
   try {
     const hoyLogico = normalizarFechaLogica(new Date());
-    const inicioMes = inicioMesUTC(hoyLogico);
-    const finMes = finDeMesUTC(hoyLogico);
 
-    // 1. Buscar reglas activas con algún ciclo posible hasta el cierre del mes actual.
+    // 1. Buscar reglas activas vencidas hasta hoy. No se materializan ciclos futuros del mes.
     const reglasActivas = await prisma.reglaRecurrencia.findMany({
       where: {
         activo: true,
-        proximaFechaEjecucion: { lte: finMes },
+        proximaFechaEjecucion: { lte: hoyLogico },
         maquina: {
           estado: { notIn: ["BAJA", "BAJA", "DESUSO", "INACTIVA"] },
         },
@@ -35,10 +37,10 @@ export async function procesarRecurrenciasProgramadas() {
       }
     });
 
-    console.log(`[CRON RECURRENCIAS] Se encontraron ${reglasActivas.length} reglas activas aplicables al mes.`);
+    console.log(`[CRON RECURRENCIAS] Se encontraron ${reglasActivas.length} reglas activas vencidas.`);
 
     if (reglasActivas.length === 0) {
-      console.log("[CRON RECURRENCIAS] No hay reglas aplicables al mes actual.");
+      console.log("[CRON RECURRENCIAS] No hay reglas vencidas.");
       return;
     }
 
@@ -54,73 +56,77 @@ export async function procesarRecurrenciasProgramadas() {
     let saltados = 0;
     let errores = 0;
 
-    // 3. Procesar ciclos del mes por regla.
+    // 3. Procesar máximo un ciclo vigente por regla.
     for (const regla of reglasActivas) {
       try {
-        let cursor = normalizarFechaLogica(regla.proximaFechaEjecucion);
-        let avanzoCursor = false;
+        const decision = resolverPoliticaMaterializacionRecurrencia(regla, hoyLogico);
 
-        while (cursor < inicioMes) {
-          cursor = calcularSiguienteFechaLogica(cursor, regla.frecuencia, regla.intervaloDias);
-          avanzoCursor = true;
-        }
-
-        let ciclosMes = 0;
-        while (cursor <= finMes) {
-          const fechaCiclo = normalizarFechaLogica(cursor);
-          ciclosMes++;
-          const ocurrencia = await resolverOcurrenciaConAjuste(regla.id, fechaCiclo);
-
-          if (ocurrencia.omitida) {
-            console.log(`[CRON RECURRENCIAS] Regla ID ${regla.id}: ocurrencia ${fechaCiclo.toISOString().split("T")[0]} omitida por ajuste operativo.`);
-            omitidos++;
-            cursor = calcularSiguienteFechaLogica(fechaCiclo, regla.frecuencia, regla.intervaloDias);
-            avanzoCursor = true;
-            continue;
-          }
-
-          const ticketExistente = await prisma.tarea.findFirst({
-            where: {
-              reglaRecurrenciaId: regla.id,
-              fechaCicloLogica: fechaCiclo
-            },
-            select: { id: true }
-          });
-
-          if (ticketExistente) {
-            console.log(`[CRON RECURRENCIAS] Regla ID ${regla.id}: ya existía ciclo ${fechaCiclo.toISOString().split("T")[0]} (ID: ${ticketExistente.id}).`);
-            omitidos++;
-          } else {
-            const ticket = await materializarCicloInterno({
-              regla,
-              fechaCicloLogica: fechaCiclo,
-              fechaProgramadaPreventiva: ocurrencia.fechaProgramadaPreventiva,
-              maquinaPlanta: regla.maquina.planta,
-              maquinaArea: regla.maquina.area,
-              creadorId
+        if (!decision.fechaCicloLogica) {
+          if (decision.requiereActualizarCursor) {
+            await prisma.reglaRecurrencia.update({
+              where: { id: regla.id },
+              data: { proximaFechaEjecucion: decision.proximaFechaEjecucion }
             });
-
-            if (ticket) {
-              console.log(`[CRON RECURRENCIAS] Regla ID ${regla.id}: ciclo ${fechaCiclo.toISOString().split("T")[0]} creado (ID: ${ticket.id}).`);
-              creados++;
-            } else {
-              console.warn(`[CRON RECURRENCIAS] Regla ID ${regla.id}: no se pudo crear ciclo ${fechaCiclo.toISOString().split("T")[0]}.`);
-              errores++;
-            }
           }
-
-          cursor = calcularSiguienteFechaLogica(fechaCiclo, regla.frecuencia, regla.intervaloDias);
-          avanzoCursor = true;
+          console.log(`[CRON RECURRENCIAS] Regla ID ${regla.id}: ${decision.motivo}. descartados=${decision.ciclosDescartados}; próxima=${decision.proximaFechaEjecucion.toISOString().split("T")[0]}.`);
+          saltados++;
+          continue;
         }
 
-        if (ciclosMes === 0) saltados++;
+        const fechaCiclo = decision.fechaCicloLogica;
+        const ocurrencia = await resolverOcurrenciaConAjuste(regla.id, fechaCiclo);
 
-        if (avanzoCursor) {
+        if (ocurrencia.omitida) {
+          console.log(`[CRON RECURRENCIAS] Regla ID ${regla.id}: ocurrencia ${fechaCiclo.toISOString().split("T")[0]} omitida por ajuste operativo. descartados=${decision.ciclosDescartados}.`);
+          omitidos++;
           await prisma.reglaRecurrencia.update({
             where: { id: regla.id },
-            data: { proximaFechaEjecucion: cursor }
+            data: { proximaFechaEjecucion: decision.proximaFechaEjecucion }
           });
+          continue;
         }
+
+        const fechaEfectiva = normalizarFechaLogica(ocurrencia.fechaProgramadaPreventiva ?? fechaCiclo);
+        if (fechaEfectiva > hoyLogico) {
+          console.log(`[CRON RECURRENCIAS] Regla ID ${regla.id}: ciclo ${fechaCiclo.toISOString().split("T")[0]} movido a futuro (${fechaEfectiva.toISOString().split("T")[0]}), no se materializa aún.`);
+          saltados++;
+          continue;
+        }
+
+        const ticketExistente = await prisma.tarea.findFirst({
+          where: {
+            reglaRecurrenciaId: regla.id,
+            fechaCicloLogica: fechaCiclo
+          },
+          select: { id: true }
+        });
+
+        if (ticketExistente) {
+          console.log(`[CRON RECURRENCIAS] Regla ID ${regla.id}: ya existía ciclo ${fechaCiclo.toISOString().split("T")[0]} (ID: ${ticketExistente.id}). descartados=${decision.ciclosDescartados}.`);
+          omitidos++;
+        } else {
+          const ticket = await materializarCicloInterno({
+            regla,
+            fechaCicloLogica: fechaCiclo,
+            fechaProgramadaPreventiva: ocurrencia.fechaProgramadaPreventiva,
+            maquinaPlanta: regla.maquina.planta,
+            maquinaArea: regla.maquina.area,
+            creadorId
+          });
+
+          if (ticket) {
+            console.log(`[CRON RECURRENCIAS] Regla ID ${regla.id}: ciclo ${fechaCiclo.toISOString().split("T")[0]} creado (ID: ${ticket.id}). descartados=${decision.ciclosDescartados}.`);
+            creados++;
+          } else {
+            console.warn(`[CRON RECURRENCIAS] Regla ID ${regla.id}: no se pudo crear ciclo ${fechaCiclo.toISOString().split("T")[0]}.`);
+            errores++;
+          }
+        }
+
+        await prisma.reglaRecurrencia.update({
+          where: { id: regla.id },
+          data: { proximaFechaEjecucion: decision.proximaFechaEjecucion }
+        });
 
       } catch (ruleError) {
         console.error(`[CRON RECURRENCIAS ERROR] Falló el procesamiento de la regla ID ${regla.id}:`, ruleError);
@@ -128,7 +134,7 @@ export async function procesarRecurrenciasProgramadas() {
       }
     }
 
-    console.log(`[CRON RECURRENCIAS] Finalizado. Creados: ${creados} | Ya existían: ${omitidos} | Sin ciclo este mes: ${saltados} | Errores: ${errores}`);
+    console.log(`[CRON RECURRENCIAS] Finalizado. Creados: ${creados} | Ya existían/omitidos: ${omitidos} | Sin ciclo vigente: ${saltados} | Errores: ${errores}`);
   } catch (error) {
     console.error("[CRON RECURRENCIAS FATAL ERROR] Error en la rutina de recurrencias:", error);
   }

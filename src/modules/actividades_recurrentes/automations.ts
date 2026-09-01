@@ -2,6 +2,7 @@ import { prisma } from "../../db";
 import { registrarAccion } from "../../utils/logger";
 import { normalizarFechaLogica, ZONA_HORARIA_MX } from "../../utils/recurrencia-temporal";
 import { materializarActividadEnTransaccion } from "./materialize-core";
+import { resolverPoliticaMaterializacionActividad } from "./materialization-policy";
 import { notificarAsignacionTrasCommit } from "./06_materialize";
 import { reglaActividadInclude } from "./types";
 import { ejecutarNotificacionEnSegundoPlano } from "../notificaciones/services";
@@ -30,74 +31,68 @@ export async function procesarActividadesRecurrentesProgramadas() {
 
   for (const reglaInicial of reglas) {
     procesadas++;
-    let maxCiclosSeguridad = 100;
-    let proxima = normalizarFechaLogica(reglaInicial.proximaFechaEjecucion);
+    try {
+      const notifsToDispatch: Array<{ tarea: any; responsablesIds: number[] }> = [];
 
-    while (proxima <= hoy && maxCiclosSeguridad > 0) {
-      maxCiclosSeguridad--;
-      try {
-        const notifsToDispatch: Array<{ tarea: any; responsablesIds: number[] }> = [];
-
-        await prisma.$transaction(async (tx) => {
-          const reglaFresca = await tx.reglaActividadRecurrente.findUnique({
-            where: { id: reglaInicial.id },
-            include: reglaActividadInclude,
-          });
-
-          if (!reglaFresca || !reglaFresca.activo || reglaFresca.archivadoAt) {
-            proxima = new Date(hoy.getTime() + 86400000);
-            return;
-          }
-
-          const fechaCiclo = normalizarFechaLogica(reglaFresca.proximaFechaEjecucion);
-          if (fechaCiclo > hoy) {
-            proxima = fechaCiclo;
-            return;
-          }
-
-          const resMat = await materializarActividadEnTransaccion({
-            tx,
-            regla: reglaFresca,
-            fechaCicloLogica: fechaCiclo,
-            creadorId: reglaFresca.creadorId,
-          });
-
-          if (resMat.omitida) {
-            omitidas++;
-            console.log(`[ACTIVIDADES RECURRENTES] Regla ${reglaFresca.id} | ciclo ${fechaCiclo.toISOString().split("T")[0]} | omitida`);
-          } else if (resMat.yaExistia) {
-            existentes++;
-            console.log(`[ACTIVIDADES RECURRENTES] Regla ${reglaFresca.id} | ciclo ${fechaCiclo.toISOString().split("T")[0]} | tarea existente`);
-          } else if (resMat.tarea) {
-            creadas++;
-            console.log(`[ACTIVIDADES RECURRENTES] Regla ${reglaFresca.id} | ciclo ${fechaCiclo.toISOString().split("T")[0]} | tarea ${resMat.tarea.id} creada`);
-            if (resMat.responsablesIds.length > 0) {
-              notifsToDispatch.push({ tarea: resMat.tarea, responsablesIds: resMat.responsablesIds });
-            }
-          }
-
-          const reglaDespues = await tx.reglaActividadRecurrente.findUnique({
-            where: { id: reglaInicial.id },
-            select: { proximaFechaEjecucion: true },
-          });
-          if (reglaDespues) {
-            proxima = normalizarFechaLogica(reglaDespues.proximaFechaEjecucion);
-          } else {
-            proxima = new Date(hoy.getTime() + 86400000);
-          }
+      await prisma.$transaction(async (tx) => {
+        const reglaFresca = await tx.reglaActividadRecurrente.findUnique({
+          where: { id: reglaInicial.id },
+          include: reglaActividadInclude,
         });
 
-        for (const n of notifsToDispatch) {
-          ejecutarNotificacionEnSegundoPlano(
-            "NOTIF_ASYNC_ACTIVIDAD_RECURRENTE_MATERIALIZADA",
-            notificarAsignacionTrasCommit(n.tarea, n.responsablesIds)
-          );
+        if (!reglaFresca || !reglaFresca.activo || reglaFresca.archivadoAt) {
+          return;
         }
-      } catch (err) {
-        errores++;
-        console.error(`[ACTIVIDADES RECURRENTES ERROR] Regla ${reglaInicial.id} fallo al materializar:`, err);
-        break;
+
+        const decision = resolverPoliticaMaterializacionActividad(reglaFresca, hoy);
+
+        if (!decision.fechaCicloLogica) {
+          if (decision.requiereActualizarCursor) {
+            await tx.reglaActividadRecurrente.update({
+              where: { id: reglaFresca.id },
+              data: { proximaFechaEjecucion: decision.proximaFechaEjecucion },
+            });
+          }
+          console.log(`[ACTIVIDADES RECURRENTES] Regla ${reglaFresca.id} | ${decision.motivo} | descartados=${decision.ciclosDescartados} | próxima=${decision.proximaFechaEjecucion.toISOString().split("T")[0]}`);
+          return;
+        }
+
+        const fechaCiclo = decision.fechaCicloLogica;
+        const reglaParaMaterializar = {
+          ...reglaFresca,
+          proximaFechaEjecucion: fechaCiclo,
+        };
+        const resMat = await materializarActividadEnTransaccion({
+          tx,
+          regla: reglaParaMaterializar,
+          fechaCicloLogica: fechaCiclo,
+          creadorId: reglaFresca.creadorId,
+        });
+
+        if (resMat.omitida) {
+          omitidas++;
+          console.log(`[ACTIVIDADES RECURRENTES] Regla ${reglaFresca.id} | ciclo ${fechaCiclo.toISOString().split("T")[0]} | omitida | descartados=${decision.ciclosDescartados}`);
+        } else if (resMat.yaExistia) {
+          existentes++;
+          console.log(`[ACTIVIDADES RECURRENTES] Regla ${reglaFresca.id} | ciclo ${fechaCiclo.toISOString().split("T")[0]} | tarea existente | descartados=${decision.ciclosDescartados}`);
+        } else if (resMat.tarea) {
+          creadas++;
+          console.log(`[ACTIVIDADES RECURRENTES] Regla ${reglaFresca.id} | ciclo ${fechaCiclo.toISOString().split("T")[0]} | tarea ${resMat.tarea.id} creada | descartados=${decision.ciclosDescartados}`);
+          if (resMat.responsablesIds.length > 0) {
+            notifsToDispatch.push({ tarea: resMat.tarea, responsablesIds: resMat.responsablesIds });
+          }
+        }
+      });
+
+      for (const n of notifsToDispatch) {
+        ejecutarNotificacionEnSegundoPlano(
+          "NOTIF_ASYNC_ACTIVIDAD_RECURRENTE_MATERIALIZADA",
+          notificarAsignacionTrasCommit(n.tarea, n.responsablesIds)
+        );
       }
+    } catch (err) {
+      errores++;
+      console.error(`[ACTIVIDADES RECURRENTES ERROR] Regla ${reglaInicial.id} fallo al materializar:`, err);
     }
   }
 

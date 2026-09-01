@@ -878,9 +878,17 @@ export const computeTicketTemporalState = (tarea: TicketWithDetails): TicketDTO 
       nota: cleanNota
     };
   });
+  const { reglaActividadRecurrente, ...tareaBase } = tarea;
 
   return {
-    ...tarea,
+    ...tareaBase,
+    recurrenciaActividad: reglaActividadRecurrente
+      ? {
+        unidad: reglaActividadRecurrente.unidad,
+        intervalo: reglaActividadRecurrente.intervalo,
+        fechaInicio: reglaActividadRecurrente.fechaInicio,
+      }
+      : null,
     fechaProgramada: tarea.fechaProgramadaPreventiva ?? tarea.fechaCicloLogica ?? null,
     historial: historialMapeado,
     isLate,

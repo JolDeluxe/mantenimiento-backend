@@ -4,6 +4,7 @@ import { registrarAccion } from "../../utils/logger";
 import { esDomingo, minutosDesdeHora, normalizarFechaLogica, siguienteCicloOperativo, ZONA_HORARIA_MX } from "../../utils/recurrencia-temporal";
 import { ActividadRecurrenteError, dtoReglaActividad, validarResponsablesActivos } from "./helper";
 import { materializarActividadEnTransaccion } from "./materialize-core";
+import { resolverPoliticaMaterializacionActividad } from "./materialization-policy";
 import { notificarAsignacionTrasCommit } from "./06_materialize";
 import { ejecutarNotificacionEnSegundoPlano } from "../notificaciones/services";
 import { reglaActividadInclude } from "./types";
@@ -52,19 +53,16 @@ export async function crearReglaActividad(req: Request, res: Response) {
         include: reglaActividadInclude,
       });
 
-      let proxima = normalizarFechaLogica(reglaCreada.proximaFechaEjecucion);
-      let maxCiclos = 100;
-
-      while (proxima <= hoyMX && maxCiclos > 0) {
-        maxCiclos--;
-        if (reglaCreada.fechaFin && proxima > normalizarFechaLogica(reglaCreada.fechaFin)) {
-          break;
-        }
-
+      const decision = resolverPoliticaMaterializacionActividad(reglaCreada, hoyMX);
+      if (decision.fechaCicloLogica) {
+        const reglaParaMaterializar = {
+          ...reglaCreada,
+          proximaFechaEjecucion: decision.fechaCicloLogica,
+        };
         const resMat = await materializarActividadEnTransaccion({
           tx,
-          regla: reglaCreada,
-          fechaCicloLogica: proxima,
+          regla: reglaParaMaterializar,
+          fechaCicloLogica: decision.fechaCicloLogica,
           creadorId: req.user!.id,
         });
 
@@ -77,9 +75,13 @@ export async function crearReglaActividad(req: Request, res: Response) {
           include: reglaActividadInclude,
         });
 
-        if (!reglaActualizada) break;
-        reglaCreada = reglaActualizada;
-        proxima = normalizarFechaLogica(reglaCreada.proximaFechaEjecucion);
+        if (reglaActualizada) reglaCreada = reglaActualizada;
+      } else if (decision.requiereActualizarCursor) {
+        reglaCreada = await tx.reglaActividadRecurrente.update({
+          where: { id: reglaCreada.id },
+          data: { proximaFechaEjecucion: decision.proximaFechaEjecucion },
+          include: reglaActividadInclude,
+        });
       }
 
       return reglaCreada;

@@ -1,5 +1,11 @@
 import { Prisma } from "@prisma/client";
 
+const recurrenciaActividadSelect = {
+  unidad: true,
+  intervalo: true,
+  fechaInicio: true,
+} satisfies Prisma.ReglaActividadRecurrenteSelect;
+
 export const ticketStandardInclude = {
   creador: {
     select: { 
@@ -85,6 +91,9 @@ export const ticketStandardInclude = {
       ubicacionDetalle: true,
       fechaUltimoServicio: true
     }
+  },
+  reglaActividadRecurrente: {
+    select: recurrenciaActividadSelect
   }
 } satisfies Prisma.TareaInclude;
 
@@ -97,8 +106,11 @@ export type TicketWithDetails = Omit<Prisma.TareaGetPayload<{
   }>["maquina"] | null;
 };
 
-export type TicketDTO = Omit<TicketWithDetails, "historial"> & {
+export type TicketDTO = Omit<TicketWithDetails, "historial" | "reglaActividadRecurrente"> & {
   fechaProgramada: Date | null;
+  recurrenciaActividad: Prisma.ReglaActividadRecurrenteGetPayload<{
+    select: typeof recurrenciaActividadSelect
+  }> | null;
   isLate: boolean;
   isOverdue: boolean;
   perteneceAHoy: boolean;
