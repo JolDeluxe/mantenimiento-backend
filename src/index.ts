@@ -121,8 +121,6 @@ const gracefulShutdown = (reason: "SIGINT" | "SIGTERM" | "PM2_SHUTDOWN_MESSAGE")
     return shutdownPromise;
 };
 
-import { procesarActividadesRecurrentesProgramadas } from "./modules/actividades_recurrentes/automations";
-
 const startServer = async () => {
     try {
         await inicializarSistema();
@@ -133,15 +131,6 @@ const startServer = async () => {
             console.log(`Servidor corriendo en http://localhost:${env.PORT}`);
             console.log(`Ambiente: ${env.NODE_ENV}`);
             iniciarTareasProgramadas();
-
-            setTimeout(async () => {
-                try {
-                    console.log("[STARTUP] Verificando actividades recurrentes pendientes al arrancar...");
-                    await procesarActividadesRecurrentesProgramadas();
-                } catch (error) {
-                    console.error("[STARTUP ERROR] Error al procesar actividades recurrentes al arrancar:", error);
-                }
-            }, 3000);
         });
 
     } catch (error) {

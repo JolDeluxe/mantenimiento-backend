@@ -7,22 +7,44 @@ import { procesarIngestaMaquinariaCsv } from "./maquinaria-csv-ingest";
 import { env } from "../env";
 import { TURNO_TIMEZONE } from "../modules/tickets/turno-config";
 
-export const iniciarTareasProgramadas = () => {
-  // CRON 0: Mantenimientos y actividades recurrentes automáticas
-  // Ejecuta todos los días a las 02:00 AM (America/Mexico_City)
-  cron.schedule("0 2 * * *", async () => {
+type RecurrenceSchedule = (
+  expression: string,
+  task: () => void | Promise<void>,
+  options: { timezone: string },
+) => unknown;
+
+type RecurrenceHandlers = {
+  procesarRecurrenciasProgramadas: () => Promise<unknown>;
+  procesarActividadesRecurrentesProgramadas: () => Promise<unknown>;
+};
+
+export const programarRecurrencias = (
+  schedule: RecurrenceSchedule = cron.schedule,
+  handlers: RecurrenceHandlers = {
+    procesarRecurrenciasProgramadas,
+    procesarActividadesRecurrentesProgramadas,
+  },
+) => {
+  // Registrar el CRON no ejecuta el callback; node-cron lo invoca al llegar la hora configurada.
+  schedule("0 2 * * *", async () => {
     console.log("[CRON] Ejecutando automatización de las 02:00 AM...");
     try {
-      await procesarRecurrenciasProgramadas();
+      await handlers.procesarRecurrenciasProgramadas();
     } catch (error) {
       console.error("[CRON ERROR] Falló la automatización de recurrencias de maquinaria:", error);
     }
     try {
-      await procesarActividadesRecurrentesProgramadas();
+      await handlers.procesarActividadesRecurrentesProgramadas();
     } catch (error) {
       console.error("[CRON ERROR] Falló la automatización de actividades recurrentes:", error);
     }
   }, { timezone: TURNO_TIMEZONE });
+};
+
+export const iniciarTareasProgramadas = () => {
+  // CRON 0: Mantenimientos y actividades recurrentes automáticas
+  // Ejecuta todos los días a las 02:00 AM (America/Mexico_City)
+  programarRecurrencias();
 
   // CRON 1: Cierre automático de tickets resueltos inactivos
   // Ejecuta todos los días a la 01:00 AM (America/Mexico_City)
