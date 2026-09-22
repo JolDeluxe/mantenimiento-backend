@@ -44,10 +44,6 @@ export const createTicketTecnico = async (req: Request, res: Response) => {
         return res.status(400).json({ error: "La máquina seleccionada no existe." });
       }
 
-      if (maquinaDb.estado === "BAJA") {
-        return res.status(400).json({ error: "No se pueden crear tareas para una máquina dada de baja." });
-      }
-
       finalPlanta = maquinaDb.planta;
       finalArea = maquinaDb.area;
       finalCategoria = "MAQUINARIA";
