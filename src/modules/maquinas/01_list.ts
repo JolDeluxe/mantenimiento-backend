@@ -6,7 +6,8 @@ import { getMaquinasDistinctValues } from "./helper";
 
 export const listarMaquinas = async (req: Request, res: Response) => {
   try {
-    const { q, estado, criticidad, proceso, planta, area, departamentoId, page = 1, limit = 20 } = req.query as unknown as ListMaquinasQuery;
+    const { q, estado, criticidad, proceso, planta, area, departamentoId, page = 1, limit = 20, all } = req.query as unknown as ListMaquinasQuery;
+    const isAll = Boolean(all);
     const offset = (page - 1) * limit;
 
     const where: Prisma.MaquinaWhereInput = {};
@@ -33,8 +34,7 @@ export const listarMaquinas = async (req: Request, res: Response) => {
       prisma.maquina.count({ where }),
       prisma.maquina.findMany({
         where,
-        take: limit,
-        skip: offset,
+        ...(isAll ? {} : { take: limit, skip: offset }),
         include: { departamento: true },
         orderBy: { codigo: "asc" }
       }),
@@ -45,9 +45,9 @@ export const listarMaquinas = async (req: Request, res: Response) => {
       status: "success",
       pagination: {
         total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit)
+        page: isAll ? 1 : page,
+        limit: isAll ? total : limit,
+        totalPages: isAll ? 1 : Math.ceil(total / limit)
       },
       catalogs,
       data: maquinas

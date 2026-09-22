@@ -3,6 +3,11 @@ import { z } from "zod";
 const preprocessEmpty = (val: unknown) => (val === "" || val === "null" ? undefined : val);
 const preprocessNull = (val: unknown) => (val === "" || val === "null" || val === null ? null : val);
 
+const preprocessBoolean = (val: unknown) => {
+  if (val === undefined || val === null || val === "" || val === "null") return undefined;
+  return val === true || val === "true" || val === "1" || val === 1;
+};
+
 // Constantes locales: los enums de BD fueron eliminados, usamos strings literales
 const CRITICIDADES_VALIDAS = ["A", "B", "C"] as const;
 const ESTADOS_MAQUINA_VALIDOS = ["OPERATIVA", "PARO_PRODUCCION", "EN_REPARACION", "INACTIVA", "BAJA"] as const;
@@ -56,7 +61,8 @@ export const listMaquinasSchema = z.object({
   query: z.object({
     q: z.string().optional(),
     page: z.coerce.number().min(1).default(1),
-    limit: z.coerce.number().min(1).max(1000).default(20),
+    limit: z.coerce.number().min(1).max(100000).default(20),
+    all: z.preprocess(preprocessBoolean, z.boolean().optional()),
     estado: z.preprocess(preprocessEmpty, z.enum(ESTADOS_MAQUINA_VALIDOS).optional()),
     criticidad: z.preprocess(preprocessEmpty, z.enum(CRITICIDADES_VALIDAS).optional()),
     proceso: z.preprocess(preprocessEmpty, z.string().optional()),
