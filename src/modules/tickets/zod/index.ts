@@ -264,42 +264,47 @@ export const changeStatusSchema = z.object({
 
 export const createTicketBatchSchema = z.object({
   body: z.object({
-    tareas: z.array(z.object({
-      titulo: z.string().trim().min(3).max(255),
-      descripcion: z.preprocess(
-        (val) => !val || val === '' ? 'Sin descripción.' : val,
-        z.string()
-      ),
-      planta: z.preprocess(preprocessEmpty, z.string().optional().nullable()),
-      area: z.string().min(1),
-      
-      // La categoría SIGUE SIENDO obligatoria.
-      categoria: z.string().min(1),
-      
-      departamentoId: z.number().int().positive().optional(),
-      
-      tipo: z.nativeEnum(TipoTarea).optional().default(TipoTarea.PLANEADA),
-      prioridad: z.nativeEnum(Prioridad).optional().default(Prioridad.MEDIA),
-      
-      // La clasificación es opcional, el controlador decide.
-      clasificacion: z.preprocess(preprocessNull, z.nativeEnum(ClasificacionTarea).nullable().optional()),
-      
-      tiempoEstimado: z.coerce.number().int().nonnegative().optional().default(0),
-      responsables: z.preprocess(preprocessNumberArray, z.array(z.number()).optional().default([])),
-      fechaVencimiento: z.preprocess(preprocessDate, z.coerce.date().optional()),
-      maquinaId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
-      paroProduccion: z.preprocess(
-        (val) => val === "true" || val === true,
-        z.boolean().default(false)
-      ),
-      impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
-      horaInicioProgramada: z.preprocess(preprocessDate, z.coerce.date().optional()),
-      horaFinProgramada: z.preprocess(preprocessDate, z.coerce.date().optional())
-    })).min(1).max(50)
-  }).strict()
+    tareas: z.preprocess(
+      (val) => {
+        if (typeof val === "string") {
+          try {
+            return JSON.parse(val);
+          } catch {
+            return val;
+          }
+        }
+        return val;
+      },
+      z.array(z.object({
+        titulo: z.string().trim().min(3).max(255),
+        descripcion: z.preprocess(
+          (val) => !val || val === "" ? "Sin descripción." : val,
+          z.string()
+        ),
+        planta: z.preprocess(preprocessEmpty, z.string().optional().nullable()),
+        area: z.string().min(1),
+        categoria: z.string().min(1),
+        departamentoId: z.number().int().positive().optional(),
+        tipo: z.nativeEnum(TipoTarea).optional().default(TipoTarea.PLANEADA),
+        prioridad: z.nativeEnum(Prioridad).optional().default(Prioridad.MEDIA),
+        clasificacion: z.preprocess(preprocessNull, z.nativeEnum(ClasificacionTarea).nullable().optional()),
+        tiempoEstimado: z.coerce.number().int().nonnegative().optional().default(0),
+        responsables: z.preprocess(preprocessNumberArray, z.array(z.number()).optional().default([])),
+        fechaVencimiento: z.preprocess(preprocessDate, z.coerce.date().optional()),
+        maquinaId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
+        paroProduccion: z.preprocess(
+          (val) => val === "true" || val === true,
+          z.boolean().default(false)
+        ),
+        impactoProduccion: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
+        horaInicioProgramada: z.preprocess(preprocessDate, z.coerce.date().optional()),
+        horaFinProgramada: z.preprocess(preprocessDate, z.coerce.date().optional())
+      })).min(1).max(50)
+    )
+  }).passthrough()
 });
 
-export type CreateTicketBatchInput = z.infer<typeof createTicketBatchSchema>['body'];
+export type CreateTicketBatchInput = z.infer<typeof createTicketBatchSchema>["body"];
 
 export type TicketFilterQuery           = z.infer<typeof ticketFilterSchema>["query"];
 export type GetTicketByIdParams         = z.infer<typeof getTicketByIdSchema>["params"];

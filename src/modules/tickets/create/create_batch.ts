@@ -5,12 +5,108 @@ import { registrarError, registrarAccion } from "../../../utils/logger";
 import { calcularMinutosProgramadosMX } from "../helper";
 import { crearFallaProvisional } from "../../bi_maquinaria/services/confirmacion_falla_service";
 import { recalcularEstadoMaquina } from "../../maquinas/helper";
+import { uploadTaskImage } from "../../../utils/cloudinary";
 
 export const createBatchTickets = async (req: Request, res: Response) => {
   const user = req.user!;
   const { tareas } = req.body;
 
   try {
+    // ── GESTIÓN DE IMÁGENES / ARCHIVOS EN BATCH ─────────────────────────────
+    const filesByTaskIndex = new Map<number, Express.Multer.File[]>();
+    const totalArchivos = req.files && Array.isArray(req.files) ? req.files.length : 0;
+    console.log(`[CREATE_BATCH] ${tareas.length} tareas recibidas. Archivos detectados por Multer: ${totalArchivos}`);
+
+    if (req.files && Array.isArray(req.files)) {
+      for (const file of req.files) {
+        const match = file.fieldname.match(/^imagenes_(\d+)$/);
+        if (match && match[1]) {
+          const idx = parseInt(match[1], 10);
+          const list = filesByTaskIndex.get(idx) || [];
+          list.push(file);
+          filesByTaskIndex.set(idx, list);
+        }
+      }
+    }
+
+    if (filesByTaskIndex.size > 0) {
+      console.log(`[CREATE_BATCH] Tareas con imágenes asignadas (${filesByTaskIndex.size}):`, Array.from(filesByTaskIndex.entries()).map(([k, v]) => `Tarea #${k + 1}: ${v.length} fotos`).join(', '));
+    }
+
+    // Regla de negocio 1: Máximo 10 tareas con fotos por lote
+    if (filesByTaskIndex.size > 10) {
+      return res.status(400).json({
+        error: "Se excedió el límite permitido: máximo 10 tareas de un mismo lote pueden incluir imágenes."
+      });
+    }
+
+    // Validar índices de tarea
+    for (const idx of filesByTaskIndex.keys()) {
+      if (idx < 0 || idx >= tareas.length) {
+        return res.status(400).json({
+          error: `Índice de tarea inválido para las imágenes asociadas: ${idx}.`
+        });
+      }
+    }
+
+    // Validar máximo 3 imágenes por tarea
+    for (const [idx, files] of filesByTaskIndex.entries()) {
+      if (files.length > 3) {
+        return res.status(400).json({
+          error: `La tarea #${idx + 1} excede el límite máximo de 3 imágenes permitidas.`
+        });
+      }
+    }
+
+    // Regla de negocio 2: Subida paralela tolerante a fallos con Promise.allSettled
+    // Se ejecuta ANTES de abrir la transacción de base de datos
+    type UploadItem = {
+      taskIndex: number;
+      tareaTitulo: string;
+      file: Express.Multer.File;
+    };
+
+    const uploadItems: UploadItem[] = [];
+    for (const [taskIndex, files] of filesByTaskIndex.entries()) {
+      const tareaTitulo = tareas[taskIndex]?.titulo || `Índice ${taskIndex}`;
+      for (const file of files) {
+        uploadItems.push({ taskIndex, tareaTitulo, file });
+      }
+    }
+
+    const uploadPromises = uploadItems.map(async ({ taskIndex, tareaTitulo, file }) => {
+      try {
+        const url = await uploadTaskImage({
+          buffer: file.buffer,
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+        });
+        console.log(`[CREATE_BATCH] Imagen "${file.originalname}" subida a Cloudinary para tarea #${taskIndex + 1}: ${url}`);
+        return { taskIndex, originalname: file.originalname, url };
+      } catch (error) {
+        console.error(`[CREATE_BATCH] Falló subida de imagen "${file.originalname}" para tarea #${taskIndex + 1} ("${tareaTitulo}"):`, error);
+        await registrarError(
+          "CREATE_BATCH_IMAGE_UPLOAD",
+          user.id,
+          new Error(`Fallo al subir imagen "${file.originalname}" de tarea #${taskIndex + 1} ("${tareaTitulo}"): ${error instanceof Error ? error.message : String(error)}`)
+        );
+        throw error;
+      }
+    });
+
+    const uploadResults = await Promise.allSettled(uploadPromises);
+
+    const urlsByTaskIndex = new Map<number, string[]>();
+    for (const result of uploadResults) {
+      if (result.status === "fulfilled") {
+        const { taskIndex, url } = result.value;
+        const list = urlsByTaskIndex.get(taskIndex) || [];
+        list.push(url);
+        urlsByTaskIndex.set(taskIndex, list);
+      }
+    }
+
     // ── PRE-CARGA: Resolver ubicaciones de máquinas antes de la transacción ──
     // Evita N queries dentro del loop y garantiza consistencia del Snapshot
     const maquinaIdsUnicos = [
@@ -30,7 +126,8 @@ export const createBatchTickets = async (req: Request, res: Response) => {
     const results = await prisma.$transaction(async (tx) => {
       const ticketsCreados: { id: number; titulo: string }[] = [];
 
-      for (const tarea of tareas) {
+      for (let i = 0; i < tareas.length; i++) {
+        const tarea = tareas[i];
         const tieneResponsables = tarea.responsables && tarea.responsables.length > 0;
         const estadoInicial = tieneResponsables ? EstadoTarea.ASIGNADA : EstadoTarea.PENDIENTE;
 
@@ -89,7 +186,7 @@ export const createBatchTickets = async (req: Request, res: Response) => {
           },
         });
 
-        await tx.historialTarea.create({
+        const historial = await tx.historialTarea.create({
           data: {
             tareaId: nuevoTicket.id,
             usuarioId: user.id,
@@ -100,6 +197,19 @@ export const createBatchTickets = async (req: Request, res: Response) => {
               : "Tarea registrada mediante inserción masiva (Batch)."
           }
         });
+
+        // Adjuntar imágenes que se hayan subido exitosamente para esta tarea
+        const urlsImagenes = urlsByTaskIndex.get(i) || [];
+        if (urlsImagenes.length > 0) {
+          await tx.imagen.createMany({
+            data: urlsImagenes.map((url) => ({
+              url,
+              tipo: "EVIDENCIA_INICIAL",
+              tareaId: nuevoTicket.id,
+              historialId: historial.id,
+            })),
+          });
+        }
 
         // BI MAQUINARIA FASE 1: Falla provisional
         if (clasificacionFinal === ClasificacionTarea.CORRECTIVO && nuevoTicket.maquinaId) {

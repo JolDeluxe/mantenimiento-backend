@@ -84,6 +84,7 @@ router.post(
 router.post(
     "/batch", 
     authorize([Rol.SUPER_ADMIN, Rol.JEFE_MTTO, Rol.COORDINADOR_MTTO]),
+    upload.any(),
     validate(createTicketBatchSchema), 
     withIdempotency("tickets.createBatch", "/api/tickets/batch", createBatchTickets)
 );
