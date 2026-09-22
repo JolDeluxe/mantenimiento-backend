@@ -112,6 +112,20 @@ export const createTicketTecnico = async (req: Request, res: Response) => {
       : (data.descripcion || "Sin descripción.");
     const notaCierre: string | null = esTerminado ? (data.nota || data.descripcion || null) : null;
 
+    // Si hubo paro de producción, calcular el impacto en minutos.
+    // Si ya terminó: diferencia entre finalizadoAt e inicio del paro (fechaParoProduccion o ahora).
+    let impactoProduccionMinutos: number | null = null;
+    if (Boolean(data.paroProduccion)) {
+      if (esTerminado && finalizadoAt) {
+        const tInicioParo = data.fechaParoProduccion ?? ahora;
+        const diffParoMs = finalizadoAt.getTime() - tInicioParo.getTime();
+        impactoProduccionMinutos = diffParoMs > 0 ? Math.round(diffParoMs / 60000) : duracionRealMinutos;
+      } else if (data.fechaParoProduccion) {
+        const diffParoMs = ahora.getTime() - data.fechaParoProduccion.getTime();
+        impactoProduccionMinutos = diffParoMs > 0 ? Math.round(diffParoMs / 60000) : null;
+      }
+    }
+
     // 5. Ejecución atómica en transacción
     const result = await prisma.$transaction(async (tx) => {
       // 5.1 Crear la tarea forzando reglas inmutables
@@ -138,6 +152,7 @@ export const createTicketTecnico = async (req: Request, res: Response) => {
           maquinaId: data.maquinaId ?? null,
           paroProduccion: Boolean(data.paroProduccion),
           fechaParoProduccion: data.fechaParoProduccion ?? (data.paroProduccion ? ahora : null),
+          impactoProduccion: impactoProduccionMinutos,
         },
         include: {
           responsables: true,
