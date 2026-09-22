@@ -262,6 +262,78 @@ export const changeStatusSchema = z.object({
   }).strict()
 });
 
+export const createTicketTecnicoSchema = z.object({
+  titulo: commonString.min(3, "El título debe tener al menos 3 caracteres").max(255),
+  descripcion: z.preprocess(
+    (val) => (!val || val === "" || val === "null" ? "Sin descripción." : val),
+    z.string().max(2000)
+  ),
+  maquinaId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
+  clasificacion: z.preprocess(preprocessNull, z.nativeEnum(ClasificacionTarea).nullable().optional()),
+  planta: z.preprocess(preprocessEmpty, z.string().optional().nullable()),
+  area: z.preprocess(preprocessEmpty, z.string().optional().nullable()),
+  categoria: z.preprocess(
+    (val) => (!val || val === "" || val === "null" ? undefined : val),
+    z.string().optional()
+  ),
+  // Estado de realización por el técnico
+  yaTerminado: z.preprocess(
+    (val) => val === true || val === "true" || val === 1 || val === "1",
+    z.boolean()
+  ),
+  // Duración invertida en minutos (requerida si yaTerminado === true)
+  duracionMinutos: z.preprocess(
+    (val) => (val === null || val === undefined || val === "" || val === "null" ? undefined : val),
+    z.coerce.number().int().positive("La duración debe ser mayor a 0 minutos").max(1440).optional()
+  ),
+  // Opciones de paro para correctivos
+  paroProduccion: z.preprocess(
+    (val) => val === true || val === "true" || val === 1 || val === "1",
+    z.boolean().default(false)
+  ),
+  fechaParoProduccion: z.preprocess(
+    (val) => (val === "" || val === "null" || val === null ? undefined : val),
+    z.coerce.date().optional()
+  ),
+  impactoConfirmado: z.preprocess(
+    (val) => (val === "" || val === "null" || val === null ? undefined : val),
+    z.nativeEnum(ImpactoProduccionConfirmado).optional()
+  ),
+  maquinaOperativaAlResolver: z.preprocess(preprocessBoolean, z.boolean().optional()),
+}).superRefine((data, ctx) => {
+  // Validación de Ubicación (Máquina vs Área/Planta)
+  if (data.maquinaId) {
+    if (data.clasificacion && !["PREVENTIVO", "CORRECTIVO"].includes(data.clasificacion)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["clasificacion"],
+        message: "En máquinas la clasificación debe ser PREVENTIVO o CORRECTIVO.",
+      });
+    }
+  } else {
+    if (!data.area || data.area.trim() === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["area"],
+        message: "El área es obligatoria cuando el trabajo es general / infraestructura.",
+      });
+    }
+  }
+
+  // Validación de Estado de Realización vs Tiempo
+  if (data.yaTerminado) {
+    if (!data.duracionMinutos || data.duracionMinutos <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["duracionMinutos"],
+        message: "Debe indicar el tiempo invertido para registrar un trabajo terminado.",
+      });
+    }
+  }
+});
+
+export type CreateTicketTecnicoInput = z.infer<typeof createTicketTecnicoSchema>;
+
 export const createTicketBatchSchema = z.object({
   body: z.object({
     tareas: z.preprocess(

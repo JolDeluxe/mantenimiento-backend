@@ -22,6 +22,7 @@ import { changeTicketStatus } from "../modules/tickets/05_status";
 import { obtenerMetricasTickets } from "../modules/tickets/06_metrics";
 import { rescheduleTickets } from "../modules/tickets/06_reschedule";
 import { createBatchTickets } from "../modules/tickets/create/create_batch";
+import { createTicketTecnico } from "../modules/tickets/create/create_tecnico";
 import { approveTicketsBatch } from "../modules/tickets/07_approve_batch";
 import { withIdempotency } from "../modules/idempotency/idempotency";
 
@@ -78,6 +79,14 @@ router.post(
     "/", 
     upload.array('imagenes', 5),
     withIdempotency("tickets.create", "/api/tickets", createTicket)
+);
+
+// POST /api/tickets/tecnico
+router.post(
+    "/tecnico",
+    authorize([Rol.TECNICO]),
+    upload.array('imagenes', 3),
+    withIdempotency("tickets.createTecnico", "/api/tickets/tecnico", createTicketTecnico)
 );
 
 // POST /api/tickets/batch
