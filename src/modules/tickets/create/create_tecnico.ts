@@ -72,15 +72,49 @@ export const createTicketTecnico = async (req: Request, res: Response) => {
     const esTerminado = Boolean(data.yaTerminado);
     const estadoInicial = esTerminado ? EstadoTarea.CERRADO : EstadoTarea.ASIGNADA;
 
+    // Detectar si el técnico usó rango horario (inicioManual/finManual) o solo duración en minutos.
+    // Esto determina si se conocen tiempos reales o solo la duración total.
+    const usaRangoHorario = esTerminado && Boolean(data.inicioManual && data.finManual);
+
     let fechaInicio: Date | null = null;
     let finalizadoAt: Date | null = null;
     let duracionRealMinutos: number | null = null;
+    // esTiempoManual: true cuando el tiempo fue declarado manualmente (vs medido por el sistema).
+    // false: sistema lo midió. true+rango: se conocen inicio/fin reales. true+minutos: solo duración conocida.
+    let registroEsTiempoManual = false;
 
     if (esTerminado) {
       duracionRealMinutos = data.duracionMinutos || 1;
-      finalizadoAt = ahora;
-      fechaInicio = new Date(ahora.getTime() - duracionRealMinutos * 60000);
+      registroEsTiempoManual = true; // siempre manual en registro directo técnico
+
+      if (usaRangoHorario) {
+        // El técnico ingresó inicio y fin reales — usarlos directamente.
+        fechaInicio  = data.inicioManual!;
+        finalizadoAt = data.finManual!;
+        // Recalcular duración a partir del rango real para consistencia.
+        const diffMs = finalizadoAt.getTime() - fechaInicio.getTime();
+        if (diffMs > 0) {
+          duracionRealMinutos = Math.round(diffMs / 60000);
+        }
+      } else {
+        // El técnico solo ingresó minutos — NO inventar una hora de inicio.
+        // Se guarda fechaInicio = null para que el modal de detalle no muestre un horario ficticio.
+        fechaInicio  = null;
+        finalizadoAt = ahora;
+      }
     }
+
+    // 5. Descripción vs Nota de cierre:
+    // - Tarea pendiente (yaTerminado=false): la descripcion es el contexto del trabajo a realizar.
+    // - Tarea terminada (yaTerminado=true): lo que el técnico escribió es una nota de cierre
+    // 5. Descripción vs Nota de cierre:
+    // - Tarea pendiente (yaTerminado=false): la descripcion es el contexto del trabajo a realizar.
+    // - Tarea terminada (yaTerminado=true): lo que el técnico escribió es una nota de cierre
+    //   que va al historial. La descripcion del ticket queda como el título o nota breve.
+    const descripcionTicket: string = esTerminado
+      ? (data.descripcion || data.titulo || "Trabajo concluido directamente.")
+      : (data.descripcion || "Sin descripción.");
+    const notaCierre: string | null = esTerminado ? (data.nota || data.descripcion || null) : null;
 
     // 5. Ejecución atómica en transacción
     const result = await prisma.$transaction(async (tx) => {
@@ -88,7 +122,7 @@ export const createTicketTecnico = async (req: Request, res: Response) => {
       const nuevaTarea = await tx.tarea.create({
         data: {
           titulo: data.titulo,
-          descripcion: data.descripcion || "Sin descripción.",
+          descripcion: descripcionTicket,
           prioridad: Prioridad.MEDIA,
           categoria: finalCategoria,
           planta: finalPlanta,
@@ -129,6 +163,18 @@ export const createTicketTecnico = async (req: Request, res: Response) => {
 
       // 5.3 Si ya se terminó: registrar evento de cambio de estado y bloque de intervalo de tiempo
       if (esTerminado) {
+        // Nota del cierre: incluye la nota escrita por el técnico + duración registrada + META:TIEMPO_MANUAL
+        const partesNota = [
+          usaRangoHorario
+            ? `Trabajo finalizado directamente (rango horario). Duración: ${duracionRealMinutos} min.`
+            : `Trabajo finalizado directamente. Duración declarada: ${duracionRealMinutos} min.`,
+        ];
+        if (notaCierre) {
+          partesNota.push(`Nota técnico: ${notaCierre}`);
+        }
+        partesNota.push("||[META:TIEMPO_MANUAL]||");
+        const notaHistorialCierre = partesNota.join("\n\n").trim();
+
         await tx.historialTarea.create({
           data: {
             tareaId: nuevaTarea.id,
@@ -136,7 +182,7 @@ export const createTicketTecnico = async (req: Request, res: Response) => {
             tipo: TipoEvento.CAMBIO_ESTADO,
             estadoAnterior: EstadoTarea.ASIGNADA,
             estadoNuevo: EstadoTarea.CERRADO,
-            nota: `Trabajo finalizado directamente. Duración registrada: ${duracionRealMinutos} min.`,
+            nota: notaHistorialCierre,
           },
         });
 
@@ -145,7 +191,7 @@ export const createTicketTecnico = async (req: Request, res: Response) => {
           data: {
             tareaId: nuevaTarea.id,
             usuarioId: user.id,
-            inicio: fechaInicio!,
+            inicio: fechaInicio ?? new Date(ahora.getTime() - duracionRealMinutos! * 60000),
             fin: finalizadoAt!,
             duracion: duracionRealMinutos!,
             estado: EstadoTarea.CERRADO,

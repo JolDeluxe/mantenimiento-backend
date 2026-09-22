@@ -265,8 +265,13 @@ export const changeStatusSchema = z.object({
 export const createTicketTecnicoSchema = z.object({
   titulo: commonString.min(3, "El título debe tener al menos 3 caracteres").max(255),
   descripcion: z.preprocess(
-    (val) => (!val || val === "" || val === "null" ? "Sin descripción." : val),
-    z.string().max(2000)
+    (val) => (!val || val === "" || val === "null" ? null : val),
+    z.string().max(2000).nullable().optional()
+  ),
+  // nota: texto libre del técnico cuando ya terminó (se guarda en historial de cierre)
+  nota: z.preprocess(
+    (val) => (!val || val === "" || val === "null" ? null : val),
+    z.string().max(2000).nullable().optional()
   ),
   maquinaId: z.preprocess(preprocessNull, z.coerce.number().int().positive().nullable().optional()),
   clasificacion: z.preprocess(preprocessNull, z.nativeEnum(ClasificacionTarea).nullable().optional()),
@@ -284,7 +289,16 @@ export const createTicketTecnicoSchema = z.object({
   // Duración invertida en minutos (requerida si yaTerminado === true)
   duracionMinutos: z.preprocess(
     (val) => (val === null || val === undefined || val === "" || val === "null" ? undefined : val),
-    z.coerce.number().int().positive("La duración debe ser mayor a 0 minutos").max(1440).optional()
+    z.coerce.number().int().positive("La duración debe ser mayor a 0 minutos").max(960).optional()
+  ),
+  // Rango horario real (si el técnico eligió esa modalidad)
+  inicioManual: z.preprocess(
+    (val) => (val === "" || val === "null" || val === null ? undefined : val),
+    z.coerce.date().optional()
+  ),
+  finManual: z.preprocess(
+    (val) => (val === "" || val === "null" || val === null ? undefined : val),
+    z.coerce.date().optional()
   ),
   // Opciones de paro para correctivos
   paroProduccion: z.preprocess(
